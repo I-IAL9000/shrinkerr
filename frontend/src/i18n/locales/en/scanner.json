@@ -50,9 +50,7 @@
     "quickCheckDesc": "Header / metadata parse. Fast — a few seconds per file.",
     "thoroughCheck": "Thorough check",
     "thoroughCheckDesc": "Full frame-by-frame decode. Slow — roughly duration / 10 per file.",
-    "trashFiles": "Trash files",
-    "fixDirectPlay": "Fix for direct play",
-    "fixDirectPlayTitle": "Fix what makes Plex, Jellyfin and Emby transcode these files (the Direct play filters)"
+    "trashFiles": "Trash files"
   },
   "arr": {
     "menu": "*arr actions",
@@ -331,10 +329,7 @@
     "renameApplied": "Rename applied",
     "advSearchMatches_one": "Advanced search: {{count}} match",
     "advSearchMatches_other": "Advanced search: {{count}} matches",
-    "trackSaveFailed": "Couldn't save the track selection — reload the file and try again",
-    "directPlayQueued_one": "Queued {{count}} file to fix for direct play",
-    "directPlayQueued_other": "Queued {{count}} files to fix for direct play",
-    "directPlayNothing": "None of the selected files needs fixing for direct play (or they're queued already)"
+    "trackSaveFailed": "Couldn't save the track selection — reload the file and try again"
   },
   "confirm": {
     "trash_one": "Move {{count}} file to trash? This cannot be undone from Shrinkerr.",
@@ -367,8 +362,7 @@
     "detectAllLabel": "Detect all",
     "detectSelected_one": "Detect languages for the {{count}} selected item?\n\nUnknown (und) audio and image-subtitle tracks are detected and the corrected tags written to the files. Image-sub OCR can take minutes per file.",
     "detectSelected_other": "Detect languages for the {{count}} selected items?\n\nUnknown (und) audio and image-subtitle tracks are detected and the corrected tags written to the files. Image-sub OCR can take minutes per file.",
-    "detectSelectedLabel": "Detect languages",
-    "directPlay": "Fix the selected files for direct play? Hi10P files are converted. The others are remuxed to MKV, with SRT copies of image subtitles and a stereo compatibility track where the audio needs one. Files with no problem are left alone."
+    "detectSelectedLabel": "Detect languages"
   },
   "empty": {
     "loading": "Loading scan results...",

@@ -76,7 +76,7 @@ other machines.
   the subtitle images (OCR), and the language written into the file
   ([Language detection](docs/language-detection.md)).
 - Direct-play filters find what makes Plex, Jellyfin and Emby transcode, and
-  **Fix for direct play** fixes it.
+  **Fix for direct play** in Add to Queue fixes it.
 
 **Your library**
 - A Scanner with filters for nearly everything — codec, resolution, HDR,

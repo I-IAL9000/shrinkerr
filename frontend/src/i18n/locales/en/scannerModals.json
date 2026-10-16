@@ -50,7 +50,29 @@
       "leavingSoon_one": "{{num}} file is in a Maintainerr collection (leaving soon) and is left out",
       "leavingSoon_other": "{{num}} files are in a Maintainerr collection (leaving soon) and are left out",
       "noEncode": "No video conversion: the video is copied as it is, only tracks are removed",
-      "cleanupSkips": "Files with no track to remove are left out"
+      "cleanupSkips": "Files with no track to remove are left out",
+      "cleanupSkipsFixes": "Files with no track to remove or fix are left out",
+      "directPlay": {
+        "container_one": "{{num}} file is remuxed to MKV",
+        "container_other": "{{num}} files are remuxed to MKV",
+        "video_one": "{{num}} Hi10P file is converted",
+        "video_other": "{{num}} Hi10P files are converted",
+        "subs_one": "{{num}} file gets SRT copies of its image subtitles",
+        "subs_other": "{{num}} files get SRT copies of their image subtitles",
+        "audio_one": "{{num}} file gets a stereo compatibility track",
+        "audio_other": "{{num}} files get a stereo compatibility track"
+      }
+    },
+    "directPlay": {
+      "title": "Fix for direct play",
+      "hint": "What makes Plex, Jellyfin and Emby transcode these files",
+      "files_one": "{{num}} file",
+      "files_other": "{{num}} files",
+      "container": "Remux old containers to MKV",
+      "video": "Convert Hi10P video",
+      "subs": "SRT copies of image subtitles",
+      "audio": "Stereo compatibility track",
+      "videoCleanupOnly": "Fixing Hi10P means converting it: not with Cleanup only"
     },
     "learnedFrom_one": "learned from {{count}} of your conversions",
     "learnedFrom_other": "learned from {{count}} of your conversions",

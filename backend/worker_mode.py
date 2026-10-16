@@ -643,7 +643,8 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
             ocr_planned = bool(job.get("image_subs_to_srt")) and bool(srt_plan(
                 probe.get("subtitle_tracks", []),
                 {t["stream_index"] for t in probe.get("subtitle_tracks", [])} - set(sub_remove)))
-            direct_play = bool(job.get("direct_play"))  # v0.10.0: the remux to MKV is the fix
+            from backend.direct_play import remux_fixes
+            direct_play = remux_fixes(job)  # v0.10.0: the remux to MKV is the fix
             if audio_remove or sub_remove or ocr_planned or direct_play:
                 await progress_cb(progress=95, step="removing tracks" if audio_remove or sub_remove else (
                     "converting subtitles" if ocr_planned else "fixing for direct play"))

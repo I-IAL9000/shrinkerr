@@ -116,9 +116,23 @@ class BulkQueueFromScanRequest(BaseModel):
     # job even when there's no track-removal work.
     language_remux: bool = False
     # v0.10.0: "Fix for direct play" (backend/direct_play.py): each file with
-    # a problem gets a conversion (Hi10P) or a remux to MKV, which read image
-    # subtitles into SRT and add a compatibility track where needed.
-    direct_play: bool = False
+    # a problem among `direct_play_fixes` (None: all of them) gets a
+    # conversion (Hi10P) or a remux to MKV, which read image subtitles into
+    # SRT and add a compatibility track where needed. None: not chosen (the
+    # setting's "when converting" applies).
+    direct_play: Optional[bool] = None
+    direct_play_fixes: Optional[list[str]] = None
+
+
+def _direct_play_fixing(found: dict[str, list[str]], payload) -> dict[str, list[str]]:
+    """File → the direct-play problems it has (`found`: problems_for's) that
+    Add to Queue chose to fix (`direct_play_fixes`, None: all). Hi10P's fix
+    is a conversion: never with Cleanup only."""
+    from backend.direct_play import PROBLEMS
+    wanted = set(PROBLEMS if payload.direct_play_fixes is None else payload.direct_play_fixes)
+    if getattr(payload, "cleanup_only", False):
+        wanted.discard("video")
+    return {fp: [p for p in problems if p in wanted] for fp, problems in found.items()}
 
 
 def _classify_job_type(
@@ -494,14 +508,12 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
         direct_play: dict[str, list[str]] = {}
         if payload.direct_play:
             from backend.direct_play import problems_for
-            direct_play = await problems_for(db, file_paths)
+            direct_play = _direct_play_fixing(await problems_for(db, file_paths), payload)
 
         jobs_to_insert: list[dict] = []
         ignored_by_rule = 0
         for fp in file_paths:
             rule = rule_results.get(fp)
-            if payload.direct_play and fp not in direct_play:
-                continue  # plays directly already
             problems = direct_play.get(fp, [])
             # An explicit request like the language remux below (v0.10.0):
             # rules and the conversion filters govern conversion, not fixes.
@@ -645,7 +657,8 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
                 "target_resolution": target_resolution,
                 "output_codec": output_codec,
                 **job_overrides(rule),
-                "direct_play": bool(problems),
+                # The fixes it makes ("" = none chosen); None: the setting's
+                "direct_play": None if payload.direct_play is None else ",".join(sorted(problems)),
                 "audio_codec": audio_codec,
                 "audio_bitrate": audio_bitrate,
                 "priority": max(
@@ -1901,6 +1914,9 @@ class EstimateRequest(BaseModel):
     nvenc_cq_override: int | None = None
     libx265_crf_override: int | None = None
     force_reencode: bool = False
+    # v0.10.0: Fix for direct play, as BulkQueueFromScanRequest has it
+    direct_play: bool = False
+    direct_play_fixes: Optional[list[str]] = None
 
 
 # v0.10.0: the estimate learned from finished conversions, shared with the
@@ -2142,6 +2158,14 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                     for r in await cur.fetchall():
                         scan_rows[r["file_path"]] = dict(r)
 
+        # Fix for direct play (v0.10.0): each problem's files, ticked or not
+        # (the dialog shows them beside each fix), and the ones it fixes.
+        from backend.direct_play import PROBLEMS, problems_for
+        found = await problems_for(db, list(scan_rows))
+        fixing = _direct_play_fixing(found, payload) if payload.direct_play else {}
+        direct_play = {p: 0 for p in PROBLEMS}
+        direct_play_files = 0
+
         print(f"[ESTIMATE] {len(file_paths)} file(s) to estimate, {len(scan_rows)} found in scan_results, {len(ignored_set)} ignored", flush=True)
         if len(file_paths) > 0 and len(scan_rows) == 0:
             print(f"[ESTIMATE] No scan_results found for paths: {file_paths[:5]}", flush=True)
@@ -2163,6 +2187,10 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             if leaving and not payload.override_rules and in_folders(fp, leaving):
                 leaving_soon += 1  # in a Maintainerr collection, as add-from-scan leaves it
                 continue
+            for problem in found.get(fp, []):
+                direct_play[problem] += 1
+            direct_play_files += fp in found
+            fixes = fixing.get(fp, [])
 
             # The decision add-from-scan makes (v0.10.0): removals by keep
             # alone (v0.9.99), and the original language's audio moved first
@@ -2179,8 +2207,11 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             # from the stored disc_type so the estimate is right immediately,
             # without a re-scan to refresh needs_conversion. An ignore rule still
             # wins (a disc under skip stays skipped, like the base column does).
-            needs_conv = bool(row["needs_conversion"]) or bool(row.get("disc_type")) or payload.force_reencode
-            if skip_conv and not payload.force_reencode:
+            # Hi10P's fix is a conversion, and rules govern conversion, not
+            # fixes (as add-from-scan has it).
+            force = payload.force_reencode or "video" in fixes
+            needs_conv = bool(row["needs_conversion"]) or bool(row.get("disc_type")) or force
+            if skip_conv and not force:
                 needs_conv = False
 
             if needs_conv and has_work:
@@ -2189,7 +2220,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                 jt = "convert"
             elif has_work:
                 jt = "audio"
-            elif skip_conv:
+            elif skip_conv and not fixes:
                 continue
             else:
                 jt = "audio"
@@ -2338,6 +2369,8 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             "ignored_files": ignored_count,
             "hardlinked": hardlinked,
             "leaving_soon": leaving_soon,
+            "direct_play": direct_play,
+            "direct_play_files": direct_play_files,
             "cq": representative_cq,
             "savings_pct": round((estimated_savings / total_size * 100) if total_size > 0 else 0),
             "learned_from": savings_model.current().samples,  # v0.10.0

@@ -70,5 +70,5 @@ page maps what you have to where it lives in Shrinkerr.
   and 8 keep their Dolby Vision, and profile 5 isn't converted
   ([Encoding guide](encoding-guide.md#hdr-and-dolby-vision)).
 - **Files that play everywhere**: the Scanner's Direct play filters find
-  what makes media servers transcode, and **Fix for direct play** sorts it
-  out ([Audio and subtitles](audio-and-subtitles.md#fix-for-direct-play)).
+  what makes media servers transcode, and **Fix for direct play** in Add to
+  Queue sorts it out ([Audio and subtitles](audio-and-subtitles.md#fix-for-direct-play)).

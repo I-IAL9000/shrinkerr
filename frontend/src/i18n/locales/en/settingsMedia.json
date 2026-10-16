@@ -67,7 +67,7 @@
     "always": "(always)",
     "convertFromHelp": "Select which source codecs should be converted to the target codec.",
     "directPlayOnConvert": "Fix for direct play when converting",
-    "directPlayOnConvertHelp": "Every conversion also does what \"Fix for direct play\" in the Scanner does, where the file needs it: SRT copies of image subtitles (PGS, VobSub) and a stereo compatibility track when the main language's audio isn't AAC, AC3, E-AC3 or MP3.",
+    "directPlayOnConvertHelp": "Ticks \"Fix for direct play\" in Add to Queue, and every conversion queued another way (new downloads, policies) also makes its fixes where the file needs them: SRT copies of image subtitles (PGS, VobSub) and a stereo compatibility track when the main language's audio isn't AAC, AC3, E-AC3 or MP3.",
     "scale": {
       "highestQuality": "{{value}} (Highest quality)",
       "smallestFile": "{{value}} (Smallest file)",

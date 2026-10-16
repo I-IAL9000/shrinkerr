@@ -1,8 +1,9 @@
 """Direct play (v0.10.0): the Scanner finds what makes media servers
 transcode (Hi10P, image-only subtitles, no widely decoded audio, old
-containers) and "Fix for direct play" queues the fix — a conversion for
-Hi10P, else a remux to MKV — with a compatibility track where the audio
-needs one and SRT copies of image subtitles."""
+containers) and Add to Queue's "Fix for direct play" queues the fix — a
+conversion for Hi10P, else a remux to MKV — with a compatibility track where
+the audio needs one and SRT copies of image subtitles (the choices:
+test_direct_play_choices.py)."""
 import json
 import shutil
 import subprocess
@@ -174,7 +175,7 @@ async def test_the_scanner_finds_them_and_the_fix_queues_jobs(library):
     assert result["added"] == 3
     jobs = await _jobs(library.db)
     assert {p: (j["job_type"], j["direct_play"]) for p, j in jobs.items()} == {
-        f["hi10"]: ("convert", 1), f["dts"]: ("audio", 1), f["avi"]: ("audio", 1)}
+        f["hi10"]: ("convert", "audio,video"), f["dts"]: ("audio", "audio"), f["avi"]: ("audio", "container")}
 
 
 @needs_media
@@ -187,7 +188,8 @@ async def test_the_fixes(library):
     ids = {queued[f[k]]["id"]: k for k in ("hi10", "dts", "avi")}
     for job in queued.values():
         await library.worker._process_job(job)
-    done = {ids[j["id"]]: j for j in (await _jobs(library.db)).values()}
+    # (the film that plays directly is queued as usual: nothing to fix)
+    done = {ids[j["id"]]: j for j in (await _jobs(library.db)).values() if j["id"] in ids}
     assert {k: j["status"] for k, j in done.items()} == {"hi10": "completed", "dts": "completed", "avi": "completed"}, [
         j["error_log"] for j in done.values()]
     # DTS only: remuxed with a stereo AAC track beside it

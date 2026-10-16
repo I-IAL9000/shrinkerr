@@ -64,6 +64,25 @@ SQL = {
 }
 
 
+def job_fixes(job: dict) -> set[str]:
+    """The problems a job fixes: its `direct_play` — 1 for every one (jobs
+    queued before they could be chosen, and "Fix for direct play when
+    converting"), else the ones Add to Queue chose that the file has,
+    comma-separated (v0.10.0)."""
+    value = job.get("direct_play")
+    if not value:
+        return set()
+    if str(value) == "1":
+        return set(PROBLEMS)
+    return {p for p in str(value).split(",") if p in PROBLEMS}
+
+
+def remux_fixes(job: dict) -> bool:
+    """Whether the job remuxes for a fix — every one but Hi10P, which is the
+    conversion's."""
+    return bool(job_fixes(job) - {"video"})
+
+
 async def problems_for(db, file_paths: list[str]) -> dict[str, list[str]]:
     """file_path → its direct-play problems (only files that have some)."""
     cols = ", ".join(f"({SQL[p]}) AS {p}" for p in PROBLEMS)

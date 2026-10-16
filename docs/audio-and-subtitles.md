@@ -175,11 +175,18 @@ streamers, even when the server could just send them. The Scanner's
 | No widely supported audio | no AAC, AC3, E-AC3 or MP3 track in the main audio language (DTS or TrueHD only, say) | a stereo compatibility track is added |
 | Old container | AVI, WMV, MPEG, TS and other old containers | remuxed to MKV |
 
-Select files (or folders) and click **Fix for direct play**. Each file with
-a problem gets one job: Hi10P files are converted, the others are remuxed
-to MKV without re-encoding the video. Either way the job reads image
-subtitles into SRT and adds the compatibility track where the audio needs
-one, whatever the settings above say. Files with no problem are left alone.
+Select files (or folders), click **Add to queue** and tick **Fix for direct
+play**. It shows how many of the selected files have each problem; untick a
+fix to leave it out (all four are ticked to start with). Each file that
+needs a chosen fix gets it in its job: Hi10P files are converted, the others
+are remuxed to MKV without re-encoding the video, and the job reads image
+subtitles into SRT or adds the compatibility track where those were chosen,
+whatever the settings above say. The other files are queued as usual.
+Fixing Hi10P means converting, so it's left out with **Cleanup only**.
+
+**Fix for direct play when converting** (Settings → Video) ticks it in Add
+to Queue, and conversions queued another way (new downloads, policies) also
+make the fixes their files need.
 
 Rules and the conversion filters (minimum size, bitrate limits) don't stop
 a fix. A file still hardlinked by a torrent client, or in a Maintainerr

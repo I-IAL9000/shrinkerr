@@ -35,7 +35,14 @@ export interface EncodingOverrides {
   // "No video conversion" — only run the audio/sub cleanup pass (track
   // removal + native-language reorder + audio codec transcode). v0.3.80+.
   cleanup_only?: boolean;
+  // Fix for direct play (v0.10.0), ticked or not, and the fixes it makes
+  direct_play?: boolean;
+  direct_play_fixes?: string[];
 }
+
+// Fix for direct play's fixes (backend/direct_play.py's problems), in the
+// dialog's order.
+const DP_FIXES = ["container", "video", "subs", "audio"] as const;
 
 // label is the x265 preset name (not translated); suffixKey → scannerModals:overrides.*
 const CPU_PRESETS: { value: string; label: string; suffixKey?: string }[] = [
@@ -76,10 +83,15 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   // either always show all 4 (and have qsv/vaapi fail at encode time on
   // hosts without /dev/dri) or always hide them. v0.3.69+.
   const [encoderCaps, setEncoderCaps] = useState<EncoderCaps | null>(null);
+  // Fix for direct play (v0.10.0): ticked when Settings' "Fix for direct
+  // play when converting" is on; every fix ticked to start with.
+  const [directPlay, setDirectPlay] = useState(false);
+  const [dpFixes, setDpFixes] = useState<string[]>([...DP_FIXES]);
 
   useEffect(() => {
     getEncodingSettings().then(s => {
       if (s?.default_encoder) setDefaultEncoder(s.default_encoder);
+      if (s?.direct_play_on_convert) setDirectPlay(true);
     }).catch(() => {});
     getEncoderCaps().then(setEncoderCaps).catch(() => {});
   }, []);
@@ -153,6 +165,10 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
     if (forceReencode) overrides.force_reencode = true;
     if (activeFilter && activeFilter !== "all") overrides.filter = activeFilter;
     if (encoder) overrides.encoder = encoder;
+    if (directPlay) {
+      overrides.direct_play = true;
+      overrides.direct_play_fixes = dpFixes;
+    }
     estimateJobs(filePaths, overrideRules, overrides).then(data => {
       setEstimate(data);
       setLoading(false);
@@ -161,7 +177,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
       setEstimate({ total_files: 0, error: err?.message || t("scannerModals:estimate.unknownError") });
       setLoading(false);
     });
-  }, [overrideRules, cq, forceReencode, isCpu, encoder]);
+  }, [overrideRules, cq, forceReencode, isCpu, encoder, directPlay, dpFixes]);
   const buildOverrides = (): EncodingOverrides | undefined => {
     const o: EncodingOverrides = {};
     if (encoder !== null) o.encoder = encoder;
@@ -178,7 +194,9 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
     if (resolution !== null) o.target_resolution = resolution;
     if (forceReencode) o.force_reencode = true;
     if (cleanupOnly) o.cleanup_only = true;
-    return Object.keys(o).length > 0 ? o : undefined;
+    o.direct_play = directPlay;  // either way: unticked overrides the setting
+    if (directPlay) o.direct_play_fixes = dpFixes;
+    return o;
   };
 
   return (
@@ -362,7 +380,18 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
               if (Object.keys(audio).length) rows.push(t("scannerModals:estimate.whatHappens.audioRemoved", { list: trackLanguageList(audio) }));
               if (Object.keys(subs).length) rows.push(t("scannerModals:estimate.whatHappens.subsRemoved", { list: trackLanguageList(subs) }));
               if (!Object.keys(audio).length && !Object.keys(subs).length) rows.push(t("scannerModals:estimate.whatHappens.nothingRemoved"));
-              if (cleanupOnly) rows.push(t("scannerModals:estimate.whatHappens.cleanupSkips"));
+              let fixing = false;
+              if (directPlay) {
+                for (const fix of DP_FIXES) {
+                  const n = estimate.direct_play?.[fix] || 0;
+                  if (n > 0 && dpFixes.includes(fix) && !(fix === "video" && cleanupOnly)) {
+                    rows.push(t(`scannerModals:estimate.whatHappens.directPlay.${fix}`, { count: n, num: fmtNum(n) }));
+                    fixing = true;
+                  }
+                }
+              }
+              // (a file with a fix to make is queued for it)
+              if (cleanupOnly) rows.push(t(`scannerModals:estimate.whatHappens.${fixing ? "cleanupSkipsFixes" : "cleanupSkips"}`));
               if (estimate.hardlinked > 0) rows.push(t("scannerModals:estimate.whatHappens.hardlinked", { count: estimate.hardlinked, num: fmtNum(estimate.hardlinked) }));
               if (estimate.leaving_soon > 0) rows.push(t("scannerModals:estimate.whatHappens.leavingSoon", { count: estimate.leaving_soon, num: fmtNum(estimate.leaving_soon) }));
               return (
@@ -373,6 +402,47 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       <li key={i} style={{ fontSize: 12, color: orig.action === "delete" && i === 1 ? "var(--warning)" : "var(--text-secondary)" }}>{r}</li>
                     ))}
                   </ul>
+                </div>
+              );
+            })()}
+
+            {/* Fix for direct play (v0.10.0): what makes media servers
+                transcode, fixed where the files need it — each fix with the
+                files it touches; one none of them need is greyed out. */}
+            {estimate.direct_play && (() => {
+              const dp: Record<string, number> = estimate.direct_play;
+              const unavailable = (fix: string) => !dp[fix] || (fix === "video" && cleanupOnly);
+              const files = (n: number) => t("scannerModals:estimate.directPlay.files", { count: n, num: fmtNum(n) });
+              return (
+                <div style={{ border: "1px solid var(--border)", borderRadius: 6, padding: "10px 12px", marginBottom: 16 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                    <input type="checkbox" checked={directPlay} onChange={e => setDirectPlay(e.target.checked)}
+                      style={{ accentColor: "var(--accent)", margin: 0 }} />
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>{t("scannerModals:estimate.directPlay.title")}</span>
+                    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>
+                      {files(estimate.direct_play_files || 0)}
+                    </span>
+                  </label>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", margin: "2px 0 0 21px" }}>{t("scannerModals:estimate.directPlay.hint")}</div>
+                  {directPlay && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 7, padding: "9px 0 2px 21px" }}>
+                      {DP_FIXES.map(fix => {
+                        const off = unavailable(fix);
+                        return (
+                          <label key={fix} title={fix === "video" && cleanupOnly ? t("scannerModals:estimate.directPlay.videoCleanupOnly") : undefined}
+                            style={{ display: "flex", alignItems: "center", gap: 8, cursor: off ? "default" : "pointer", opacity: off ? 0.45 : 1 }}>
+                            <input type="checkbox" disabled={off} checked={!off && dpFixes.includes(fix)}
+                              onChange={e => setDpFixes(f => e.target.checked ? [...f, fix] : f.filter(x => x !== fix))}
+                              style={{ accentColor: "var(--accent)", margin: 0 }} />
+                            <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{t(`scannerModals:estimate.directPlay.${fix}`)}</span>
+                            <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>
+                              {files(dp[fix] || 0)}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })()}

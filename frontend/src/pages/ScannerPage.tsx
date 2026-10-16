@@ -1129,9 +1129,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     bazarrReady: !!(encodingSettings?.bazarr_url && encodingSettings?.bazarr_api_key),
   }), [encodingSettings]);
 
-  // "Fix for direct play" (v0.10.0): the selection's files with a direct-play
-  // problem get a conversion (Hi10P) or a remux to MKV, with SRT copies of
-  // image subtitles and a compatibility track where the audio needs one.
   // The bar's dropdowns open towards the side with room (v0.10.0): wrapped to
   // the bar's left edge, one anchored right ran under the sidebar.
   const [menuSide, setMenuSide] = useState<"left" | "right">("right");
@@ -1157,7 +1154,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const [titleAction, setTitleAction] = useState<{ path: string; run: string } | null>(null);
   const titleActions: Record<string, () => void> = {
     queue: handleAddToQueue, detect: handleBulkDetectLanguages, rescan: handleBulkRescan,
-    directPlay: () => handleFixDirectPlay(), rename: handleRename,
+    rename: handleRename,
     quickCheck: () => handleHealthCheck("quick"), thoroughCheck: () => handleHealthCheck("thorough"),
     upgrade: () => handleBulkArrAction("upgrade"), missing: () => handleBulkArrAction("missing"),
     replace: () => handleBulkArrAction("replace"),
@@ -1180,7 +1177,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       item(t("common:actions.addToQueue"), "queue"),
       item(t("scanner:titleMenu.detect"), "detect"),
       item(t("common:actions.rescan"), "rescan"),
-      item(t("scanner:selection.fixDirectPlay"), "directPlay"),
       item(t("scanner:selection.rename"), "rename"),
       item(`${t("scanner:selection.healthCheck")}: ${t("scanner:selection.quickCheck")}`, "quickCheck"),
       item(`${t("scanner:selection.healthCheck")}: ${t("scanner:selection.thoroughCheck")}`, "thoroughCheck"),
@@ -1193,26 +1189,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       item(t("common:actions.remove"), "remove"),
       item(t("scanner:selection.trashFiles"), "trash", true),
     ];
-  };
-
-  const handleFixDirectPlay = async () => {
-    const paths = selectAllActive ? folders.map(f => f.path + "/") : Array.from(selectedPaths);
-    if (!paths.length) {
-      toast(t("scanner:toasts.noSelection"));
-      return;
-    }
-    if (!await confirm({ message: t("scanner:confirm.directPlay"), confirmLabel: t("scanner:selection.fixDirectPlay") })) return;
-    try {
-      const extra: Record<string, any> = { direct_play: true };
-      if (filter !== "all") extra.filter = filter;
-      const r = await addJobsFromScan(paths, 0, false, extra) as any;
-      setSelectAllActive(false);
-      setSelectedPaths(new Set());
-      if (r.added > 0) toast(t("scanner:toasts.directPlayQueued", { count: r.added }), "success");
-      else toast(t("scanner:toasts.directPlayNothing"));
-    } catch (e: any) {
-      toast(e?.message || String(e), "error");
-    }
   };
 
   const handleConfirmAdd = async (priority: number, overrideRules: boolean = false, encodingOverrides?: any, start: boolean = false) => {
@@ -1239,6 +1215,9 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         if (encodingOverrides.target_resolution) extra.target_resolution_override = encodingOverrides.target_resolution;
         if (encodingOverrides.force_reencode) extra.force_reencode = true;
         if (encodingOverrides.cleanup_only) extra.cleanup_only = true;
+        // Fix for direct play (v0.10.0): ticked or not, the dialog's choice
+        if (encodingOverrides.direct_play != null) extra.direct_play = encodingOverrides.direct_play;
+        if (encodingOverrides.direct_play) extra.direct_play_fixes = encodingOverrides.direct_play_fixes;
       }
       if (filter !== "all") extra.filter = filter;
       const result = await addJobsFromScan(estimatePaths, priority, overrideRules, Object.keys(extra).length > 0 ? extra : undefined) as any;
@@ -1752,10 +1731,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 <button className="btn btn-sm btn-pill btn-secondary" onClick={handleBulkRescan}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                   {t("common:actions.rescan")}
-                </button>
-                <button className="btn btn-sm btn-pill btn-secondary" title={t("scanner:selection.fixDirectPlayTitle")} onClick={handleFixDirectPlay}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="6 4 20 12 6 20 6 4"/></svg>
-                  {t("scanner:selection.fixDirectPlay")}
                 </button>
                 {/* v0.9.20: "Detect selected" is now the adaptive button above,
                     so the per-selection detect button here is removed. */}

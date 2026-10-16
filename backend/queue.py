@@ -160,8 +160,9 @@ def _utcnow() -> str:
 
 
 # "Fix for direct play when converting" (v0.10.0): every conversion job
-# carries the direct_play flag the Scanner's "Fix for direct play" sets
-# (backend/direct_play.py) — the fixes apply only where a file needs them.
+# carries the direct_play flag Add to Queue's "Fix for direct play" sets
+# (backend/direct_play.py), unless the dialog unticked it — the fixes apply
+# only where a file needs them.
 _DIRECT_PLAY_JOB_TYPES = ("convert", "combined")
 
 
@@ -369,8 +370,9 @@ class JobQueue:
                     j.get("originals_policy"),
                     j.get("originals_days"),
                     j.get("vmaf_min_score"),
-                    1 if j.get("direct_play") or (direct_play_default and j["job_type"] in _DIRECT_PLAY_JOB_TYPES)
-                    else None,
+                    # The fixes Add to Queue chose ("" = none), else the setting's
+                    (j["direct_play"] or None) if j.get("direct_play") is not None
+                    else 1 if direct_play_default and j["job_type"] in _DIRECT_PLAY_JOB_TYPES else None,
                 ))
                 inserted_mask.append(True)
 
@@ -2847,13 +2849,14 @@ class QueueWorker:
                 # original. Hi10P is the conversion's to fix; a remux can't.
                 if not should_followup and job.get("direct_play"):
                     try:
-                        from backend.direct_play import problems_for
+                        from backend.direct_play import job_fixes, problems_for
                         db_dp = await self._db()
                         try:
                             problems = (await problems_for(db_dp, [file_path])).get(file_path, [])
                         finally:
                             await db_dp.close()
-                        should_followup = any(p != "video" for p in problems)
+                        fixes = job_fixes(job)
+                        should_followup = any(p != "video" and p in fixes for p in problems)
                     except Exception as exc:
                         print(f"[WORKER] Direct-play check failed (non-fatal): {exc}", flush=True)
                 if should_followup:
@@ -3002,9 +3005,10 @@ class QueueWorker:
             _live = {**await get_live_encoding_settings(), **settings_overrides(job)}
             _image_subs_to_srt = bool(_live.get("image_subs_to_srt"))
             # "Fix for direct play" (v0.10.0): the remux to MKV is the fix
-            # for an old container, so it always runs; it may add a
+            # for an old container, so it always runs for one; it may add a
             # compatibility track.
-            _direct_play = bool(job.get("direct_play"))
+            from backend.direct_play import remux_fixes
+            _direct_play = remux_fixes(job)
             _ocr_planned = _image_subs_to_srt and bool(srt_plan(
                 raw_subs, set(keep_sub_indices) if keep_sub_indices is not None else None))
 
