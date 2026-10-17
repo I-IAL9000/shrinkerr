@@ -50,7 +50,11 @@
     "quickCheckDesc": "Header / metadata parse. Fast — a few seconds per file.",
     "thoroughCheck": "Thorough check",
     "thoroughCheckDesc": "Full frame-by-frame decode. Slow — roughly duration / 10 per file.",
-    "trashFiles": "Trash files"
+    "trashFiles": "Trash files",
+    "ignoreTitle": "Leave these files out of conversions and clean-ups, automatic ones too, until you un-ignore them. They stay in the list.",
+    "unignoreTitle": "Let these files be converted and cleaned up again",
+    "removeTitle": "Take these files off the list. Nothing is deleted from disk, and a later scan may list them again.",
+    "trashTitle": "Move these files to the trash and take them off the list. They can be restored from the trash, outside Shrinkerr, until it's emptied."
   },
   "arr": {
     "menu": "*arr actions",

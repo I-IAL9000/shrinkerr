@@ -180,6 +180,11 @@ export const getSelectionFiles = (paths: string[], filter: string, selectAll: bo
   apiFetch<{ id: number; file_path: string; ignored: boolean }[]>("/scan/selected-files", {
     method: "POST", body: JSON.stringify({ paths, filter, select_all: selectAll }),
   });
+// How many of them, and how many are ignored (the selection bar's Un-ignore).
+export const getSelectionSummary = (paths: string[], filter: string, selectAll: boolean) =>
+  apiFetch<{ files: number; ignored: number }>("/scan/selected-files", {
+    method: "POST", body: JSON.stringify({ paths, filter, select_all: selectAll, summary: true }),
+  });
 export const deleteFileFromDisk = (filePath: string) =>
   apiFetch<{ status: string; file_deleted: boolean }>("/scan/delete-file", { method: "POST", body: JSON.stringify({ file_path: filePath }) });
 export const importSettings = (data: any) =>

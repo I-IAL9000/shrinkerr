@@ -47,3 +47,12 @@ async def test_select_all_is_the_filtered_list(library):
     # (ignored Beta doesn't count as needing conversion)
     assert set(await _files(select_all=True, filter="needs_conversion")) == {FILES[0], FILES[3]}
     assert set(await _files(select_all=True)) == set(FILES)
+
+
+@pytest.mark.asyncio
+async def test_the_bar_asks_how_many_are_ignored(library):
+    """The bar offers Un-ignore from it: an ignored title the page hadn't
+    opened showed only Ignore."""
+    from backend.routes.scan import SelectedFilesRequest, selected_files
+    assert await selected_files(SelectedFilesRequest(paths=["/m/Alpha (2001)/", "/m/Beta (2002)/"], summary=True)) == {
+        "files": 3, "ignored": 1}

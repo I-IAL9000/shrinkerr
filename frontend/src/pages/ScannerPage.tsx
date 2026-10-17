@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from "react";
 import { useTranslation, Trans } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
-import { startQueue, getScanTree, getScanStats, getFilterCounts, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, getPosterPrefetchStatus, startPosterPrefetch, queueHealthChecks, arrActionBulk, getSelectionFiles, type DetectBatchProgress, type FacetLists } from "../api";
+import { startQueue, getScanTree, getScanStats, getFilterCounts, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, getPosterPrefetchStatus, startPosterPrefetch, queueHealthChecks, arrActionBulk, getSelectionFiles, getSelectionSummary, type DetectBatchProgress, type FacetLists } from "../api";
 import { fmtNum } from "../fmt";
 import { naturalCompare } from "../utils/naturalCompare";
 import StatsCards from "../components/StatsCards";
@@ -645,6 +645,21 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     if (!files.length) toast(t("scanner:toasts.noSelection"));
     return files;
   };
+
+  // How many of the selection's files are ignored, from the server (v0.10.0):
+  // the bar offers Un-ignore from it — an ignored title the page hadn't
+  // opened showed only Ignore. Until it answers, the loaded files decide.
+  const [selectionSummary, setSelectionSummary] = useState<{ files: number; ignored: number } | null>(null);
+  useEffect(() => {
+    setSelectionSummary(null);
+    if (selectedPaths.size === 0 && !selectAllActive) return;
+    let current = true;
+    const timer = setTimeout(() => {
+      getSelectionSummary(selectAllActive ? [] : Array.from(selectedPaths), filter, selectAllActive)
+        .then(s => { if (current) setSelectionSummary(s); }).catch(() => {});
+    }, 300);
+    return () => { current = false; clearTimeout(timer); };
+  }, [selectedPaths, selectAllActive, filter]);
 
   const handleBulkDelete = async () => {
     const selected = await fetchSelectionFiles();
@@ -1727,8 +1742,10 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             )}
             {selectedCount > 0 && (() => {
               const selectedFiles = getSelectedFiles();
-              const allSelectedIgnored = selectedFiles.length > 0 && selectedFiles.every(f => f.ignored);
-              const someSelectedIgnored = selectedFiles.some(f => f.ignored);
+              const allSelectedIgnored = selectionSummary
+                ? selectionSummary.files > 0 && selectionSummary.ignored === selectionSummary.files
+                : selectedFiles.length > 0 && selectedFiles.every(f => f.ignored);
+              const someSelectedIgnored = selectionSummary ? selectionSummary.ignored > 0 : selectedFiles.some(f => f.ignored);
               return <>
                 <span style={{ fontSize: 11, color: "var(--accent-text)", fontWeight: 600 }}>{t("scanner:selection.selected", { count: selectedCount })}</span>
                 <span style={{ width: 1, height: 14, background: "var(--border)" }} />
@@ -1890,30 +1907,30 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                   )}
                 </div>
                 {allSelectedIgnored ? (
-                  <button className="btn btn-sm btn-pill btn-secondary" onClick={handleBulkUnignore}>
+                  <button className="btn btn-sm btn-pill btn-secondary" title={t("scanner:selection.unignoreTitle")} onClick={handleBulkUnignore}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                     {t("common:actions.unignore")}
                   </button>
                 ) : (
                   <>
-                    <button className="btn btn-sm btn-pill btn-secondary" onClick={handleBulkIgnore}>
+                    <button className="btn btn-sm btn-pill btn-secondary" title={t("scanner:selection.ignoreTitle")} onClick={handleBulkIgnore}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
                       {t("common:actions.ignore")}
                     </button>
                     {someSelectedIgnored && (
-                      <button className="btn btn-sm btn-pill btn-secondary" onClick={handleBulkUnignore}>
+                      <button className="btn btn-sm btn-pill btn-secondary" title={t("scanner:selection.unignoreTitle")} onClick={handleBulkUnignore}>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                         {t("common:actions.unignore")}
                       </button>
                     )}
                   </>
                 )}
-                <button className="btn btn-sm btn-pill btn-secondary" onClick={handleBulkRemove}>
+                <button className="btn btn-sm btn-pill btn-secondary" title={t("scanner:selection.removeTitle")} onClick={handleBulkRemove}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                   {t("common:actions.remove")}
                 </button>
                 <span style={{ width: 1, height: 14, background: "var(--border)" }} />
-                <button className="btn btn-sm btn-pill btn-danger btn-secondary" onClick={handleBulkDelete}>
+                <button className="btn btn-sm btn-pill btn-danger btn-secondary" title={t("scanner:selection.trashTitle")} onClick={handleBulkDelete}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                   {t("scanner:selection.trashFiles")}
                 </button>

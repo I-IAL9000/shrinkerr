@@ -580,11 +580,11 @@ const FileRow = memo(function FileRow({
           {!file.ignored && onIgnoreFile && (
             <button onClick={(e) => { e.stopPropagation(); onIgnoreFile(file.file_path); }}
               style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, display: "inline-flex", alignItems: "center", borderRadius: 4, fontSize: 14 }}
-              title={t("library:tree.ignoreFile")} aria-label={t("library:tree.ignoreFile")}>&#x2298;</button>
+              title={t("library:tree.ignoreFileTitle")} aria-label={t("library:tree.ignoreFile")}>&#x2298;</button>
           )}
           <button onClick={(e) => { e.stopPropagation(); onRemoveFile(file.file_path); }}
             style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, display: "inline-flex", alignItems: "center", borderRadius: 4, fontSize: 16 }}
-            title={t("library:tree.removeFromList")} aria-label={t("library:tree.removeFromList")}>&times;</button>
+            title={t("library:tree.removeFromListTitle")} aria-label={t("library:tree.removeFromList")}>&times;</button>
           {onDeleteFile && (
             <button
               onClick={async (e) => {
@@ -596,7 +596,7 @@ const FileRow = memo(function FileRow({
               style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", padding: 4, display: "inline-flex", alignItems: "center", borderRadius: 4, opacity: 0.6 }}
               onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
               onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.6")}
-              title={t("common:actions.moveToTrash")}
+              title={t("library:tree.trashFileTitle")}
               aria-label={t("common:actions.moveToTrash")}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

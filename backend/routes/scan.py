@@ -3471,10 +3471,12 @@ class SelectedFilesRequest(BaseModel):
     paths: list[str] = []
     filter: str = "all"
     select_all: bool = False
+    # Only how many files, and how many are ignored (the bar's Un-ignore)
+    summary: bool = False
 
 
 @router.post("/selected-files")
-async def selected_files(req: SelectedFilesRequest) -> list[dict]:
+async def selected_files(req: SelectedFilesRequest) -> list[dict] | dict:
     """The files a Scanner selection stands for (v0.10.0): files picked on
     their own, the files under selected titles (folder paths, through the
     filter), or the whole filtered list. Trash, Remove and Un-ignore read
@@ -3501,7 +3503,10 @@ async def selected_files(req: SelectedFilesRequest) -> list[dict]:
                 found.update({r["file_path"]: r["id"] for r in await cur.fetchall()})
     finally:
         await db.close()
-    return [{"id": found[p], "file_path": p, "ignored": is_ignored_path(p, ctx)} for p in paths if p in found]
+    files = [{"id": found[p], "file_path": p, "ignored": is_ignored_path(p, ctx)} for p in paths if p in found]
+    if req.summary:
+        return {"files": len(files), "ignored": sum(f["ignored"] for f in files)}
+    return files
 
 
 class DeleteFileRequest(BaseModel):
