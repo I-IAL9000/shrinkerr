@@ -53,8 +53,10 @@ export default function PlannerModal({ onClose, onQueued }: { onClose: () => voi
     }
   };
 
-  const inputStyle = { padding: "6px 8px", fontSize: 13, background: "var(--bg-primary)", color: "var(--text-primary)",
-    border: "1px solid var(--border)", borderRadius: 4 };
+  // backgroundColor, not background: the shorthand removed the dropdown arrow
+  // (theme.css draws it as a background image). One height for every field.
+  const inputStyle = { padding: "6px 8px", fontSize: 13, backgroundColor: "var(--bg-primary)", color: "var(--text-primary)",
+    border: "1px solid var(--border)", borderRadius: 4, height: 34, boxSizing: "border-box" as const };
   const label = { fontSize: 11, color: "var(--text-muted)" };
   return (
     <div onClick={busy ? undefined : onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000,
@@ -81,7 +83,7 @@ export default function PlannerModal({ onClose, onQueued }: { onClose: () => voi
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <label style={label}>{t("queue:planner.from")}</label>
-            <select value={viewId} aria-label={t("queue:planner.from")} onChange={e => { setViewId(e.target.value); setPlan(null); }} style={{ ...inputStyle, width: 180 }}>
+            <select value={viewId} aria-label={t("queue:planner.from")} onChange={e => { setViewId(e.target.value); setPlan(null); }} style={{ ...inputStyle, minWidth: 180, maxWidth: "100%" }}>
               <option value="">{t("queue:planner.everything")}</option>
               {views.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
             </select>
