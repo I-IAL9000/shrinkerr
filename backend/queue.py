@@ -2129,8 +2129,39 @@ class QueueWorker:
             total_saved=stats["total_space_saved"],
         )
 
+        # A thorough check decodes the whole file, minutes for a film: its
+        # progress, as a conversion's — the queue showed a bare spinner the
+        # whole time (v0.10.0). The percentage needs the file's duration.
+        duration = 0.0
         try:
-            result = await run_check(file_path, mode=mode)
+            db = await self._db()
+            try:
+                async with db.execute("SELECT duration FROM scan_results WHERE file_path = ?", (file_path,)) as cur:
+                    row = await cur.fetchone()
+                duration = float(row[0] or 0) if row else 0.0
+            finally:
+                await db.close()
+        except Exception:
+            pass
+        started = time.monotonic()
+        last_write = [0.0]
+
+        async def progress(pct: float) -> None:
+            elapsed = time.monotonic() - started
+            eta = round(elapsed * (100 - pct) / pct) if pct > 0 else None
+            if time.monotonic() - last_write[0] >= _PROGRESS_DB_WRITE_INTERVAL:
+                await self._write_progress(job_id, pct, eta=eta)
+                last_write[0] = time.monotonic()
+            await ws_manager.send_job_progress(
+                job_id=job_id, file_name=file_name, progress=pct, fps=None, eta=eta,
+                step=f"health-check ({mode})",
+                step_key="steps.healthCheckMode", step_params={"mode": mode},
+                jobs_completed=stats["completed"], jobs_total=stats["total_jobs"],
+                total_saved=stats["total_space_saved"],
+            )
+
+        try:
+            result = await run_check(file_path, mode=mode, progress_cb=progress, duration_seconds_hint=duration)
         except Exception as exc:
             await self.queue.update_status(job_id, "failed", error_log=f"Health check failed: {exc}",
                                            error_key="errors.healthCheckFailed", error_params={"error": str(exc)})
