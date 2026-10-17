@@ -319,13 +319,9 @@
     "arrDone_other": "{{name}}: {{count}} archivos {{verb}}",
     "arrPartial": "{{succeeded}} {{verb}}, {{failed}} con error (revisa los registros)",
     "arrFailed": "{{name}} falló: {{error}}",
-    "corruptCleared_one": "{{count}} marca de corrupto borrada",
-    "corruptCleared_many": "{{count}} marcas de corrupto borradas",
-    "corruptCleared_other": "{{count}} marcas de corrupto borradas",
-    "corruptUnignored_one": ", {{count}} ya no se ignora",
-    "corruptUnignored_many": ", {{count}} ya no se ignoran",
-    "corruptUnignored_other": ", {{count}} ya no se ignoran",
-    "resetFailed": "Error al restablecer: {{error}}",
+    "recheckQueued_one": "{{count}} comprobación en cola",
+    "recheckQueued_many": "{{count}} comprobaciones en cola",
+    "recheckQueued_other": "{{count}} comprobaciones en cola",
     "remuxQueued_one": "{{count}} trabajo de remux en cola para aplicar los idiomas detectados",
     "remuxQueued_many": "{{count}} trabajos de remux en cola para aplicar los idiomas detectados",
     "remuxQueued_other": "{{count}} trabajos de remux en cola para aplicar los idiomas detectados",
@@ -385,8 +381,8 @@
     "missing_many": "¿Buscar episodios faltantes en las series incluidas en tu selección?\n\nShrinkerr identificará las series a partir de {{count}} rutas y pedirá a Sonarr que busque los episodios monitorizados que falten.",
     "missing_other": "¿Buscar episodios faltantes en las series incluidas en tu selección?\n\nShrinkerr identificará las series a partir de {{count}} rutas y pedirá a Sonarr que busque los episodios monitorizados que falten.",
     "missingLabel": "Buscar faltantes",
-    "resetCorrupt": "¿Borrar la marca de «corrupto» de todos los archivos marcados así y dejar de ignorarlos? Volverán a considerarse correctos hasta la próxima comprobación de estado.",
-    "resetCorruptLabel": "Borrar marcas de corrupto",
+    "recheckCorrupt": "¿Volver a comprobar todos los archivos de esta vista? Cada uno recibe el mismo tipo de comprobación que lo marcó; la exhaustiva decodifica todo el archivo, así que muchas pueden tardar.",
+    "recheckCorruptLabel": "Volver a comprobar",
     "remux_one": "Se detectó el idioma de {{count}} título, pero su formato (p. ej., AVI) no puede guardar la etiqueta directamente.\n\n¿Hacer remux a MKV ahora para aplicarlo? Es una copia rápida de flujos: sin recodificar, sin pérdida de calidad y sin aumento de tamaño.",
     "remux_many": "Se detectó el idioma de {{count}} títulos, pero su formato (p. ej., AVI) no puede guardar la etiqueta directamente.\n\n¿Hacer remux a MKV ahora para aplicarlo? Es una copia rápida de flujos: sin recodificar, sin pérdida de calidad y sin aumento de tamaño.",
     "remux_other": "Se detectó el idioma de {{count}} títulos, pero su formato (p. ej., AVI) no puede guardar la etiqueta directamente.\n\n¿Hacer remux a MKV ahora para aplicarlo? Es una copia rápida de flujos: sin recodificar, sin pérdida de calidad y sin aumento de tamaño.",
@@ -409,8 +405,8 @@
     "addingToQueueDetail": "Resolviendo reglas, eliminando duplicados e insertando trabajos."
   },
   "corruptBanner": {
-    "text": "Algunos archivos pueden estar marcados como corruptos por advertencias inofensivas de ffmpeg (p. ej. «number of reference frames exceeds max»). Borra las marcas y deja que se vuelvan a comprobar.",
-    "clearAll": "Borrar todas las marcas de corrupto",
+    "text": "Las marcas de comprobaciones anteriores pueden ser erróneas: contaban algunas advertencias inofensivas de ffmpeg como daños. Vuelve a comprobar estos archivos para asegurarte.",
+    "recheck": "Volver a comprobar todo",
     "replace": "Reemplazar con Sonarr/Radarr…"
   },
   "advBanner": {

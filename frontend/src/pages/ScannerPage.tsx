@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from "react";
 import { useTranslation, Trans } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
-import { startQueue, getScanTree, getScanStats, getFilterCounts, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, getPosterPrefetchStatus, startPosterPrefetch, queueHealthChecks, arrActionBulk, resetHealthStatus, type DetectBatchProgress, type FacetLists } from "../api";
+import { startQueue, getScanTree, getScanStats, getFilterCounts, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, getPosterPrefetchStatus, startPosterPrefetch, queueHealthChecks, arrActionBulk, type DetectBatchProgress, type FacetLists } from "../api";
 import { fmtNum } from "../fmt";
 import { naturalCompare } from "../utils/naturalCompare";
 import StatsCards from "../components/StatsCards";
@@ -870,17 +870,21 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     }
   };
 
-  const handleResetCorruptFlags = async () => {
+  // The Corrupt filter's Re-check all (v0.10.0): every file in the view gets
+  // the kind of check that flagged it again — older checks counted some
+  // harmless ffmpeg warnings as damage. ("Clear all corrupt flags" erased
+  // real findings too.)
+  const handleRecheckCorrupt = async () => {
     if (!await confirm({
-      message: t("scanner:confirm.resetCorrupt"),
-      confirmLabel: t("scanner:confirm.resetCorruptLabel"),
+      message: t("scanner:confirm.recheckCorrupt"),
+      confirmLabel: t("scanner:confirm.recheckCorruptLabel"),
     })) return;
     try {
-      const res = await resetHealthStatus({ reset_all_corrupt: true, unignore: true });
-      toast(t("scanner:toasts.corruptCleared", { count: res.reset }) + (res.unignored ? t("scanner:toasts.corruptUnignored", { count: res.unignored }) : ""), "success");
-      loadTree();
+      const res = await queueHealthChecks([], "same", filter, true);
+      if (res.added > 0) toast(t("scanner:toasts.recheckQueued", { count: res.added }), "success");
+      else toast(t("scanner:toasts.healthNothingToCheck"));
     } catch (err: any) {
-      toast(t("scanner:toasts.resetFailed", { error: err.message || t("scanner:toasts.unknownError") }), "error");
+      toast(t("scanner:toasts.healthQueueFailed", { error: err.message || t("scanner:toasts.unknownError") }), "error");
     }
   };
 
@@ -1676,9 +1680,9 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               </button>
               <button
                 className="btn btn-xs btn-secondary" style={{ whiteSpace: "nowrap" }}
-                onClick={handleResetCorruptFlags}
+                onClick={handleRecheckCorrupt}
               >
-                {t("scanner:corruptBanner.clearAll")}
+                {t("scanner:corruptBanner.recheck")}
               </button>
             </div>
           )}

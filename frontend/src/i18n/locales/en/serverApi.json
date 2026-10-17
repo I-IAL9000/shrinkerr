@@ -8,7 +8,7 @@
     "cannotRetryStatus": "Cannot retry job with status '{{status}}'",
     "retryAlreadyReplaced": "This job's output already replaced the original; queue a new job instead",
     "cannotUndoStatus": "Cannot undo job with status '{{status}}'",
-    "invalidHealthCheckMode": "mode must be 'quick' or 'thorough'",
+    "invalidHealthCheckMode": "mode must be 'quick', 'thorough' or 'same'",
     "invalidPosition": "position must be top, bottom, up, or down",
     "noFilesInFolder": "No files found in folder",
     "noFilesOrResetAll": "Provide file_paths or set reset_all_corrupt=true",

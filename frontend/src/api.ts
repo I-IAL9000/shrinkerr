@@ -256,19 +256,11 @@ export const advancedSearch = (predicates: SearchPredicate[], matchMode: "all" |
     body: JSON.stringify({ predicates, match_mode: matchMode }),
   });
 
-export const queueHealthChecks = (filePaths: string[], mode: "quick" | "thorough" = "quick", filter?: string, selectAll?: boolean) =>
+// "same": each file's last kind of check (the Corrupt filter's Re-check all)
+export const queueHealthChecks = (filePaths: string[], mode: "quick" | "thorough" | "same" = "quick", filter?: string, selectAll?: boolean) =>
   apiFetch<{ added: number; job_ids: number[]; mode: string }>("/jobs/health-check", {
     method: "POST",
     body: JSON.stringify({ file_paths: filePaths, mode, filter: filter || "all", select_all: !!selectAll }),
-  });
-export const resetHealthStatus = (opts: { file_paths?: string[]; reset_all_corrupt?: boolean; unignore?: boolean } = {}) =>
-  apiFetch<{ reset: number; unignored: number; targeted?: number }>("/jobs/health-check/reset", {
-    method: "POST",
-    body: JSON.stringify({
-      file_paths: opts.file_paths || [],
-      reset_all_corrupt: opts.reset_all_corrupt || false,
-      unignore: opts.unignore !== false,
-    }),
   });
 export const clearPendingHealthChecks = () =>
   apiFetch<{ deleted: number }>("/jobs/health-check/clear-pending", { method: "POST" });

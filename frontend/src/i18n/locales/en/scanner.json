@@ -301,11 +301,8 @@
     "arrDone_other": "{{name}}: {{count}} files {{verb}}",
     "arrPartial": "{{succeeded}} {{verb}}, {{failed}} failed (check logs)",
     "arrFailed": "{{name}} failed: {{error}}",
-    "corruptCleared_one": "Cleared {{count}} corrupt flag",
-    "corruptCleared_other": "Cleared {{count}} corrupt flags",
-    "corruptUnignored_one": ", {{count}} no longer ignored",
-    "corruptUnignored_other": ", {{count}} no longer ignored",
-    "resetFailed": "Failed to reset: {{error}}",
+    "recheckQueued_one": "Queued {{count}} re-check",
+    "recheckQueued_other": "Queued {{count}} re-checks",
     "remuxQueued_one": "Queued {{count}} remux job to apply detected languages",
     "remuxQueued_other": "Queued {{count}} remux jobs to apply detected languages",
     "remuxFailed": "Failed to queue remux: {{error}}",
@@ -353,8 +350,8 @@
     "missing_one": "Search for missing episodes across the series covered by your selection?\n\nShrinkerr will resolve unique series from {{count}} path and ask Sonarr to search for any missing monitored episodes.",
     "missing_other": "Search for missing episodes across the series covered by your selection?\n\nShrinkerr will resolve unique series from {{count}} paths and ask Sonarr to search for any missing monitored episodes.",
     "missingLabel": "Search missing",
-    "resetCorrupt": "Clear the 'corrupt' flag on every file currently marked corrupt and un-ignore them? They'll go back to being considered healthy until the next health check runs.",
-    "resetCorruptLabel": "Clear corrupt flags",
+    "recheckCorrupt": "Re-check every file in this view? Each gets the same kind of check that flagged it — a thorough check decodes the whole file, so many of them can take a while.",
+    "recheckCorruptLabel": "Re-check",
     "remux_one": "{{count}} title had a language detected, but its format (e.g. AVI) can't store the tag in place.\n\nRemux it to MKV now to apply it? This is a fast stream-copy — no re-encode, no quality loss, no size increase.",
     "remux_other": "{{count}} titles had a language detected, but their format (e.g. AVI) can't store the tag in place.\n\nRemux them to MKV now to apply it? This is a fast stream-copy — no re-encode, no quality loss, no size increase.",
     "remuxLabel": "Remux {{n}} to MKV",
@@ -373,8 +370,8 @@
     "addingToQueueDetail": "Resolving rules, deduping, inserting jobs."
   },
   "corruptBanner": {
-    "text": "Some files may be flagged corrupt due to benign ffmpeg warnings (e.g. \"number of reference frames exceeds max\"). Clear the flags and let them re-check.",
-    "clearAll": "Clear all corrupt flags",
+    "text": "Flags from older health checks can be wrong: they counted some harmless ffmpeg warnings as damage. Re-check these files to be sure.",
+    "recheck": "Re-check all",
     "replace": "Replace via Sonarr/Radarr…"
   },
   "advBanner": {

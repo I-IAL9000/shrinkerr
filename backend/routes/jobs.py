@@ -1056,7 +1056,9 @@ async def bulk_ignore(payload: BulkIgnoreRequest):
 
 class HealthCheckRequest(BaseModel):
     file_paths: list[str] = []
-    mode: str = "quick"  # "quick" | "thorough"
+    # "quick" | "thorough" | "same": each file's last kind of check (quick
+    # without one) — the Corrupt filter's Re-check all (v0.10.0)
+    mode: str = "quick"
     select_all: bool = False
     filter: str = "all"
 
@@ -1068,8 +1070,9 @@ async def queue_health_checks(payload: HealthCheckRequest):
         raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
 
     mode = payload.mode.lower()
-    if mode not in ("quick", "thorough"):
-        raise ApiError(status_code=400, detail="mode must be 'quick' or 'thorough'", code="jobs.invalidHealthCheckMode")
+    if mode not in ("quick", "thorough", "same"):
+        raise ApiError(status_code=400, detail="mode must be 'quick', 'thorough' or 'same'",
+                       code="jobs.invalidHealthCheckMode")
 
     file_paths = list(payload.file_paths)
 
@@ -1086,12 +1089,22 @@ async def queue_health_checks(payload: HealthCheckRequest):
     if not file_paths:
         return {"added": 0, "job_ids": []}
 
+    modes = {fp: mode for fp in file_paths}
+    if mode == "same":
+        db = await connect_db()
+        try:
+            last = await _scan_rows_for(db, file_paths, "file_path, health_check_type")
+        finally:
+            await db.close()
+        modes = {fp: "thorough" if (last.get(fp) or {}).get("health_check_type") == "thorough" else "quick"
+                 for fp in file_paths}
+
     # Build bulk-insert payload. Store mode in the 'encoder' column (re-uses existing schema).
     jobs_to_insert = [
         {
             "file_path": fp,
             "job_type": "health_check",
-            "encoder": mode,
+            "encoder": modes[fp],
             "priority": 0,
         }
         for fp in file_paths
