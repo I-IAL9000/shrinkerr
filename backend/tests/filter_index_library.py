@@ -112,6 +112,7 @@ async def seed(db_path: str) -> None:
             ("audio_tracks_json = ?, has_lossless_audio_flag = 1", (atmos,), pick(18, n=3)),
             ("audio_tracks_json = ?, subtitle_tracks_json = '[]'", (french_only,), pick(19, n=3)),
             ("subtitle_tracks_json = ?", (subs,), pick(20, n=3)),
+            ("audio_tracks_json = '[]'", (), pick(21, n=2)),  # No audio
             ("removed_from_list = 1", (), pick(9, step=41, n=3)),
         ]
         movie = path[ids[21]].rsplit("/", 1)[0]

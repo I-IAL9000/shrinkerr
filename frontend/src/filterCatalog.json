@@ -59,6 +59,7 @@
       {"key": "achan", "labelKey": "scanner:filterBar.sections.channels", "facet": "achan"},
       {"key": "audio", "labelKey": "scanner:filterBar.sections.audio", "options": [
         {"key": "audio_cleanup", "labelKey": "scanner:filters.audioCleanup"},
+        {"key": "no_audio", "labelKey": "scanner:filters.noAudio"},
         {"key": "lossless_audio", "labelKey": "scanner:filters.losslessAudio"},
         {"key": "lossy_audio", "labelKey": "scanner:filters.lossyAudio"},
         {"key": "object_audio", "label": "Atmos / DTS:X"},

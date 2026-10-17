@@ -406,6 +406,20 @@ async def test_months_since_watched_in_advanced_search(lib):
 
 
 @pytest.mark.asyncio
+async def test_no_audio(lib):
+    """v0.10.0: files read with no audio track (a broken download, mostly);
+    one that couldn't be read, or isn't read yet (NULL), isn't counted."""
+    import aiosqlite
+    async with aiosqlite.connect(lib) as db:
+        await db.execute("UPDATE scan_results SET audio_tracks_json = '[]' WHERE file_path IN (?, ?)",
+                         (PATH["clip"], PATH["broken"]))
+        await db.commit()
+    assert ROWS["broken"]["probe_status"] == "error"
+    assert await names("no_audio") == {"clip"}
+    assert await names("!no_audio") == set(ROWS) - {"clip"}
+
+
+@pytest.mark.asyncio
 async def test_no_subtitles(lib):
     """v0.10.0: files read, with no subtitle track and none beside them;
     one that couldn't be read, or isn't read yet (NULL), isn't counted."""

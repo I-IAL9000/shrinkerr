@@ -113,6 +113,7 @@
     "sizeMedium": "Mediano (5-10 GB)",
     "sizeLarge": "Grande (>10 GB)",
     "audioCleanup": "Limpieza de audio",
+    "noAudio": "Sin audio",
     "losslessAudio": "Audio sin pérdida",
     "lossyAudio": "Audio con pérdida",
     "dubbed": "Doblado",

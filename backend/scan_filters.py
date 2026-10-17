@@ -538,6 +538,10 @@ _FILTER_LIST = [
     # Audio
     Filter("audio_cleanup", "audio",
            sql="(COALESCE(has_removable_tracks_flag, 0) = 1 OR COALESCE(has_und_tracks_flag, 0) = 1)"),
+    # No audio track at all (v0.10.0), a broken download mostly; a file that
+    # couldn't be read tells nothing about its tracks.
+    Filter("no_audio", "audio", sql="json_valid(audio_tracks_json) AND json_array_length(audio_tracks_json) = 0 "
+           "AND COALESCE(probe_status, 'ok') = 'ok'"),
     Filter("lossless_audio", "audio", sql="COALESCE(has_lossless_audio_flag, 0) = 1"),
     Filter("lossy_audio", "audio", sql="COALESCE(has_lossless_audio_flag, 0) = 0"),
     Filter("object_audio", "audio", sql=_tracks("audio_tracks_json",
