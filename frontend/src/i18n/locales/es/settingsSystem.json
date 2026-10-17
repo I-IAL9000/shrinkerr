@@ -122,6 +122,7 @@
     "connection": {
       "local": "Este navegador llega a Shrinkerr desde {{address}}, que cuenta como dirección local.",
       "notLocal": "Este navegador llega a Shrinkerr desde {{address}}, que no es una dirección local.",
+      "relayed": "Este navegador llega a Shrinkerr desde {{address}}, la puerta de enlace de Docker: algo en el servidor reenvió la petición (Tailscale, el proxy de Docker), así que no cuenta como local.",
       "proxied": "Este navegador llega a Shrinkerr a través de un proxy ({{address}}), así que no cuenta como local."
     }
   },

@@ -66,7 +66,7 @@
     "required": "Who signs in",
     "requiredEnabled": "Everyone",
     "requiredLocalDisabled": "Not from local addresses",
-    "localHelp": "Local addresses: this computer and your home network (192.168.x.x, 10.x.x.x, 172.16–31.x.x). Requests through a reverse proxy always sign in.",
+    "localHelp": "Local addresses: your home network (192.168.x.x, 10.x.x.x, 172.16–31.x.x). Requests passed on by something on the server (a reverse proxy, Tailscale) always sign in.",
     "passwordPlaceholder": "Password (8 characters or more)",
     "confirm": "Password again",
     "mismatch": "The passwords don't match.",

@@ -50,11 +50,15 @@ the user; there's no multi-tenant model.
     A request that carries `X-Forwarded-For`, `X-Real-IP` or `Forwarded`
     came through a proxy and always signs in, so a reverse proxy on the
     same host doesn't make internet traffic "local". Tailscale and other
-    CGNAT addresses (100.64.0.0/10) aren't local. When Docker rewrites
-    the client address (Docker Desktop, or a userland proxy), every
-    request can look like it comes from a local address — so choose
-    **Everyone** if Shrinkerr's port can be reached from outside your
-    network.
+    CGNAT addresses (100.64.0.0/10) aren't local, and neither is Docker's
+    gateway (the host's side of the container's network): a request from
+    it was passed on by something on the host, such as Tailscale or
+    Docker's userland proxy, and could have come from anywhere. Under
+    *Who signs in*, Settings shows the address Shrinkerr sees for your
+    browser and whether it counts as local. If Docker rewrites addresses
+    some other way (Docker Desktop), every request can still look local —
+    so choose **Everyone** if Shrinkerr's port can be reached from outside
+    your network.
   - **External**: your reverse proxy (Authelia, Authentik, …) signs
     people in and Shrinkerr asks nobody. Use it only when Shrinkerr can't
     be reached except through the proxy.

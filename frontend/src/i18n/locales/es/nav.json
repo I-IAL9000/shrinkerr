@@ -67,7 +67,7 @@
     "required": "Quién inicia sesión",
     "requiredEnabled": "Todos",
     "requiredLocalDisabled": "No desde direcciones locales",
-    "localHelp": "Direcciones locales: este equipo y tu red doméstica (192.168.x.x, 10.x.x.x, 172.16–31.x.x). Las peticiones a través de un proxy inverso siempre inician sesión.",
+    "localHelp": "Direcciones locales: tu red doméstica (192.168.x.x, 10.x.x.x, 172.16–31.x.x). Las peticiones que reenvía algo en el servidor (un proxy inverso, Tailscale) siempre inician sesión.",
     "passwordPlaceholder": "Contraseña (8 caracteres o más)",
     "confirm": "Repite la contraseña",
     "mismatch": "Las contraseñas no coinciden.",

@@ -11,6 +11,14 @@ import pytest_asyncio
 from backend import auth_policy
 
 LOCAL, REMOTE = ("192.168.1.5", 50000), ("8.8.4.4", 50000)
+GATEWAY = ("172.24.0.1", 50000)
+
+
+@pytest.fixture(autouse=True)
+def docker_gateway(monkeypatch):
+    """Pin Docker's gateway: the machine running the tests has its own."""
+    import ipaddress
+    monkeypatch.setattr(auth_policy, "_gateway", lambda: ipaddress.ip_address(GATEWAY[0]))
 
 
 def _req(host, **headers):
@@ -24,6 +32,20 @@ def test_local_addresses():
         assert not auth_policy.is_local(_req(host)), host
     for header in ("x-forwarded-for", "x-real-ip", "forwarded"):  # through a proxy: not local
         assert not auth_policy.is_local(_req("127.0.0.1", **{header: "8.8.4.4"})), header
+
+
+def test_dockers_gateway_isnt_local(tmp_path):
+    """Something on the host passed the request on (Tailscale, Docker's
+    userland proxy): it shows as the gateway, a private address, but came
+    from anywhere. Tailscale and mobile-data visits got in without signing in."""
+    assert not auth_policy.is_local(_req("172.24.0.1"))
+    assert auth_policy.is_local(_req("172.24.0.5")) and auth_policy.is_local(_req("::ffff:192.168.1.2"))
+    table = tmp_path / "route"
+    table.write_text("Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n"
+                     "eth0\t000018AC\t00000000\t0001\t0\t0\t0\t0000FFFF\t0\t0\t0\n"
+                     "eth0\t00000000\t010018AC\t0003\t0\t0\t0\t00000000\t0\t0\t0\n")
+    assert str(auth_policy._read_gateway(str(table))) == "172.24.0.1"
+    assert auth_policy._read_gateway(str(tmp_path / "none")) is None  # not Linux, or no default route
 
 
 def test_the_method_and_who_skips_sign_in():
@@ -185,10 +207,15 @@ async def test_the_address_shrinkerr_sees(app, test_db):
     await _set(test_db, app, auth_method="forms", auth_required="local_disabled", auth_username="me",
                auth_password_hash=_hash_password("long enough"))
     async with _client(app, LOCAL) as c:
-        assert (await c.get("/api/auth/connection")).json() == {"address": "192.168.1.5", "proxied": False, "local": True}
+        assert (await c.get("/api/auth/connection")).json() == {"address": "192.168.1.5", "proxied": False, "relayed": False, "local": True}
         assert (await c.get("/api/auth/connection", headers={"X-Forwarded-For": "8.8.4.4"})).status_code == 401
     async with _client(app, REMOTE) as c:
         assert (await c.get("/api/auth/connection")).status_code == 401  # signed out: nothing
         assert (await c.post("/api/auth/login", json={"username": "me", "password": "long enough"})).status_code == 200
-        assert (await c.get("/api/auth/connection")).json() == {"address": "8.8.4.4", "proxied": False, "local": False}
+        assert (await c.get("/api/auth/connection")).json() == {"address": "8.8.4.4", "proxied": False, "relayed": False, "local": False}
         assert (await c.get("/api/auth/connection", headers={"X-Real-IP": "8.8.4.4"})).json()["proxied"] is True
+    async with _client(app, GATEWAY) as c:  # passed on by the host: signs in, and says why
+        assert (await c.get("/api/auth/connection")).status_code == 401
+        assert (await c.post("/api/auth/login", json={"username": "me", "password": "long enough"})).status_code == 200
+        assert (await c.get("/api/auth/connection")).json() == {
+            "address": "172.24.0.1", "proxied": False, "relayed": True, "local": False}

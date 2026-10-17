@@ -348,7 +348,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
   // Authentication: how this browser got in (Sign out only means something
   // after a password sign-in) and the address the server sees.
   const [signedInBy, setSignedInBy] = useState<string | null>(null);
-  const [connection, setConnection] = useState<{ address: string; proxied: boolean; local: boolean } | null>(null);
+  const [connection, setConnection] = useState<{ address: string; proxied: boolean; relayed: boolean; local: boolean } | null>(null);
 
   // Backup state
   const [backupList, setBackupList] = useState<{ name: string; size: number; created_at: string }[]>([]);
@@ -5059,7 +5059,8 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, maxWidth: 560 }}>{t("nav:authSetup.localHelp")}</div>
                       {connection && (
                         <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4, maxWidth: 560 }}>
-                          {t(`settingsSystem:auth.connection.${connection.proxied ? "proxied" : connection.local ? "local" : "notLocal"}`,
+                          {t(`settingsSystem:auth.connection.${connection.proxied ? "proxied" : connection.relayed ? "relayed"
+                            : connection.local ? "local" : "notLocal"}`,
                             { address: connection.address || "?" })}
                         </div>
                       )}
