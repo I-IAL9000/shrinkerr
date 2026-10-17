@@ -83,14 +83,12 @@
 /* Sidebar */
 [data-theme="light"] .sidebar { background: var(--bg-secondary); border-right: 1px solid var(--border); }
 [data-theme="light"] .sidebar-link { color: var(--text-secondary); }
-[data-theme="light"] .sidebar-link img { filter: brightness(0) saturate(100%) invert(17%) sepia(15%) saturate(600%) hue-rotate(210deg) brightness(95%) contrast(95%); }
 [data-theme="light"] .sidebar-link:hover { background: rgba(30, 30, 41, 0.05); color: var(--text-primary); }
 [data-theme="light"] .sidebar-link.active {
   background: var(--accent-bg);
   color: var(--accent-btn) !important;
   border-left-color: var(--accent-btn);
 }
-[data-theme="light"] .sidebar-link.active img { filter: brightness(0) saturate(100%) invert(14%) sepia(99%) saturate(5500%) hue-rotate(253deg) brightness(92%) contrast(110%); }
 [data-theme="light"] .sidebar-section-label { color: var(--text-muted); }
 
 /* Job cards */
@@ -304,7 +302,14 @@ body {
   font-size: 14px;
   transition: all 0.15s;
 }
-.sidebar-link img { filter: brightness(0) saturate(100%) invert(82%) sepia(10%) saturate(500%) hue-rotate(220deg) brightness(95%) contrast(90%); }
+/* A link's icon is its text colour, through the icon as a mask (v0.10.0):
+   the filter chains that tinted the images came out pink on iOS Safari. */
+.sidebar-icon {
+  width: 18px; height: 18px; flex-shrink: 0;
+  background-color: currentColor;
+  -webkit-mask: var(--icon) center / contain no-repeat;
+  mask: var(--icon) center / contain no-repeat;
+}
 .sidebar-link:hover { background: rgba(255,255,255,0.03); }
 .sidebar-link.active {
   background: #11111a;
@@ -313,7 +318,6 @@ body {
   padding-left: calc(var(--sidebar-pad) - 3px);
   border-radius: 0;
 }
-.sidebar-link.active img { filter: brightness(0) saturate(100%) invert(37%) sepia(95%) saturate(5000%) hue-rotate(243deg) brightness(100%) contrast(99%); }
 .settings-subnav {
   display: flex;
   flex-direction: column;

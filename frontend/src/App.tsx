@@ -227,7 +227,7 @@ function SidebarNavItems() {
           {section.items.map(item => (
             <React.Fragment key={item.to}>
               <NavLink to={item.to} end={item.end} className={({isActive}) => `sidebar-link ${isActive ? "active" : ""}`}>
-                <img src={item.icon} alt="" width="18" height="18" />
+                <span className="sidebar-icon" aria-hidden="true" style={{ "--icon": `url(${item.icon})` } as React.CSSProperties} />
                 {t(item.labelKey)}
                 {item.badge && <NewFileBadge />}
                 {item.failedBadge && <FailedJobBadge />}
