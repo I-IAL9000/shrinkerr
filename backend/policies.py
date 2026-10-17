@@ -156,12 +156,43 @@ async def schedule_policies() -> None:
 
 # ── Planner ──────────────────────────────────────────────────────────────
 
-async def plan(target_bytes: int, deadline: datetime | None = None, view_id: int | None = None) -> dict:
+async def _pending_rows(speeds: dict) -> list[dict]:
+    """The pending jobs that free space (a health check changes nothing),
+    each with what it saves — as the queue's "What the queue will do" has
+    it — and its seconds of encoding; a cleanup is a short remux."""
+    from backend.encoding_estimates import load_quality_settings
+    from backend.routes.jobs import _JOB_PLAN_COLS, _job_savings, _scan_rows_for
+    db = await connect_db()
+    try:
+        async with db.execute(f"SELECT {_JOB_PLAN_COLS} FROM jobs WHERE status = 'pending' "
+                              "AND job_type != 'health_check' ORDER BY priority DESC, queue_order ASC") as cur:
+            jobs = [dict(r) for r in await cur.fetchall()]
+        rows = await _scan_rows_for(db, sorted({j["file_path"] for j in jobs}))
+        quality = await load_quality_settings(db)
+    finally:
+        await db.close()
+    out = []
+    for job in jobs:
+        row = rows.get(job["file_path"], {})
+        try:
+            audio = json.loads(row.get("audio_tracks_json") or "[]")
+        except (ValueError, TypeError):
+            audio = []
+        speed = speeds["libx265" if job.get("encoder") == "libx265" else "nvenc"]
+        out.append({"job_id": job["id"], "file_path": job["file_path"], "savings": _job_savings(job, row, audio, quality),
+                    "seconds": 30.0 if job["job_type"] == "audio" else max(30.0, (row.get("duration") or 0) * speed)})
+    return out
+
+
+async def plan(target_bytes: int, deadline: datetime | None = None, view_id: int | None = None,
+               pending: bool = False) -> dict:
     """The conversions that free `target_bytes` fastest: files that need
     converting (not ignored, queued, or skipped as hardlinked / leaving
     soon), by estimated savings per hour of encoding, until the target is
     reached — and when they'd be done at this server's parallel jobs.
-    `view_id` limits it to a saved view's files."""
+    `view_id` limits it to a saved view's files; `pending` (v0.10.0) plans
+    from the jobs already waiting instead (their `job_ids`, to move them to
+    the front)."""
     from backend.routes.jobs import encode_speed_factors
     from backend.routes.scan import _paths_matching
     from backend.routes.views import get_view
@@ -173,21 +204,24 @@ async def plan(target_bytes: int, deadline: datetime | None = None, view_id: int
         speeds = await encode_speed_factors(db)
     finally:
         await db.close()
-    pills = ["needs_conversion", "!ignored", "!queued"]
-    if (settings.get("skip_hardlinked") or "true").lower() == "true":
-        pills.append("!hardlinked")
-    if (settings.get("maintainerr_skip") or "true").lower() == "true":
-        pills.append("!leaving_soon")
-    paths = await _paths_matching(",".join(pills))
-    if view_id is not None:
-        view = await get_view(view_id)
-        paths = await _paths_matching(view["filter"], files=paths) if view else []
-    speed = speeds["libx265" if (settings.get("default_encoder") or "nvenc") == "libx265" else "nvenc"]
     rows = []
-    for row in await _candidates(paths):
-        savings = row["video_conv_savings_bytes"] or 0
-        if savings > 0:
-            rows.append({**row, "savings": savings, "seconds": max(30.0, (row["duration"] or 0) * speed)})
+    if pending:
+        rows = [r for r in await _pending_rows(speeds) if r["savings"] > 0]
+    else:
+        pills = ["needs_conversion", "!ignored", "!queued"]
+        if (settings.get("skip_hardlinked") or "true").lower() == "true":
+            pills.append("!hardlinked")
+        if (settings.get("maintainerr_skip") or "true").lower() == "true":
+            pills.append("!leaving_soon")
+        paths = await _paths_matching(",".join(pills))
+        if view_id is not None:
+            view = await get_view(view_id)
+            paths = await _paths_matching(view["filter"], files=paths) if view else []
+        speed = speeds["libx265" if (settings.get("default_encoder") or "nvenc") == "libx265" else "nvenc"]
+        for row in await _candidates(paths):
+            savings = row["video_conv_savings_bytes"] or 0
+            if savings > 0:
+                rows.append({**row, "savings": savings, "seconds": max(30.0, (row["duration"] or 0) * speed)})
     rows.sort(key=lambda r: r["savings"] / r["seconds"], reverse=True)
     chosen, saved, seconds = [], 0, 0.0
     for row in rows:
@@ -208,4 +242,5 @@ async def plan(target_bytes: int, deadline: datetime | None = None, view_id: int
         "available": sum(r["savings"] for r in rows),
         "on_time": deadline is None or finish <= deadline,
         "paths": [r["file_path"] for r in chosen],
+        "job_ids": [r["job_id"] for r in chosen] if pending else [],
     }

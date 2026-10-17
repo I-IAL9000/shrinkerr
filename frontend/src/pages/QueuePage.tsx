@@ -973,7 +973,7 @@ export default function QueuePage() {
         </>
       )}
 
-      {plannerOpen && <PlannerModal onClose={() => setPlannerOpen(false)} onQueued={() => load()} />}
+      {plannerOpen && <PlannerModal onClose={() => setPlannerOpen(false)} onQueued={() => load()} pendingCount={pendingCount} />}
     </div>
   );
 }

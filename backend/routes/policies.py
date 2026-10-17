@@ -119,6 +119,8 @@ class PlanBody(BaseModel):
     target_gb: float
     deadline: Optional[datetime] = None
     view_id: Optional[int] = None
+    # From the pending queue (v0.10.0): its jobs move to the front, nothing's added
+    pending: bool = False
 
 
 async def _plan(body: PlanBody) -> dict:
@@ -127,7 +129,7 @@ async def _plan(body: PlanBody) -> dict:
     deadline = body.deadline
     if deadline is not None and deadline.tzinfo is None:
         deadline = deadline.astimezone()  # the browser's local time, sent without a zone
-    return await policies.plan(int(body.target_gb * policies.GIB), deadline, body.view_id)
+    return await policies.plan(int(body.target_gb * policies.GIB), deadline, body.view_id, body.pending)
 
 
 @router.post("/plan")
@@ -135,14 +137,31 @@ async def plan(body: PlanBody):
     """The planner: which conversions free `target_gb` fastest, and when
     they'd be done. Nothing is queued."""
     result = await _plan(body)
-    return {k: v for k, v in result.items() if k != "paths"}
+    return {k: v for k, v in result.items() if k not in ("paths", "job_ids")}
 
 
 @router.post("/plan/queue")
 async def queue_plan(body: PlanBody):
-    """Queue the plan's files (ahead of the rest) and start the queue."""
+    """Queue the plan's files (ahead of the rest) and start the queue — or,
+    from the pending queue, move its jobs to the front in the plan's order,
+    the rest after them as they were (priorities stay)."""
     from backend.routes import jobs as jobs_route
-    paths = (await _plan(body))["paths"]
+    result = await _plan(body)
+    if body.pending:
+        chosen = result["job_ids"]
+        if chosen and jobs_route._queue is not None:
+            db = await connect_db()
+            try:
+                async with db.execute("SELECT id FROM jobs WHERE status = 'pending' "
+                                      "ORDER BY priority DESC, queue_order ASC") as cur:
+                    rest = [r[0] for r in await cur.fetchall() if r[0] not in set(chosen)]
+            finally:
+                await db.close()
+            await jobs_route._queue.reorder_jobs(chosen + rest)
+            if jobs_route._worker is not None:
+                jobs_route._worker.start_if_idle()
+        return {"moved": len(chosen)}
+    paths = result["paths"]
     added = 0
     if paths:
         added = (await jobs_route.add_jobs_from_scan(

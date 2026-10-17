@@ -908,7 +908,8 @@ export const updatePolicy = (id: number, p: PolicyInput) =>
 export const deletePolicy = (id: number) => apiFetch(`/policies/${id}`, { method: "DELETE" });
 export const runPolicy = (id: number) => apiFetch<PolicyRunResult>(`/policies/${id}/run`, { method: "POST" });
 // The planner: the conversions that free N GB fastest.
-export interface SpacePlanInput { target_gb: number; deadline?: string | null; view_id?: number | null }
+// pending (v0.10.0): from the jobs already waiting, moved to the front instead of queued
+export interface SpacePlanInput { target_gb: number; deadline?: string | null; view_id?: number | null; pending?: boolean }
 export interface SpacePlan {
   files: number; savings: number; seconds: number; finish_at: string;
   reached: boolean; available: number; on_time: boolean;
@@ -916,7 +917,7 @@ export interface SpacePlan {
 export const planSpace = (p: SpacePlanInput) =>
   apiFetch<SpacePlan>("/policies/plan", { method: "POST", body: JSON.stringify(p) });
 export const queueSpacePlan = (p: SpacePlanInput) =>
-  apiFetch<{ queued: number }>("/policies/plan/queue", { method: "POST", body: JSON.stringify(p) });
+  apiFetch<{ queued?: number; moved?: number }>("/policies/plan/queue", { method: "POST", body: JSON.stringify(p) });
 // What pending jobs will do (v0.10.0). A plan's tracks are its file's, each
 // with whether the job removes it; edit them with updateAudioTracks /
 // updateSubtitleTracks on scan_id, which updates the job.

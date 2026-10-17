@@ -155,3 +155,34 @@ async def test_the_planner(env):
     assert await _queued(db_path) == [("/m/b.mkv", "convert", 1), ("/m/c.mkv", "convert", 1)]
     assert started == [True]
     assert (await route.plan(route.PlanBody(target_gb=3.5)))["files"] == 1  # queued ones are left out now
+
+
+@pytest.mark.asyncio
+async def test_the_planner_on_the_pending_queue(env):
+    """From "Pending queue" (v0.10.0): the jobs already waiting that free the
+    space fastest move to the front, in that order; nothing is added and
+    their priority stays."""
+    from backend.routes import policies as route
+    db_path, started = env
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute("UPDATE scan_results SET duration = 1000 WHERE file_path = '/m/c.mkv'")  # c, then b
+        await db.execute("UPDATE jobs SET queue_order = 0 WHERE file_path = '/m/d.mkv'")
+        for order, name in enumerate(("a", "b", "c"), start=1):
+            await db.execute("INSERT INTO jobs (file_path, job_type, status, created_at, queue_order) "
+                             "VALUES (?, 'convert', 'pending', 'x', ?)", (f"/m/{name}.mkv", order))
+        await db.execute("INSERT INTO jobs (file_path, job_type, status, created_at, queue_order) "
+                         "VALUES ('/m/a.mkv', 'health_check', 'pending', 'x', 4)")  # frees nothing
+        await db.commit()
+
+    everything = await route.plan(route.PlanBody(target_gb=1000, pending=True))
+    assert (everything["files"], everything["reached"]) == (4, False)
+    assert (await route.plan(route.PlanBody(target_gb=0.001, pending=True)))["files"] == 1
+
+    assert await route.queue_plan(route.PlanBody(target_gb=0.001, pending=True)) == {"moved": 1}
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute("SELECT file_path, job_type, priority FROM jobs WHERE status = 'pending' "
+                              "ORDER BY priority DESC, queue_order ASC") as cur:
+            assert await cur.fetchall() == [("/m/c.mkv", "convert", 0), ("/m/d.mkv", "convert", 0),
+                                            ("/m/a.mkv", "convert", 0), ("/m/b.mkv", "convert", 0),
+                                            ("/m/a.mkv", "health_check", 0)]
+    assert started == [True]

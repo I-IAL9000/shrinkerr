@@ -304,11 +304,12 @@
   "planner": {
     "open": "Liberar espacio…",
     "title": "Liberar espacio",
-    "intro": "Las conversiones que liberan el espacio más rápido —el mayor ahorro estimado por hora de codificación— entre los archivos que necesitan convertirse (ni ignorados ni ya en la cola).",
+    "intro": "Las conversiones que liberan el espacio más rápido —el mayor ahorro estimado por hora de codificación—. De la cola pendiente, pasan al principio; de los archivos que necesitan convertirse (ni ignorados ni ya en la cola), se añaden.",
     "free": "Liberar",
     "unit": "Unidad",
     "by": "Antes de (opcional)",
     "from": "De",
+    "pending": "Cola pendiente",
     "everything": "Todo lo que necesita convertirse",
     "calculate": "Calcular",
     "result_one": "{{count}} archivo liberaría unos {{savings}} en {{time}} de codificación.",
@@ -319,11 +320,18 @@
     "late": "Eso es después de la hora que elegiste; más trabajadores o un ajuste más rápido ayudarían.",
     "nothing": "Aquí no hay nada que convertir.",
     "note": "Los ahorros son estimaciones; la cola los ejecuta antes de lo que espera.",
+    "notePending": "Los ahorros son estimaciones; los trabajos a los que diste más prioridad siguen yendo primero.",
     "queue_one": "Añadir {{count}} archivo a la cola",
     "queue_many": "Añadir {{count}} archivos a la cola",
     "queue_other": "Añadir {{count}} archivos a la cola",
     "queued_one": "{{count}} archivo añadido a la cola",
     "queued_many": "{{count}} archivos añadidos a la cola",
-    "queued_other": "{{count}} archivos añadidos a la cola"
+    "queued_other": "{{count}} archivos añadidos a la cola",
+    "move_one": "Mover {{count}} trabajo al principio",
+    "move_many": "Mover {{count}} trabajos al principio",
+    "move_other": "Mover {{count}} trabajos al principio",
+    "moved_one": "{{count}} trabajo movido al principio",
+    "moved_many": "{{count}} trabajos movidos al principio",
+    "moved_other": "{{count}} trabajos movidos al principio"
   }
 }

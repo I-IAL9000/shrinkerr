@@ -9,7 +9,9 @@ import { useToast } from "../useToast";
  * Queue → "Free space…" (v0.10.0): the conversions that free N GB fastest —
  * most estimated savings per hour of encoding — and when they'd be done.
  */
-export default function PlannerModal({ onClose, onQueued }: { onClose: () => void; onQueued: () => void }) {
+export default function PlannerModal({ onClose, onQueued, pendingCount }: {
+  onClose: () => void; onQueued: () => void; pendingCount: number;
+}) {
   const { t } = useTranslation(["queue", "common"]);
   const toast = useToast();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -17,7 +19,10 @@ export default function PlannerModal({ onClose, onQueued }: { onClose: () => voi
   const [amount, setAmount] = useState("500");
   const [unit, setUnit] = useState<"GB" | "TB">("GB");
   const [deadline, setDeadline] = useState("");
-  const [viewId, setViewId] = useState("");
+  // "pending" (v0.10.0): rearrange the jobs already waiting — the first
+  // choice when there are some; "" every file that needs converting; else a view.
+  const [viewId, setViewId] = useState(pendingCount > 0 ? "pending" : "");
+  const pending = viewId === "pending";
   const [views, setViews] = useState<SavedView[]>([]);
   const [plan, setPlan] = useState<SpacePlan | null>(null);
   const [busy, setBusy] = useState(false);
@@ -27,7 +32,8 @@ export default function PlannerModal({ onClose, onQueued }: { onClose: () => voi
   const input = (): SpacePlanInput => ({
     target_gb: (Number(amount) || 0) * (unit === "TB" ? 1024 : 1),
     deadline: deadline || null,
-    view_id: viewId ? Number(viewId) : null,
+    view_id: viewId && !pending ? Number(viewId) : null,
+    pending,
   });
   const calculate = async () => {
     setBusy(true);
@@ -43,7 +49,8 @@ export default function PlannerModal({ onClose, onQueued }: { onClose: () => voi
     setBusy(true);
     try {
       const r = await queueSpacePlan(input());
-      toast(t("queue:planner.queued", { count: r.queued }), "success");
+      toast(pending ? t("queue:planner.moved", { count: r.moved ?? 0 }) : t("queue:planner.queued", { count: r.queued ?? 0 }),
+        "success");
       onQueued();
       onClose();
     } catch (e) {
@@ -84,6 +91,7 @@ export default function PlannerModal({ onClose, onQueued }: { onClose: () => voi
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <label style={label}>{t("queue:planner.from")}</label>
             <select value={viewId} aria-label={t("queue:planner.from")} onChange={e => { setViewId(e.target.value); setPlan(null); }} style={{ ...inputStyle, minWidth: 180, maxWidth: "100%" }}>
+              {pendingCount > 0 && <option value="pending">{t("queue:planner.pending")}</option>}
               <option value="">{t("queue:planner.everything")}</option>
               {views.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
             </select>
@@ -98,7 +106,9 @@ export default function PlannerModal({ onClose, onQueued }: { onClose: () => voi
               <div>{t("queue:planner.finish", { when: fmtDateTime(plan.finish_at) })}</div>
               {!plan.reached && <div style={{ color: "var(--caution)" }}>{t("queue:planner.notReached", { available: fmtBytes(plan.available) })}</div>}
               {!plan.on_time && <div style={{ color: "var(--caution)" }}>{t("queue:planner.late")}</div>}
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("queue:planner.note", { files: fmtNum(plan.files) })}</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                {pending ? t("queue:planner.notePending") : t("queue:planner.note", { files: fmtNum(plan.files) })}
+              </div>
             </>}
           </div>
         )}
@@ -106,7 +116,7 @@ export default function PlannerModal({ onClose, onQueued }: { onClose: () => voi
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
           <button className="btn btn-secondary" onClick={onClose} disabled={busy}>{t("common:actions.close")}</button>
           <button className="btn btn-primary" disabled={busy || !plan || plan.files === 0} onClick={queue}>
-            {t("queue:planner.queue", { count: plan?.files ?? 0 })}
+            {t(pending ? "queue:planner.move" : "queue:planner.queue", { count: plan?.files ?? 0 })}
           </button>
         </div>
       </div>
