@@ -97,9 +97,9 @@ def test_files_in_an_extras_folder_are_not_duplicates():
 
 
 @pytest.mark.asyncio
-async def test_start_up_recounts_duplicates_flagged_before_the_fix(test_db):
+async def test_start_up_recounts_duplicates(test_db):
     """A folder's counts were redone only when a scan walked it, so files
-    flagged before SC-16 kept the flag."""
+    flagged before SC-16 kept the flag; every start-up recounts."""
     import aiosqlite
     from backend.database import init_db
     scenes = "/tv/The Office (2001)/Specials/Deleted Scenes"
@@ -110,7 +110,6 @@ async def test_start_up_recounts_duplicates_flagged_before_the_fix(test_db):
             (f"{season}/Show - S01E01 - 1080p.mkv", 0, None), (f"{season}/Show - S01E01 - 2160p.mkv", 0, None),
             *((part, 3, f"folder:{film}") for part in parts)]
     async with aiosqlite.connect(test_db) as db:
-        await db.execute("DELETE FROM settings WHERE key = '_v0_10_0_recount_duplicates'")
         await db.executemany("INSERT INTO scan_results (file_path, file_size, dup_count, dup_group, scan_timestamp) "
                              "VALUES (?, 1, ?, ?, 't')", rows)
         await db.commit()
