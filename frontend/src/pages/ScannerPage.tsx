@@ -224,6 +224,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     getScanStats().then(setServerStats).catch(() => {}).finally(() => { statsInFlight.current = false; });
   }, []);
 
+  // Counts tree reloads: an open poster reloads its files (v0.10.0).
+  const [treeVersion, setTreeVersion] = useState(0);
   const loadTree = useCallback(async (activeFilter?: string) => {
     const f = activeFilter ?? filter;
     // Cancel any in-flight request so its result can't overwrite the newer one
@@ -244,6 +246,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       _cachedFilter = f;
       _cacheTimestamp = Date.now();
       setFolders(result);
+      setTreeVersion(v => v + 1);
       setImdbIds(_cachedImdbIds);
       setLoading(false);
       setUpdating(false);
@@ -2015,6 +2018,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               // A title's actor, genre... shows everything with it: the filter, alone (v0.10.0).
               onFilter={(token) => { setFilters([token]); setSearchInput(""); setSearch(""); }}
               titleMenu={titleMenu}
+              treeVersion={treeVersion}
               mediaDirs={mediaDirPaths}
               sortBy={sortBy}
               sortDir={sortDir}

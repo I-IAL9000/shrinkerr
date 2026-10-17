@@ -73,6 +73,8 @@ interface PosterGridProps {
   onFilter?: (token: string) => void;
   // A title's ⋯ menu (v0.10.0): the selection bar's actions on it (its select path, movie / tv).
   titleMenu?: (selectPath: string, mediaType?: string | null) => ActionMenuItem[];
+  // Counts the Scanner's tree reloads (v0.10.0): an open title reloads its files.
+  treeVersion?: number;
 }
 
 export function groupFolders(folders: FolderInfo[], mediaRoots: Set<string>): TitleGroup[] {
@@ -159,6 +161,7 @@ export default function PosterGrid({
   sortBy = "name", sortDir = "asc",
   onFilter,
   titleMenu,
+  treeVersion = 0,
 }: PosterGridProps) {
   const { t } = useTranslation(["library", "common"]);
   const mediaRoots = useMemo(
@@ -390,16 +393,19 @@ export default function PosterGrid({
     })();
   }, [startRow, endRow, groups, posterMeta.size]);
 
-  const loadTitleFiles = useCallback(async (key: string) => {
+  // `quiet`: a reload of the open title — its list stays until the new one comes.
+  const loadTitleFiles = useCallback(async (key: string, quiet = false) => {
     // Cancel any in-flight expand so a prior click's result can't land on top
     if (expandAbortCtrl.current) { try { expandAbortCtrl.current.abort(); } catch {} }
     const ctrl = new AbortController();
     expandAbortCtrl.current = ctrl;
     const myGen = ++expandRequestGen.current;
 
-    setExpandedFiles([]);
-    setFilesError(null);
-    setLoadingFiles(true);
+    if (!quiet) {
+      setExpandedFiles([]);
+      setFilesError(null);
+      setLoadingFiles(true);
+    }
     try {
       const result = await getFilesByTitle(key, filter, ctrl.signal);
       if (myGen !== expandRequestGen.current) return;
@@ -424,6 +430,17 @@ export default function PosterGrid({
       setLoadingFiles(false);
     }
   }, [filter, onFolderFilesLoaded]);
+
+  // The open title's files again when the Scanner reloads its tree (v0.10.0):
+  // trashing, removing or rescanning them updated the card, but the list
+  // kept showing files that were gone.
+  const shownTree = useRef(treeVersion);
+  useEffect(() => {
+    if (treeVersion === shownTree.current) return;
+    shownTree.current = treeVersion;
+    if (expandedKey) loadTitleFiles(expandedKey, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [treeVersion]);
 
   const handleExpand = useCallback(async (group: TitleGroup) => {
     if (expandedKey === group.key) {
