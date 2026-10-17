@@ -388,9 +388,22 @@ export default function QueuePage() {
       setDropIdx(null);
       return;
     }
-    const reordered = [...tabJobs];
-    const [moved] = reordered.splice(dragIdx, 1);
-    reordered.splice(idx, 0, moved);
+    // Dragging one of several selected jobs moves them all, in their order
+    // (v0.10.0: only the one dragged moved). Down the list they land after
+    // the row dropped on, up the list before it, as a single job does.
+    const dragged = tabJobs[dragIdx];
+    const moving = selectedJobIds.size > 1 && selectedJobIds.has(dragged.id)
+      ? tabJobs.filter(j => selectedJobIds.has(j.id)) : [dragged];
+    const movingIds = new Set(moving.map(j => j.id));
+    const target = tabJobs[idx];
+    if (movingIds.has(target.id)) {  // dropped on the jobs being moved
+      setDragIdx(null);
+      setDropIdx(null);
+      return;
+    }
+    const rest = tabJobs.filter(j => !movingIds.has(j.id));
+    const at = rest.indexOf(target) + (dragIdx < idx ? 1 : 0);
+    const reordered = [...rest.slice(0, at), ...moving, ...rest.slice(at)];
     // Optimistic update
     setJobs(prev => {
       const nonPending = prev.filter(j => j.status !== "pending");
@@ -458,6 +471,8 @@ export default function QueuePage() {
   const loadRef = useRef(load);
   loadRef.current = load;
 
+  // The jobs a drag moves: the selection, when the row dragged is in it.
+  const draggingSelection = dragIdx !== null && selectedJobIds.size > 1 && selectedJobIds.has(tabJobs[dragIdx]?.id);
   const renderPendingRow = (i: number) => {
     const job = tabJobs[i];
     return (
@@ -469,7 +484,7 @@ export default function QueuePage() {
         onDragEnd={handleDragEnd}
         style={{
           borderTop: dropIdx === i && dragIdx !== null && dragIdx !== i ? "2px solid var(--accent)" : "2px solid transparent",
-          opacity: dragIdx === i ? 0.4 : 1,
+          opacity: dragIdx === i || (draggingSelection && selectedJobIds.has(job.id)) ? 0.4 : 1,
           cursor: "grab",
         }}
       >
