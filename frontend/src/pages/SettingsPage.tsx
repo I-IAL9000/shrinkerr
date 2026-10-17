@@ -4615,10 +4615,10 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         </>}
                         {ruleForm.action !== "skip" && (
                           <div>
-                            <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("settingsIntegrations:rules.form.queuePriority")}</label>
+                            <label style={labelStyle}>{t("settingsIntegrations:rules.form.queuePriority")}</label>
                             <select aria-label={t("settingsIntegrations:rules.form.queuePriority")} style={{ ...inputStyle, width: "100%" }} value={ruleForm.queue_priority}
                               onChange={e => setRuleForm({ ...ruleForm, queue_priority: e.target.value })}>
-                              <option value="">{t("settingsIntegrations:rules.form.default")}</option>
+                              <option value="">{t("settingsIntegrations:rules.form.useDefault")}</option>
                               <option value="0">{t("settingsIntegrations:priorities.normal")}</option>
                               <option value="1">{t("settingsIntegrations:priorities.high")}</option>
                               <option value="2">{t("settingsIntegrations:priorities.highest")}</option>
