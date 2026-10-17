@@ -55,6 +55,8 @@
       "directPlay": {
         "container_one": "{{num}} file is remuxed to MKV",
         "container_other": "{{num}} files are remuxed to MKV",
+        "containerConverted_one": "{{num}} file in an old container becomes an MKV when it's converted",
+        "containerConverted_other": "{{num}} files in old containers become MKVs when they're converted",
         "video_one": "{{num}} Hi10P file is converted",
         "video_other": "{{num}} Hi10P files are converted",
         "subs_one": "{{num}} file gets SRT copies of its image subtitles",

@@ -87,12 +87,15 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   // play when converting" is on; every fix ticked to start with.
   const [directPlay, setDirectPlay] = useState(false);
   const [dpFixes, setDpFixes] = useState<string[]>([...DP_FIXES]);
+  // The estimate waits for the settings: one ticking Fix for direct play
+  // made it run twice on opening.
+  const [settingsRead, setSettingsRead] = useState(false);
 
   useEffect(() => {
     getEncodingSettings().then(s => {
       if (s?.default_encoder) setDefaultEncoder(s.default_encoder);
       if (s?.direct_play_on_convert) setDirectPlay(true);
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setSettingsRead(true));
     getEncoderCaps().then(setEncoderCaps).catch(() => {});
   }, []);
   const [preset, setPreset] = useState<string | null>(null);
@@ -156,6 +159,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
 
   // Debounced estimate refresh
   useEffect(() => {
+    if (!settingsRead) return;
     setLoading(true);
     const overrides: Record<string, any> = {};
     if (cq !== null) {
@@ -177,7 +181,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
       setEstimate({ total_files: 0, error: err?.message || t("scannerModals:estimate.unknownError") });
       setLoading(false);
     });
-  }, [overrideRules, cq, forceReencode, isCpu, encoder, directPlay, dpFixes]);
+  }, [settingsRead, overrideRules, cq, forceReencode, isCpu, encoder, directPlay, dpFixes]);
   const buildOverrides = (): EncodingOverrides | undefined => {
     const o: EncodingOverrides = {};
     if (encoder !== null) o.encoder = encoder;
@@ -382,9 +386,18 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
               if (!Object.keys(audio).length && !Object.keys(subs).length) rows.push(t("scannerModals:estimate.whatHappens.nothingRemoved"));
               let fixing = false;
               if (directPlay) {
-                for (const fix of DP_FIXES) {
-                  const n = estimate.direct_play?.[fix] || 0;
-                  if (n > 0 && dpFixes.includes(fix) && !(fix === "video" && cleanupOnly)) {
+                // An old container is remuxed, or becomes an MKV by converting
+                // (Cleanup only converts none).
+                const box = estimate.direct_play_container || { remux: 0, convert: 0 };
+                const counts: Record<string, number> = {
+                  ...estimate.direct_play,
+                  container: cleanupOnly ? box.remux + box.convert : box.remux,
+                  containerConverted: cleanupOnly ? 0 : box.convert,
+                };
+                for (const fix of ["container", "containerConverted", "video", "subs", "audio"]) {
+                  const n = counts[fix] || 0;
+                  const ticked = dpFixes.includes(fix === "containerConverted" ? "container" : fix);
+                  if (n > 0 && ticked && !(fix === "video" && cleanupOnly)) {
                     rows.push(t(`scannerModals:estimate.whatHappens.directPlay.${fix}`, { count: n, num: fmtNum(n) }));
                     fixing = true;
                   }

@@ -344,6 +344,16 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             print(f"[STARTUP] Plex poster shrink skipped: {exc}", flush=True)
     _asyncio.create_task(_bg_shrink_plex_posters())
+    # Sonarr / Radarr's lists for rules matching on their tags (v0.10.0), so
+    # the first Add to Queue estimate doesn't wait 10-20 s for them.
+    async def _bg_warm_rule_tags():
+        try:
+            from backend.arr import warm_rule_tags
+            await warm_rule_tags()
+        except Exception as exc:
+            print(f"[STARTUP] Sonarr/Radarr tag lists skipped: {exc}", flush=True)
+    if not demo.ENABLED:
+        _asyncio.create_task(_bg_warm_rule_tags())
     # Initialize VMAF check and clean test encode temp files
     from backend.test_encode import check_vmaf_available, cleanup_temp_dir
     await check_vmaf_available()

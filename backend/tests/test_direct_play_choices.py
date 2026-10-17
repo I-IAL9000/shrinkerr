@@ -123,3 +123,16 @@ async def test_the_estimate_counts_each_fix(library):
     unticked = await estimate_jobs(EstimateRequest(file_paths=list(FILES), direct_play=True,
                                                    direct_play_fixes=["container"]))
     assert unticked["by_type"]["convert"] == 0
+
+
+@pytest.mark.asyncio
+async def test_an_old_container_converted_anyway_isnt_called_a_remux(library):
+    """Converting makes an MKV too: the dialog says which old-container files
+    are remuxed and which become MKVs by converting."""
+    from backend.routes.jobs import EstimateRequest, estimate_jobs
+    request = EstimateRequest(file_paths=list(FILES), direct_play=True)
+    assert (await estimate_jobs(request))["direct_play_container"] == {"remux": 1, "convert": 0}
+    async with aiosqlite.connect(library) as db:
+        await db.execute("UPDATE scan_results SET needs_conversion = 1 WHERE file_path LIKE '%Old.avi'")
+        await db.commit()
+    assert (await estimate_jobs(request))["direct_play_container"] == {"remux": 0, "convert": 1}

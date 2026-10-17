@@ -2165,6 +2165,8 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         fixing = _direct_play_fixing(found, payload) if payload.direct_play else {}
         direct_play = {p: 0 for p in PROBLEMS}
         direct_play_files = 0
+        # An old container's fix: a remux, or the conversion (MKV too)
+        direct_play_container = {"remux": 0, "convert": 0}
 
         print(f"[ESTIMATE] {len(file_paths)} file(s) to estimate, {len(scan_rows)} found in scan_results, {len(ignored_set)} ignored", flush=True)
         if len(file_paths) > 0 and len(scan_rows) == 0:
@@ -2228,6 +2230,8 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             total_files += 1
             total_size += row["file_size"]
             by_type[jt] = by_type.get(jt, 0) + 1
+            if "container" in fixes:
+                direct_play_container["convert" if needs_conv else "remux"] += 1
             # Tracks this job removes, by language (the "what will happen" panel).
             for kind, column, remove in (("audio", "audio_tracks_json", audio_remove),
                                          ("subtitles", "subtitle_tracks_json", sub_remove)):
@@ -2371,6 +2375,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             "leaving_soon": leaving_soon,
             "direct_play": direct_play,
             "direct_play_files": direct_play_files,
+            "direct_play_container": direct_play_container,
             "cq": representative_cq,
             "savings_pct": round((estimated_savings / total_size * 100) if total_size > 0 else 0),
             "learned_from": savings_model.current().samples,  # v0.10.0

@@ -70,7 +70,7 @@ async def test_arr_tags_follow_the_path_mapping(monkeypatch):
     async def labels(client, service, url, key):
         return {1: "keep-original", 2: "anime"}
 
-    async def items(client, service, url, key):
+    async def items(client, service, url, key, **kw):
         return [{"path": "/tv/Show (2010)", "tags": [1]}, {"path": "/tv/Other", "tags": [2]}]
 
     monkeypatch.setattr(arr, "_get_arr_settings", settings)

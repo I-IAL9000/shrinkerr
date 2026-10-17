@@ -291,17 +291,43 @@ async def trigger_arr_rescan(file_path: str) -> dict:
 _tag_cache: dict = {}  # {"sonarr"|"radarr": {data: {id: label}, fetched_at: float}}
 
 
-async def _arr_items(client: httpx.AsyncClient, service: str, url: str, api_key: str) -> list[dict]:
-    """All series (Sonarr) or movies (Radarr), through the shared list cache."""
+# Lists being fetched in the background, by service (v0.10.0).
+_refreshing: dict[str, asyncio.Task] = {}
+
+
+async def _arr_items(client: httpx.AsyncClient, service: str, url: str, api_key: str,
+                     stale_ok: bool = False) -> list[dict]:
+    """All series (Sonarr) or movies (Radarr), through the shared list cache.
+    `stale_ok` (rules' tags, v0.10.0): an expired list is used while a newer
+    one is fetched in the background — listing the whole library takes them
+    10-20 s, which Add to Queue's estimate waited for."""
     cache = _sonarr_cache if service == "sonarr" else _radarr_cache
-    now = time.monotonic()
-    if cache.get("data") and (now - cache.get("fetched_at", 0)) < _LIST_CACHE_TTL:
+    if cache.get("data") and (time.monotonic() - cache.get("fetched_at", 0)) < _LIST_CACHE_TTL:
         return cache["data"]
+    if stale_ok and cache.get("data"):
+        if service not in _refreshing:
+            _refreshing[service] = asyncio.create_task(_refresh_items(service, url, api_key))
+        return cache["data"]
+    return await _fetch_items(client, service, url, api_key)
+
+
+async def _fetch_items(client: httpx.AsyncClient, service: str, url: str, api_key: str) -> list[dict]:
     endpoint = "series" if service == "sonarr" else "movie"
     resp = await client.get(f"{url}/api/v3/{endpoint}", headers={"X-Api-Key": api_key})
     resp.raise_for_status()
-    cache["data"], cache["fetched_at"] = resp.json(), now
+    cache = _sonarr_cache if service == "sonarr" else _radarr_cache
+    cache["data"], cache["fetched_at"] = resp.json(), time.monotonic()
     return cache["data"]
+
+
+async def _refresh_items(service: str, url: str, api_key: str) -> None:
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            await _fetch_items(client, service, url, api_key)
+    except Exception as exc:
+        print(f"[ARR] Couldn't refresh the {service} list: {exc}", flush=True)
+    finally:
+        _refreshing.pop(service, None)
 
 
 async def _arr_tag_labels(client: httpx.AsyncClient, service: str, url: str, api_key: str) -> dict:
@@ -332,7 +358,7 @@ async def arr_tags_for_paths(file_paths: list[str]) -> dict[str, set[str]]:
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 labels = await _arr_tag_labels(client, service, url, api_key)
-                items = await _arr_items(client, service, url, api_key)
+                items = await _arr_items(client, service, url, api_key, stale_ok=True)
         except Exception as exc:
             print(f"[ARR] Couldn't read {service} tags for rules: {exc}", flush=True)
             continue
@@ -346,6 +372,20 @@ async def arr_tags_for_paths(file_paths: list[str]) -> dict[str, set[str]]:
                     break
                 check = str(Path(check).parent)
     return tags
+
+
+async def warm_rule_tags() -> None:
+    """Fetch the lists at start-up when a rule matches on Sonarr/Radarr tags,
+    so the first estimate doesn't wait for them (v0.10.0)."""
+    from backend.rule_resolver import _parse_rule_conditions
+    db = await connect_db()
+    try:
+        async with db.execute("SELECT * FROM encoding_rules WHERE enabled = 1") as cur:
+            rules = [dict(r) for r in await cur.fetchall()]
+    finally:
+        await db.close()
+    if any(c.get("type") in ("arr_tag", "tag") for rule in rules for c in _parse_rule_conditions(rule)[1]):
+        await arr_tags_for_paths([])
 
 
 # An id in a folder's name: "Show (2019) [tvdb-364107]", "{tmdb-603}", "[tt0133093]".
