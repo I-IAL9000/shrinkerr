@@ -275,6 +275,10 @@ COPY VERSION .
 # CHANGELOG is read at runtime by /api/stats/changelog so the Updates
 # section in Settings can show release notes without a network call.
 COPY CHANGELOG.md .
+# The NZBGet / SABnzbd scripts Settings → Integrations offers for download
+# (their URL and API key filled in). v0.10.0: never copied, so the download failed.
+COPY nzbget-extension/ nzbget-extension/
+COPY sabnzbd-script/ sabnzbd-script/
 COPY --from=frontend-build /app/frontend/dist frontend/dist
 # DVD subtitle OCR (stage 2); runs against the tesseract-ocr installed above.
 COPY --from=subtile-ocr-build /out/ /usr/local/

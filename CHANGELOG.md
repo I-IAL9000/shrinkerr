@@ -62,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Demo mode never hands out the API key, backups or download scripts; links in the in-app changelog only open http(s) addresses; scan progress and cancel files live in the data folder instead of fixed names in `/tmp`.
 
 ### Fixed
+- **The NZBGet and SABnzbd script downloads work in Docker** (Settings → Integrations): the images never held the scripts, so the download failed.
 - **Filter menus**: a name cut short shows in full on hover; Subtitles has **No subtitles** (none in the file or beside it) and Audio has **No audio** (a broken download, mostly); the Scanner's "Detect selected" says what it does ("Detect unknown languages"); an opened poster's outline no longer starts a couple of pixels high while its files load.
 - **A film whose IMDb id changed still matches**: when TMDB doesn't know the IMDb id in a folder's name and its only film of that title and year has another id (IMDb merged a duplicate), it's taken; it was left unmatched ("Summer of Soul (2021)"). Several films of one title and year are still told apart by the id.
 - **Signed out mid-use, the app said so**: when a session ended while Shrinkerr was open, every page showed an empty library ("No files scanned yet", endless spinners) instead of the sign-in page. A request turned away now brings up the sign-in page, and a session in use is renewed, so it lasts 30 days from the last visit rather than from signing in.
