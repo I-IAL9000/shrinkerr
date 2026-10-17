@@ -69,6 +69,19 @@ function metaFor(ev: FileEvent): EventMeta {
   return base;
 }
 
+// What a health check found (v0.10.0): the lines it stored with the event —
+// the entry said only "corrupt" or "warnings". ffmpeg's "@ 0x55d1…" addresses
+// mean nothing to a reader.
+function healthLines(ev: FileEvent): string[] {
+  const details = (ev.details && typeof ev.details === "object") ? ev.details : null;
+  if (ev.event_type !== "health_check" || !details || details.status === "healthy" || !Array.isArray(details.errors)) {
+    return [];
+  }
+  return details.errors
+    .filter((line: unknown): line is string => typeof line === "string" && line.trim() !== "")
+    .map((line: string) => line.replace(/ @ 0x[0-9a-f]+\]/gi, "]").trim());
+}
+
 function EventIcon({ type, color, size = 14 }: { type: string; color: string; size?: number }) {
   const common = {
     width: size,
@@ -181,6 +194,7 @@ export default function EventTimeline({ events, compact = false, showFilePath = 
     <div style={{ display: "flex", flexDirection: "column", gap: compact ? 4 : 6 }}>
       {events.map(ev => {
         const meta = metaFor(ev);
+        const lines = healthLines(ev);
         return (
           <div
             key={ev.id}
@@ -188,7 +202,7 @@ export default function EventTimeline({ events, compact = false, showFilePath = 
             style={{
               display: "grid",
               gridTemplateColumns: compact ? "20px 1fr auto" : undefined,
-              alignItems: "center",
+              alignItems: lines.length ? "start" : "center",
               gap: 8,
               fontSize: compact ? 11 : 12,
               padding: compact ? "4px 6px" : "6px 8px",
@@ -205,6 +219,12 @@ export default function EventTimeline({ events, compact = false, showFilePath = 
             )}
             <span className="event-text" style={{ color: "var(--text-secondary)", minWidth: 0 }}>
               {eventSummary(ev)}
+              {lines.length > 0 && (
+                <ul style={{ margin: "4px 0 0", padding: "0 0 0 14px", fontFamily: "var(--font-mono)", fontSize: 10,
+                  lineHeight: 1.5, color: meta.color, wordBreak: "break-word" }}>
+                  {lines.map((line, i) => <li key={i}>{line}</li>)}
+                </ul>
+              )}
               {showFilePath && (
                 <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2, wordBreak: "break-all" }}>
                   {ev.file_path}
