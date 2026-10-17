@@ -124,3 +124,60 @@ async def test_start_up_recounts_duplicates_flagged_before_the_fix(test_db):
                    (f"{season}/Show - S01E01 - 1080p.mkv", 2, f"ep:{season}/S1E1"),
                    (f"{season}/Show - S01E01 - 2160p.mkv", 2, f"ep:{season}/S1E1"),
                    (f"{scenes}/Freelove Freeway.mkv", 0, None), (f"{scenes}/Who Cares Wins.mkv", 0, None)]
+
+
+FILM = "Film (2009)"
+
+
+async def _two_copies(db_path, root):
+    """Two versions of a film in its folder, counted as duplicates; the
+    folder is under a media directory."""
+    import aiosqlite
+    folder = f"{root}/{FILM}"
+    paths = [f"{folder}/{FILM} 1080p.mkv", f"{folder}/{FILM} 2160p.mkv"]
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute("INSERT INTO media_dirs (path, label) VALUES (?, 'Movies')", (root,))
+        await db.executemany("INSERT INTO scan_results (file_path, file_size, dup_count, dup_group, scan_timestamp) "
+                             "VALUES (?, 1, 2, ?, 't')", [(p, f"folder:{folder}") for p in paths])
+        await db.commit()
+    return paths
+
+
+async def _counts(db_path):
+    import aiosqlite
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute("SELECT file_path, dup_count, dup_group FROM scan_results "
+                              "WHERE removed_from_list = 0 ORDER BY file_path") as cur:
+            return await cur.fetchall()
+
+
+@pytest.mark.asyncio
+async def test_trashing_a_copy_leaves_the_other_alone(test_db, tmp_path, monkeypatch):
+    """With the Duplicates filter on, the copy kept still showed after the
+    other was trashed: counts were only redone by a scan."""
+    import backend.routes.scan as scan_route
+    monkeypatch.setattr(scan_route, "DB_PATH", test_db)
+    keep, trash = await _two_copies(test_db, str(tmp_path.resolve()))
+    await scan_route.delete_file_from_disk(scan_route.DeleteFileRequest(file_path=trash))  # (not on disk)
+    assert await _counts(test_db) == [(keep, 0, None)]
+
+
+@pytest.mark.asyncio
+async def test_removing_a_copy_from_the_list_too(test_db, tmp_path, monkeypatch):
+    import aiosqlite
+    import backend.routes.scan as scan_route
+    monkeypatch.setattr(scan_route, "DB_PATH", test_db)
+    keep, removed = await _two_copies(test_db, str(tmp_path.resolve()))
+    async with aiosqlite.connect(test_db) as db:
+        async with db.execute("SELECT id FROM scan_results WHERE file_path = ?", (removed,)) as cur:
+            removed_id = (await cur.fetchone())[0]
+    await scan_route.delete_scan_result(removed_id)
+    assert await _counts(test_db) == [(keep, 0, None)]
+
+
+@pytest.mark.asyncio
+async def test_the_watcher_recounts_a_copy_that_went(test_db, tmp_path):
+    from backend.watcher import FileWatcher
+    keep, gone = await _two_copies(test_db, str(tmp_path.resolve()))
+    assert await FileWatcher(test_db)._remove_stale_entries([gone]) == 1
+    assert await _counts(test_db) == [(keep, 0, None)]

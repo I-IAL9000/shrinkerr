@@ -285,6 +285,8 @@ class FileWatcher:
                     chunk,
                 )
                 deleted += result.rowcount or 0
+            from backend.routes.scan import recount_duplicates
+            await recount_duplicates(db, stale_paths)
             await db.commit()
             if dropped_jobs:
                 print(f"[WATCHER] Dropped {dropped_jobs} pending job(s) for files no longer on disk", flush=True)
@@ -505,6 +507,14 @@ class FileWatcher:
                 await _write_batch(self.db_path, fresh, now, mark_new=True)
             if len(fresh) < len(results):
                 await _write_batch(self.db_path, [s for s in results if s.file_path in unread_old], now)
+            # A second copy of a film or episode arrived: duplicates (v0.10.0)
+            from backend.routes.scan import recount_duplicates
+            dup_db = await aiosqlite.connect(self.db_path)
+            try:
+                await recount_duplicates(dup_db, [s.file_path for s in results])
+                await dup_db.commit()
+            finally:
+                await dup_db.close()
 
             # v0.7.2: clear any stale health_status='corrupt' on disc rows
             # that just got re-discovered. A previous health-check during a

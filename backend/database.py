@@ -1282,17 +1282,11 @@ async def init_db():
             async with db.execute("SELECT 1 FROM settings WHERE key = ?", (flag,)) as cur:
                 already_run = await cur.fetchone() is not None
             if not already_run:
-                from backend.routes.scan import duplicate_groups
+                from backend.routes.scan import duplicate_changes
                 async with db.execute(
-                    "SELECT file_path, COALESCE(dup_count, 0), dup_group FROM scan_results "
-                    "WHERE removed_from_list = 0 AND file_path NOT LIKE '%.converting.%' "
-                    "AND file_path NOT LIKE '%.remuxing.%'"
+                    "SELECT file_path, dup_count, dup_group FROM scan_results WHERE removed_from_list = 0"
                 ) as cur:
-                    rows = await cur.fetchall()
-                wanted = {fp: (len(files), group) for group, files in duplicate_groups(r[0] for r in rows).items()
-                          for fp in files}
-                changes = [(*wanted.get(fp, (0, None)), fp) for fp, count, group in rows
-                           if (count, group) != wanted.get(fp, (0, None))]
+                    changes = duplicate_changes([tuple(r) for r in await cur.fetchall()])
                 await db.executemany("UPDATE scan_results SET dup_count = ?, dup_group = ? WHERE file_path = ?",
                                      changes)
                 await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", (flag,))

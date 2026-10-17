@@ -866,6 +866,8 @@ async def research_file(file_path: str, delete_file: bool = True, dry_run: bool 
         db = await connect_db()
         try:
             await db.execute("DELETE FROM scan_results WHERE file_path = ?", (file_path,))
+            from backend.routes.scan import recount_duplicates
+            await recount_duplicates(db, [file_path])
             await db.commit()
         finally:
             await db.close()

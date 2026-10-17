@@ -431,6 +431,35 @@ def duplicate_groups(paths) -> dict[str, list[str]]:
     return groups
 
 
+def duplicate_changes(rows) -> list[tuple[int, str | None, str]]:
+    """(dup_count, dup_group, file_path) for the rows — (file_path, stored
+    count, stored group) — whose stored count isn't duplicate_groups'.
+    Files being written (.converting / .remuxing) are never duplicates."""
+    paths = [r[0] for r in rows if ".converting." not in r[0] and ".remuxing." not in r[0]]
+    wanted = {fp: (len(files), group) for group, files in duplicate_groups(paths).items() for fp in files}
+    return [(*wanted.get(fp, (0, None)), fp) for fp, count, group in rows
+            if (count or 0, group) != wanted.get(fp, (0, None))]
+
+
+async def recount_duplicates(db, file_paths) -> int:
+    """Redo the duplicate counts of the folders holding `file_paths` (v0.10.0):
+    a file there was deleted, trashed, removed from the list or added — the
+    counts were only redone by a scan, so the copy kept stayed a duplicate.
+    The caller commits. Returns the rows changed."""
+    changes = []
+    for folder in {fp.rsplit("/", 1)[0] for fp in file_paths if "/" in fp}:
+        clause, params = prefix_clause([folder + "/"])
+        async with db.execute(
+            f"SELECT file_path, dup_count, dup_group FROM scan_results WHERE removed_from_list = 0 AND ({clause})",
+            params,
+        ) as cur:
+            rows = [tuple(r) for r in await cur.fetchall() if r[0].rsplit("/", 1)[0] == folder]
+        changes += duplicate_changes(rows)
+    if changes:
+        await db.executemany("UPDATE scan_results SET dup_count = ?, dup_group = ? WHERE file_path = ?", changes)
+    return len(changes)
+
+
 def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, cancel_file: str,
                          reuse_probes: bool = False) -> None:
     """Runs in a separate process — does all ffprobe/DB work without blocking the main event loop."""
@@ -3425,9 +3454,13 @@ async def rescan_folder(request: ScanRequest):
 async def delete_scan_result(result_id: int):
     db = await aiosqlite.connect(DB_PATH)
     try:
+        async with db.execute("SELECT file_path FROM scan_results WHERE id = ?", (result_id,)) as cur:
+            row = await cur.fetchone()
         await db.execute(
             "UPDATE scan_results SET removed_from_list = 1 WHERE id = ?", (result_id,)
         )
+        if row:
+            await recount_duplicates(db, [row[0]])
         await db.commit()
     finally:
         await db.close()
@@ -3484,6 +3517,7 @@ async def delete_file_from_disk(req: DeleteFileRequest):
         db = await aiosqlite.connect(DB_PATH)
         try:
             await db.execute("DELETE FROM scan_results WHERE file_path = ?", (file_path,))
+            await recount_duplicates(db, [file_path])
             await db.commit()
         finally:
             await db.close()
@@ -3500,6 +3534,7 @@ async def delete_file_from_disk(req: DeleteFileRequest):
     db = await aiosqlite.connect(DB_PATH)
     try:
         await db.execute("DELETE FROM scan_results WHERE file_path = ?", (file_path,))
+        await recount_duplicates(db, [file_path])
         # Also remove any pending jobs for this file
         await db.execute("DELETE FROM jobs WHERE file_path = ? AND status = 'pending'", (file_path,))
         await db.commit()
