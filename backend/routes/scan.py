@@ -13,7 +13,7 @@ from backend.database import DB_PATH, connect_db, is_temp_path, prefix_clause
 from backend.models import ScanRequest
 from backend.scan_filters import (
     EXTRAS_FOLDERS, HIGH_BITRATE, LISTED, LOW_BITRATE, NEW_WINDOW_S, PY_COLUMNS, count_all, facet_counts, parse_filter,
-    row_converted, row_ignored, row_low_bitrate, row_type, row_watch_status,
+    row_converted, row_ignored, row_low_bitrate, row_type, row_watch_status, is_ignored_path,
     build_dir_label_index as _build_dir_label_index,
 )
 from backend.resolution import resolution_tier
@@ -3465,6 +3465,43 @@ async def delete_scan_result(result_id: int):
     finally:
         await db.close()
     return {"status": "deleted", "id": result_id}
+
+
+class SelectedFilesRequest(BaseModel):
+    paths: list[str] = []
+    filter: str = "all"
+    select_all: bool = False
+
+
+@router.post("/selected-files")
+async def selected_files(req: SelectedFilesRequest) -> list[dict]:
+    """The files a Scanner selection stands for (v0.10.0): files picked on
+    their own, the files under selected titles (folder paths, through the
+    filter), or the whole filtered list. Trash, Remove and Un-ignore read
+    only the files loaded in the page, so titles selected in the poster grid
+    did nothing."""
+    if req.select_all:
+        paths = await _paths_matching(req.filter or "all")
+    else:
+        folders = [p for p in req.paths if p.endswith("/")]
+        paths = (await _paths_matching(req.filter or "all", folders) if folders else []) + [
+            p for p in req.paths if not p.endswith("/")]
+    paths = list(dict.fromkeys(paths))
+    db = await aiosqlite.connect(DB_PATH)
+    db.row_factory = aiosqlite.Row
+    try:
+        ctx = await _build_enrichment_context(db)
+        found: dict[str, int] = {}
+        for i in range(0, len(paths), 900):
+            chunk = paths[i:i + 900]
+            async with db.execute(
+                f"SELECT id, file_path FROM scan_results WHERE removed_from_list = 0 "
+                f"AND file_path IN ({','.join('?' * len(chunk))})", chunk,
+            ) as cur:
+                found.update({r["file_path"]: r["id"] for r in await cur.fetchall()})
+    finally:
+        await db.close()
+    return [{"id": found[p], "file_path": p, "ignored": is_ignored_path(p, ctx)} for p in paths if p in found]
 
 
 class DeleteFileRequest(BaseModel):

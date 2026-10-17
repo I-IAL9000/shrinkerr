@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from "react";
 import { useTranslation, Trans } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
-import { startQueue, getScanTree, getScanStats, getFilterCounts, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, getPosterPrefetchStatus, startPosterPrefetch, queueHealthChecks, arrActionBulk, type DetectBatchProgress, type FacetLists } from "../api";
+import { startQueue, getScanTree, getScanStats, getFilterCounts, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, getPosterPrefetchStatus, startPosterPrefetch, queueHealthChecks, arrActionBulk, getSelectionFiles, type DetectBatchProgress, type FacetLists } from "../api";
 import { fmtNum } from "../fmt";
 import { naturalCompare } from "../utils/naturalCompare";
 import StatsCards from "../components/StatsCards";
@@ -637,8 +637,17 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     }
   };
 
+  // The selection's files, from the server (v0.10.0): titles selected in the
+  // poster grid have no files loaded in the page, so Trash, Remove and
+  // Un-ignore on them did nothing.
+  const fetchSelectionFiles = async () => {
+    const files = await getSelectionFiles(selectAllActive ? [] : Array.from(selectedPaths), filter, selectAllActive);
+    if (!files.length) toast(t("scanner:toasts.noSelection"));
+    return files;
+  };
+
   const handleBulkDelete = async () => {
-    const selected = getSelectedFiles();
+    const selected = await fetchSelectionFiles();
     if (!selected.length) return;
     if (!await confirm({ message: t("scanner:confirm.trash", { count: selected.length }), confirmLabel: t("scanner:confirm.trashLabel", { count: selected.length }), danger: true })) return;
     setBulkAction(t("scanner:bulk.trashing", { count: selected.length }));
@@ -662,7 +671,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   };
 
   const handleBulkRemove = async () => {
-    const selected = getSelectedFiles();
+    const selected = await fetchSelectionFiles();
     if (!selected.length) return;
     if (!await confirm({ message: t("scanner:confirm.remove", { count: selected.length }), confirmLabel: t("common:actions.remove") })) return;
     setBulkAction(t("scanner:bulk.removing", { count: selected.length }));
@@ -711,7 +720,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   };
 
   const handleBulkUnignore = async () => {
-    const selected = getSelectedFiles().filter(f => f.ignored);
+    const selected = (await fetchSelectionFiles()).filter(f => f.ignored);
     if (!selected.length) return;
     if (!await confirm({ message: t("scanner:confirm.unignore", { count: selected.length }), confirmLabel: t("common:actions.unignore") })) return;
     setBulkAction(t("scanner:bulk.unignoring", { count: selected.length }));

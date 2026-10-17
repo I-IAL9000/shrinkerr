@@ -174,6 +174,12 @@ export const setTrackLanguage = (filePath: string, trackType: "audio" | "subtitl
   apiFetch<{ status: string; file_written: boolean; pending_detected: boolean; audio_tracks: any[]; subtitle_tracks: any[] }>(
     "/scan/set-track-language",
     { method: "POST", body: JSON.stringify({ file_path: filePath, track_type: trackType, stream_index: streamIndex, language }) });
+// The files a Scanner selection stands for: its files, its titles' (folder
+// paths, through the filter) or, on select all, the filtered list (v0.10.0).
+export const getSelectionFiles = (paths: string[], filter: string, selectAll: boolean) =>
+  apiFetch<{ id: number; file_path: string; ignored: boolean }[]>("/scan/selected-files", {
+    method: "POST", body: JSON.stringify({ paths, filter, select_all: selectAll }),
+  });
 export const deleteFileFromDisk = (filePath: string) =>
   apiFetch<{ status: string; file_deleted: boolean }>("/scan/delete-file", { method: "POST", body: JSON.stringify({ file_path: filePath }) });
 export const importSettings = (data: any) =>
