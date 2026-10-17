@@ -124,6 +124,15 @@ class BulkQueueFromScanRequest(BaseModel):
     direct_play_fixes: Optional[list[str]] = None
 
 
+async def _ignored_among(db, file_paths: list[str]) -> set[str]:
+    """The files that are ignored — by hand, by their folder or by a skip
+    rule — as the Scanner tells them (scan_filters.is_ignored_path)."""
+    from backend.routes.scan import ignore_context
+    from backend.scan_filters import is_ignored_path
+    ignore = await ignore_context(db)
+    return {fp for fp in file_paths if is_ignored_path(fp, ignore)}
+
+
 def _direct_play_fixing(found: dict[str, list[str]], payload) -> dict[str, list[str]]:
     """File → the direct-play problems it has (`found`: problems_for's) that
     Add to Queue chose to fix (`direct_play_fixes`, None: all). Hi10P's fix
@@ -510,6 +519,11 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
             from backend.direct_play import problems_for
             direct_play = _direct_play_fixing(await problems_for(db, file_paths), payload)
 
+        # Ignored files (by hand, their folder or a skip rule) get only their
+        # clean-up, as an "ignore" rule's do — never a conversion (v0.10.0;
+        # Add to Queue's override converts them).
+        ignored = set() if payload.override_rules else await _ignored_among(db, file_paths)
+
         jobs_to_insert: list[dict] = []
         ignored_by_rule = 0
         for fp in file_paths:
@@ -532,6 +546,8 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
             skip_conversion = rule and rule["action"] == "ignore"
             if skip_conversion:
                 ignored_by_rule += 1
+            elif fp in ignored:
+                skip_conversion = True
 
             row = scan_rows.get(fp)
             if not row:
@@ -596,7 +612,8 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
                 # Nothing to do and the file was explicitly exempted from
                 # conversion (ignore rule / cleanup-only) — skip with a note.
                 if skip_conversion:
-                    print(f"[QUEUE] Skipped {fp} (ignore rule: {rule['rule_name']}), no audio/sub work", flush=True)
+                    why = f"ignore rule: {rule['rule_name']}" if rule else "ignored"
+                    print(f"[QUEUE] Skipped {fp} ({why}), no audio/sub work", flush=True)
                 elif payload.cleanup_only:
                     print(f"[QUEUE] Skipped {fp} (cleanup_only: no audio/sub work to do)", flush=True)
                 continue
@@ -2136,24 +2153,14 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         # matching the slider — making the initial reading look broken.
         file_cqs: list[int] = []
 
-        # Check which files are in the ignored_files table — batched
-        ignored_set = set()
+        # Ignored files — by hand, their folder or a skip rule (v0.10.0: only
+        # those ignored by hand were counted) — get only their clean-up, as
+        # add-from-scan has it, unless the override's on.
+        ignored_set = await _ignored_among(db, file_paths)
         scan_rows: dict[str, dict] = {}
         if file_paths:
             # Chunk IN clauses to stay under SQLite's 999-variable limit
             CHUNK = 900
-            try:
-                for i in range(0, len(file_paths), CHUNK):
-                    chunk = file_paths[i:i + CHUNK]
-                    placeholders = ",".join("?" * len(chunk))
-                    async with db.execute(
-                        f"SELECT file_path FROM ignored_files WHERE file_path IN ({placeholders})",
-                        chunk,
-                    ) as cur:
-                        for r in await cur.fetchall():
-                            ignored_set.add(r["file_path"])
-            except Exception:
-                pass
 
             # Batch-load scan_results for all file paths (avoids N+1 queries)
             for i in range(0, len(file_paths), CHUNK):
@@ -2191,7 +2198,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                 skipped += 1
             if fp in ignored_set:
                 ignored_count += 1
-            skip_conv = rule and rule["action"] == "ignore"
+            skip_conv = (rule and rule["action"] == "ignore") or (fp in ignored_set and not payload.override_rules)
 
             row = scan_rows.get(fp)
             if not row:

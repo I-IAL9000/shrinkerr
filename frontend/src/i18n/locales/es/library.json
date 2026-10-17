@@ -14,7 +14,7 @@
     "ignoreFolderTitle": "Ignorar todos los archivos de {{name}}/",
     "ignoreFile": "Ignorar este archivo",
     "removeFromList": "Quitar de la lista",
-    "ignoreFileTitle": "Ignorar este archivo: queda fuera de las conversiones y limpiezas, también las automáticas, hasta que dejes de ignorarlo",
+    "ignoreFileTitle": "Ignorar este archivo: no se convierte, ni automáticamente ni de otra forma; solo se hace su limpieza de audio y subtítulos",
     "removeFromListTitle": "Quitar de la lista: no se borra nada del disco, y un escaneo posterior puede volver a listarlo",
     "trashFileTitle": "Mover a la papelera: se puede restaurar desde la papelera, fuera de Shrinkerr, hasta que se vacíe",
     "trashConfirm": "¿Mover este archivo a la papelera?\n\n{{name}}",

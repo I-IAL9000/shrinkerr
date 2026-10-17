@@ -7,8 +7,8 @@
   },
   "estimate": {
     "title": "Add to Queue",
-    "rulesWarningTitle": "Some selected files are covered by encoding rules",
-    "rulesWarningHelp": "Toggle override to process them anyway with default settings.",
+    "rulesWarningTitle": "Some selected files are ignored or covered by encoding rules",
+    "rulesWarningHelp": "Ignored files only get their audio and subtitle clean-up. Override to convert them too, with the default settings.",
     "overrideRules": "Override rules",
     "estimating": "Estimating...",
     "filesToProcess": "Files to process",
@@ -23,7 +23,7 @@
     "ignoredFiles_one": "{{num}} file with <badge>IGNORE</badge> status",
     "ignoredFiles_other": "{{num}} files with <badge>IGNORE</badge> status",
     "skippedByRules": "{{num}} skipped by rules",
-    "includeIgnored": "Include ignored files and override rules",
+    "includeIgnored": "Convert ignored files too, and override rules",
     "priority": "Priority",
     "priorities": {
       "normal": "Normal",

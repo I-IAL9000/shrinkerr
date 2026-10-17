@@ -72,7 +72,8 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   const [estimate, setEstimate] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [priority, setPriority] = useState(0);
-  const [overrideRules, setOverrideRules] = useState(!!hasIgnoredFiles);
+  // Off (v0.10.0): ignored files get only their clean-up, as rules have it.
+  const [overrideRules, setOverrideRules] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Encoding overrides — null = auto (falls back to the user's configured

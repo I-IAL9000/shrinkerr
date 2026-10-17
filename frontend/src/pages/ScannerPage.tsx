@@ -1138,7 +1138,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       // Select all: use the filter-based server-side resolution
       const anyIgnored = allFiles.some(f => f.ignored);
       setEstimatePaths(folders.map(f => f.path + "/"));
-      setEstimateHasIgnored(anyIgnored);
+      setEstimateHasIgnored(anyIgnored || (selectionSummary?.ignored ?? 0) > 0);
       return;
     }
     if (!paths.length) {
@@ -1146,7 +1146,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       return;
     }
     setEstimatePaths(paths);
-    setEstimateHasIgnored(hasIgnored);
+    // (titles not opened: the selection's count, v0.10.0)
+    setEstimateHasIgnored(hasIgnored || (selectionSummary?.ignored ?? 0) > 0);
   };
 
   // "Add to queue" on a file open in the tree or under a poster (FileDetail):

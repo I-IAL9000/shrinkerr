@@ -2065,16 +2065,10 @@ async def title_context(db) -> dict:
     return ctx
 
 
-async def _build_enrichment_context(db, titles: bool = False) -> dict:
-    """Build shared context for enriching scan results (used by results, tree, files endpoints).
-    `titles`: also the title metadata (FilterExpr.needs_titles)."""
-    import bisect
-    from datetime import datetime, timedelta, timezone
-
-    LOW_BITRATE_THRESHOLD = LOW_BITRATE
-    HIGH_BITRATE_THRESHOLD = HIGH_BITRATE
-
-    # Ignored paths/folders
+async def ignore_context(db) -> dict:
+    """What scan_filters.is_ignored_path reads: files and folders ignored by
+    hand, skip rules' prefixes, and the files exempt from them. `db` needs
+    aiosqlite.Row rows."""
     ignored_paths: set[str] = set()
     ignored_folders_raw: list[str] = []
     rule_exempt_paths: set[str] = set()
@@ -2088,7 +2082,6 @@ async def _build_enrichment_context(db, titles: bool = False) -> dict:
             ignored_paths.add(p)
             if p.endswith("/"):
                 ignored_folders_raw.append(p)
-    ignored_folders_sorted = sorted(set(ignored_folders_raw))
 
     # Rule-based skip prefixes
     skip_prefixes_sorted: list[str] = []
@@ -2099,6 +2092,20 @@ async def _build_enrichment_context(db, titles: bool = False) -> dict:
             skip_prefixes_sorted = sorted(set(raw_pf))
     except Exception:
         pass
+    return {"ignored_paths": ignored_paths, "ignored_folders_sorted": sorted(set(ignored_folders_raw)),
+            "rule_exempt_paths": rule_exempt_paths, "skip_prefixes_sorted": skip_prefixes_sorted}
+
+
+async def _build_enrichment_context(db, titles: bool = False) -> dict:
+    """Build shared context for enriching scan results (used by results, tree, files endpoints).
+    `titles`: also the title metadata (FilterExpr.needs_titles)."""
+    import bisect
+    from datetime import datetime, timedelta, timezone
+
+    LOW_BITRATE_THRESHOLD = LOW_BITRATE
+    HIGH_BITRATE_THRESHOLD = HIGH_BITRATE
+
+    ignore = await ignore_context(db)
 
     # Queued file paths
     queued_paths: set[str] = set()
@@ -2143,10 +2150,7 @@ async def _build_enrichment_context(db, titles: bool = False) -> dict:
         pass
 
     ctx = {
-        "ignored_paths": ignored_paths,
-        "ignored_folders_sorted": ignored_folders_sorted,
-        "rule_exempt_paths": rule_exempt_paths,
-        "skip_prefixes_sorted": skip_prefixes_sorted,
+        **ignore,
         "queued_paths": queued_paths,
         "converted_paths": converted_paths,
         "converted_folders": converted_folders,

@@ -7,8 +7,8 @@
   },
   "estimate": {
     "title": "Añadir a la cola",
-    "rulesWarningTitle": "Algunos archivos seleccionados están cubiertos por reglas de codificación",
-    "rulesWarningHelp": "Activa la anulación para procesarlos igualmente con la configuración predeterminada.",
+    "rulesWarningTitle": "Algunos archivos seleccionados están ignorados o cubiertos por reglas de codificación",
+    "rulesWarningHelp": "Los archivos ignorados solo reciben la limpieza de audio y subtítulos. Anula para convertirlos también, con la configuración predeterminada.",
     "overrideRules": "Anular reglas",
     "estimating": "Calculando estimación...",
     "filesToProcess": "Archivos a procesar",
@@ -24,7 +24,7 @@
     "ignoredFiles_many": "{{num}} archivos con estado <badge>IGNORE</badge>",
     "ignoredFiles_other": "{{num}} archivos con estado <badge>IGNORE</badge>",
     "skippedByRules": "{{num}} omitidos por reglas",
-    "includeIgnored": "Incluir archivos ignorados y anular reglas",
+    "includeIgnored": "Convertir también los archivos ignorados y anular reglas",
     "priority": "Prioridad",
     "priorities": {
       "normal": "Normal",

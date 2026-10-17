@@ -52,7 +52,7 @@
     "thoroughCheck": "Comprobación exhaustiva",
     "thoroughCheckDesc": "Decodificación completa fotograma a fotograma. Lenta: aprox. duración / 10 por archivo.",
     "trashFiles": "Enviar a la papelera",
-    "ignoreTitle": "Deja estos archivos fuera de las conversiones y limpiezas, también las automáticas, hasta que dejes de ignorarlos. Siguen en la lista.",
+    "ignoreTitle": "No convertir estos archivos, ni automáticamente ni de otra forma: solo se hace su limpieza de audio y subtítulos. Siguen en la lista.",
     "unignoreTitle": "Permite volver a convertir y limpiar estos archivos",
     "removeTitle": "Quita estos archivos de la lista. No se borra nada del disco, y un escaneo posterior puede volver a listarlos.",
     "trashTitle": "Mueve estos archivos a la papelera y los quita de la lista. Se pueden restaurar desde la papelera, fuera de Shrinkerr, hasta que se vacíe."

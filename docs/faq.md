@@ -157,17 +157,19 @@ not less. Scans record each file's hardlinks: the Scanner's **Hardlinked
 (seeding)** filter shows them, and **Skip files that are still hardlinked
 (e.g. seeding)** (Settings → Automation → Conversion Filters) leaves them
 out of the queue. It's on for new installs; installs from before 0.10
-turn it on there. Add to Queue says how many it left out, and **Include
-ignored files and override rules** queues them anyway.
+turn it on there. Add to Queue says how many it left out, and **Convert
+ignored files too, and override rules** queues them anyway.
 
 **What's the difference between Remove, Ignore and Trash files in the
 Scanner?**
 - **Remove** takes the row out of the Scanner's list. The file isn't
-  touched, and the next scan of its folder lists it again.
+  touched, and a later scan may list it again (one that has nothing to
+  convert or clean up isn't listed again).
 - **Ignore** keeps the file in the Scanner (the **Ignored** filter shows
-  it), but Add to Queue, auto-queue and policies leave it out unless you
-  tick **Include ignored files and override rules**. **Unignore** undoes
-  it.
+  it) and it's never converted — by Add to Queue, auto-queue or policies —
+  but its audio and subtitle clean-up still runs, as with an "ignore" rule.
+  Tick **Override rules** in Add to Queue to convert it anyway.
+  **Unignore** undoes it.
 - **Trash files** moves the file to the system trash (on Linux, a
   `.Trash-<uid>` folder at the top of the drive or share) and drops it
   from the Scanner and the queue. Shrinkerr can't restore it — your

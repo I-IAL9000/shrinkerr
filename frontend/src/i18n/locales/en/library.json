@@ -12,7 +12,7 @@
     "ignoreFolderTitle": "Ignore all files in {{name}}/",
     "ignoreFile": "Ignore this file",
     "removeFromList": "Remove from list",
-    "ignoreFileTitle": "Ignore this file: it's left out of conversions and clean-ups, automatic ones too, until you un-ignore it",
+    "ignoreFileTitle": "Ignore this file: it isn't converted, automatically or otherwise; only its audio and subtitle clean-up runs",
     "removeFromListTitle": "Remove from the list: nothing is deleted from disk, and a later scan may list it again",
     "trashFileTitle": "Move to trash: it can be restored from the trash, outside Shrinkerr, until it's emptied",
     "trashConfirm": "Move this file to trash?\n\n{{name}}",

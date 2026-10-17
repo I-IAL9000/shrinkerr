@@ -114,7 +114,8 @@ folder is removed only if that left it empty.
 
 ## Files Shrinkerr leaves alone
 
-- **Ignored files**, until you un-ignore them.
+- **Ignored files** aren't converted until you un-ignore them; their audio
+  and subtitle clean-up still runs.
 - **Hardlinked files**, such as downloads that are still seeding: on new
   installs Settings → Automation skips them, since converting one leaves the
   torrent client's copy behind and uses more space, not less.

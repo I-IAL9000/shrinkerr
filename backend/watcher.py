@@ -529,6 +529,9 @@ class FileWatcher:
                         self.db_path, scanned.file_path
                     )
 
+            # Auto-queue sees them all (v0.10.0): one in an ignored folder gets
+            # only its clean-up there — it was left out entirely.
+            to_queue = results
             # Auto-ignore files in ignored folders
             if ignored_folders:
                 from datetime import datetime as _dt, timezone as _tz
@@ -549,12 +552,12 @@ class FileWatcher:
                     finally:
                         await db2.close()
                     print(f"[WATCHER] Auto-ignored {len(auto_ignored)} files in ignored folders", flush=True)
-                    # Exclude auto-ignored from auto-queue
+                    # Not counted as new
                     auto_ignored_set = set(auto_ignored)
                     results = [s for s in results if s.file_path not in auto_ignored_set]
 
             # Auto-queue if enabled
-            await self._auto_queue_new_files(results)
+            await self._auto_queue_new_files(to_queue)
 
         added = [s.file_path for s in results]
         return added, [p for p in added if p not in unread_old]
