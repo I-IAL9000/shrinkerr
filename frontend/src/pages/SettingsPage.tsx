@@ -23,6 +23,7 @@ import {
   getBackups, deleteBackups, clearPendingHealthChecks,
   type PlexAuthStatus, type PlexServer, type ChangelogEntry,
   type EncoderCaps, getViews, type SavedView, syncArrStatus, syncMaintainerr,
+  checkAuth, logout, getAuthConnection,
 } from "../api";
 import ChangelogEntryView from "../components/ChangelogEntry";
 import ChangelogModal from "../components/ChangelogModal";
@@ -344,6 +345,11 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
   const [ruleSyncing, setRuleSyncing] = useState(false);
   const [ruleDragIdx, setRuleDragIdx] = useState<number | null>(null);
 
+  // Authentication: how this browser got in (Sign out only means something
+  // after a password sign-in) and the address the server sees.
+  const [signedInBy, setSignedInBy] = useState<string | null>(null);
+  const [connection, setConnection] = useState<{ address: string; proxied: boolean; local: boolean } | null>(null);
+
   // Backup state
   const [backupList, setBackupList] = useState<{ name: string; size: number; created_at: string }[]>([]);
   const [backupCreating, setBackupCreating] = useState(false);
@@ -656,6 +662,19 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
     }).then(leave => (leave ? blocker.proceed() : blocker.reset()));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blocker.state]);
+
+  // A sub-page opens at its top: the scroll position used to carry over from
+  // the last one. `.main-content` scrolls on desktop, the window on phones.
+  useEffect(() => {
+    pageRef.current?.closest(".main-content")?.scrollTo({ top: 0 });
+    window.scrollTo({ top: 0 });
+  }, [section]);
+
+  useEffect(() => {
+    if (section !== "system") return;
+    checkAuth().then(r => setSignedInBy(r.method)).catch(() => {});
+    getAuthConnection().then(setConnection).catch(() => {});
+  }, [section]);
 
   // Phones: keep the current page's tab in view in the scrolling strip.
   const stripRef = useRef<HTMLElement>(null);
@@ -5002,7 +5021,15 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
               </h2>
               {/* Authentication */}
               <div style={sectionStyle}>
-                <h3 style={{ color: "white", margin: 0, marginBottom: 12 }}>{t("settingsSystem:auth.title")}</h3>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <h3 style={{ color: "white", margin: 0 }}>{t("settingsSystem:auth.title")}</h3>
+                  {signedInBy === "session" && (
+                    <button className="btn btn-xs btn-secondary"
+                      onClick={() => logout().finally(() => window.location.assign("/"))}>
+                      {t("settingsSystem:auth.signOut")}
+                    </button>
+                  )}
+                </div>
 
                 {/* How people sign in (v0.10.0): required — the sign-in page
                     or a reverse proxy; for everyone or not for local
@@ -5030,6 +5057,12 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         <option value="local_disabled">{t("nav:authSetup.requiredLocalDisabled")}</option>
                       </select>
                       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, maxWidth: 560 }}>{t("nav:authSetup.localHelp")}</div>
+                      {connection && (
+                        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4, maxWidth: 560 }}>
+                          {t(`settingsSystem:auth.connection.${connection.proxied ? "proxied" : connection.local ? "local" : "notLocal"}`,
+                            { address: connection.address || "?" })}
+                        </div>
+                      )}
                     </div>
                     <div style={{ marginBottom: 12 }}>
                       <div style={labelStyle}>{t("settingsSystem:auth.username")}</div>

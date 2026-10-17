@@ -1007,6 +1007,14 @@ async def auth_logout():
     return response
 
 
+@app.get("/api/auth/connection")
+async def auth_connection(request: Request):
+    """The address this browser reaches Shrinkerr from and whether it
+    counts as local (Settings → System → Authentication)."""
+    from backend import auth_policy
+    return auth_policy.describe(request)
+
+
 # Include routers
 app.include_router(jobs_router)
 app.include_router(scan_router)

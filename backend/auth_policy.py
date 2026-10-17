@@ -54,6 +54,14 @@ def is_local(request) -> bool:
     return any(ip in net for net in _LOCAL_NETS)
 
 
+def describe(request) -> dict:
+    """What is_local goes by, for Settings: the address this request comes
+    from and whether a proxy header came with it."""
+    return {"address": getattr(getattr(request, "client", None), "host", None) or "",
+            "proxied": any(bool(request.headers.get(h)) for h in _PROXY_HEADERS),
+            "local": is_local(request)}
+
+
 def bypass(settings: dict, request) -> str | None:
     """"external" or "local" when this request needs no sign-in (outside
     the integration endpoints), else None."""

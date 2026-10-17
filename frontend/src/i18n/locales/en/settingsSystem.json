@@ -115,7 +115,13 @@
     "reveal": "Reveal",
     "copy": "Copy to clipboard",
     "regenerate": "Regenerate API key (server-side; takes effect immediately)",
-    "apiKeyHelp": "Used by NZBGet, SABnzbd, remote workers, and other external integrations. Not required for browser login. Shown masked — click 👁 to reveal or ⧉ to copy the full key."
+    "apiKeyHelp": "Used by NZBGet, SABnzbd, remote workers, and other external integrations. Not required for browser login. Shown masked — click 👁 to reveal or ⧉ to copy the full key.",
+    "signOut": "Sign out",
+    "connection": {
+      "local": "This browser reaches Shrinkerr from {{address}}, which counts as a local address.",
+      "notLocal": "This browser reaches Shrinkerr from {{address}}, which isn't a local address.",
+      "proxied": "This browser reaches Shrinkerr through a proxy ({{address}}), so it isn't counted as local."
+    }
   },
   "notifications": {
     "title": "Notifications",

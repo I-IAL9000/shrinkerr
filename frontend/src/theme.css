@@ -1014,7 +1014,7 @@ input[type="checkbox"] { cursor: pointer; }
 .sort-pills { display: contents; }
 .sort-compact { display: none; align-items: center; gap: 4px; }
 .sort-select {
-  background: var(--bg-secondary); color: var(--text-primary);
+  background-color: var(--bg-secondary); color: var(--text-primary);
   border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px; font-size: 12px;
 }
 @media (max-width: 1100px) {
@@ -1155,7 +1155,7 @@ input[type="checkbox"] { cursor: pointer; }
 .wizard-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
 .wizard-row input, .wizard-row select, .language-picker input {
   height: 34px; padding: 0 10px; font-size: 13px; color: var(--text-primary);
-  background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; min-width: 0;
+  background-color: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; min-width: 0;
 }
 .wizard-error { flex-basis: 100%; font-size: 12px; color: var(--danger); }
 .wizard-done { color: var(--success); font-size: 13px; }

@@ -112,6 +112,10 @@ export const login = (username: string, password: string) =>
 
 export const logout = () =>
   fetch("/api/auth/logout", { method: "POST" }).then(r => r.json());
+// The address this browser reaches Shrinkerr from, and whether it counts as
+// local for "not for local addresses" (backend/auth_policy.py).
+export const getAuthConnection = () =>
+  apiFetch<{ address: string; proxied: boolean; local: boolean }>("/auth/connection");
 
 // Scan
 export const startScan = (paths: string[]) =>

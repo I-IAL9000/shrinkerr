@@ -117,7 +117,13 @@
     "reveal": "Mostrar",
     "copy": "Copiar al portapapeles",
     "regenerate": "Regenerar la clave de API (en el servidor; se aplica de inmediato)",
-    "apiKeyHelp": "La usan NZBGet, SABnzbd, los workers remotos y otras integraciones externas. No es necesaria para iniciar sesión en el navegador. Se muestra enmascarada: pulsa 👁 para mostrarla o ⧉ para copiar la clave completa."
+    "apiKeyHelp": "La usan NZBGet, SABnzbd, los workers remotos y otras integraciones externas. No es necesaria para iniciar sesión en el navegador. Se muestra enmascarada: pulsa 👁 para mostrarla o ⧉ para copiar la clave completa.",
+    "signOut": "Cerrar sesión",
+    "connection": {
+      "local": "Este navegador llega a Shrinkerr desde {{address}}, que cuenta como dirección local.",
+      "notLocal": "Este navegador llega a Shrinkerr desde {{address}}, que no es una dirección local.",
+      "proxied": "Este navegador llega a Shrinkerr a través de un proxy ({{address}}), así que no cuenta como local."
+    }
   },
   "notifications": {
     "title": "Notificaciones",

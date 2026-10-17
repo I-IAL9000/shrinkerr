@@ -83,7 +83,7 @@ export default function VideoDetails({ file: listed }: { file: ScannedFile }) {
     [t("fileDetail:details.added"), file.file_mtime ? fmtDate(file.file_mtime * 1000) : null],
   ];
   return (
-    <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: "4px 16px",
+    <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(150px, calc(50% - 8px)), 1fr))", gap: "4px 16px",
                  margin: "4px 0 8px", fontSize: 12 }}>
       {rows.map(([label, value, help]) => (
         <div key={label} style={{ minWidth: 0 }} title={help}>

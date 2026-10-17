@@ -174,3 +174,21 @@ async def test_settings_downloads_work_when_sign_in_trusts_the_request(app, test
     async with _client(app, LOCAL) as c:  # no sign-in set up at all: still never anonymous
         assert (await c.get("/api/settings/nzbget-script")).status_code in (401, 503)
         assert (await c.get("/api/settings/backup/download/x.zip")).status_code in (401, 503)
+
+
+@pytest.mark.asyncio
+async def test_the_address_shrinkerr_sees(app, test_db):
+    """Settings shows the address this browser reaches Shrinkerr from and
+    whether it counts as local: under "not for local addresses", visits
+    over Tailscale and mobile data got in without signing in."""
+    from backend.main import _hash_password
+    await _set(test_db, app, auth_method="forms", auth_required="local_disabled", auth_username="me",
+               auth_password_hash=_hash_password("long enough"))
+    async with _client(app, LOCAL) as c:
+        assert (await c.get("/api/auth/connection")).json() == {"address": "192.168.1.5", "proxied": False, "local": True}
+        assert (await c.get("/api/auth/connection", headers={"X-Forwarded-For": "8.8.4.4"})).status_code == 401
+    async with _client(app, REMOTE) as c:
+        assert (await c.get("/api/auth/connection")).status_code == 401  # signed out: nothing
+        assert (await c.post("/api/auth/login", json={"username": "me", "password": "long enough"})).status_code == 200
+        assert (await c.get("/api/auth/connection")).json() == {"address": "8.8.4.4", "proxied": False, "local": False}
+        assert (await c.get("/api/auth/connection", headers={"X-Real-IP": "8.8.4.4"})).json()["proxied"] is True
