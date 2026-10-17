@@ -1273,6 +1273,34 @@ async def init_db():
         except Exception as exc:
             print(f"[DB] v0.10.0 converted-savings backfill skipped: {exc}", flush=True)
 
+        # v0.10.0 backfill: duplicates as they're told apart now (SC-16: by
+        # season and episode; extras and parts aren't copies). A folder's
+        # counts were redone only when a scan walked it, so files flagged
+        # before — a show's Specials/Deleted Scenes, say — kept the flag. Once.
+        try:
+            flag = "_v0_10_0_recount_duplicates"
+            async with db.execute("SELECT 1 FROM settings WHERE key = ?", (flag,)) as cur:
+                already_run = await cur.fetchone() is not None
+            if not already_run:
+                from backend.routes.scan import duplicate_groups
+                async with db.execute(
+                    "SELECT file_path, COALESCE(dup_count, 0), dup_group FROM scan_results "
+                    "WHERE removed_from_list = 0 AND file_path NOT LIKE '%.converting.%' "
+                    "AND file_path NOT LIKE '%.remuxing.%'"
+                ) as cur:
+                    rows = await cur.fetchall()
+                wanted = {fp: (len(files), group) for group, files in duplicate_groups(r[0] for r in rows).items()
+                          for fp in files}
+                changes = [(*wanted.get(fp, (0, None)), fp) for fp, count, group in rows
+                           if (count, group) != wanted.get(fp, (0, None))]
+                await db.executemany("UPDATE scan_results SET dup_count = ?, dup_group = ? WHERE file_path = ?",
+                                     changes)
+                await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", (flag,))
+                if changes:
+                    print(f"[DB] v0.10.0 backfill: recounted duplicates, {len(changes)} file(s) changed", flush=True)
+        except Exception as exc:
+            print(f"[DB] v0.10.0 duplicate recount skipped: {exc}", flush=True)
+
         # v0.10.0 backfill: a conversion wrote video_codec 'hevc' whatever it
         # encoded, so AV1 outputs showed (and filtered) as HEVC. Relabel a
         # converted file whose latest conversion that replaced it recorded

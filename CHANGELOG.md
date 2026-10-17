@@ -120,7 +120,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - "Search missing" searches only the selected series.
 - The watcher skips what a full scan skips (converted files were re-added), and videos beside a Blu-ray / DVD folder show up.
 - A renamed or moved file keeps its Scanner row: match, track edits, health and ignore.
-- Duplicate detection no longer flags episodes of different seasons, trailers, samples or CD parts.
+- Duplicate detection no longer flags episodes of different seasons, trailers, samples, CD parts or extras folders (a show's Specials/Deleted Scenes, a film's Featurettes); files flagged by the old rules are recounted once on start-up.
 - Sidecar subtitles attach to the right video (`Saw II.eng.srt` isn't `Saw.mkv`'s), and names like `.English`, `.pt-BR` and `.forced.en` are understood.
 - NZBGet / SABnzbd and add-by-path jobs use your source codecs and default encoder.
 - The test encode in Add to Queue encodes exactly like the job will.

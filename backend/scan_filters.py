@@ -459,10 +459,10 @@ def _added_within(days: int) -> Callable[[], tuple]:
 
 # Plex / Jellyfin extras folders and suffixes, and release samples. Not an
 # "Other" folder: that's also a common media-folder name.
+EXTRAS_FOLDERS = ("behind the scenes", "deleted scenes", "featurettes", "interviews", "scenes", "shorts",
+                  "trailers", "extras", "samples", "sample")
 _EXTRAS = "(" + " OR ".join(
-    [f"file_path LIKE '%/{d}/%'" for d in (
-        "behind the scenes", "deleted scenes", "featurettes", "interviews", "scenes", "shorts",
-        "trailers", "extras", "samples", "sample")]
+    [f"file_path LIKE '%/{d}/%'" for d in EXTRAS_FOLDERS]
     + [f"file_path LIKE '%{s}.%'" for s in (
         "-trailer", "-behindthescenes", "-deleted", "-featurette", "-interview", "-scene", "-short",
         "-sample", ".sample")]

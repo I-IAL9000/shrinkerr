@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from backend.database import DB_PATH, connect_db, is_temp_path, prefix_clause
 from backend.models import ScanRequest
 from backend.scan_filters import (
-    HIGH_BITRATE, LISTED, LOW_BITRATE, NEW_WINDOW_S, PY_COLUMNS, count_all, facet_counts, parse_filter,
+    EXTRAS_FOLDERS, HIGH_BITRATE, LISTED, LOW_BITRATE, NEW_WINDOW_S, PY_COLUMNS, count_all, facet_counts, parse_filter,
     row_converted, row_ignored, row_low_bitrate, row_type, row_watch_status,
     build_dir_label_index as _build_dir_label_index,
 )
@@ -407,6 +407,10 @@ def duplicate_groups(paths) -> dict[str, list[str]]:
     groups: dict[str, list[str]] = {}
     for folder, files in by_folder.items():
         if len(files) < 2:
+            continue
+        # Extras (a show's Specials/Deleted Scenes, a film's Featurettes) are
+        # never copies of one another (v0.10.0).
+        if any(part in EXTRAS_FOLDERS for part in folder.lower().split("/")):
             continue
         folder_name = folder.rsplit("/", 1)[-1].lower()
         episodic = (folder_name.startswith(("season", "specials"))
