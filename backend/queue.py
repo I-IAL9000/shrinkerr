@@ -1324,8 +1324,17 @@ class QueueWorker:
         # Approved reviews' placement lane (v0.10.0): place_approved.
         self._placing: Optional[asyncio.Task] = None
         self._place_again = False
+        self._placing_ids: set[int] = set()
 
     _MAX_LOCK_REQUEUES = 5
+    # Approved reviews put in place at once: each mostly waits on the share,
+    # Plex and Sonarr / Radarr, and one at a time 270 took 10+ minutes.
+    PLACE_LANES = 4
+
+    def _encode_slots_used(self) -> int:
+        """Running jobs that count against the parallel-jobs limit: not the
+        placements of approved reviews."""
+        return sum(1 for job_id in self._active_tasks if job_id not in self._placing_ids)
     # v0.9.108: how often the loop reaps orphaned 'running' rows (seconds).
     _ORPHAN_REAP_INTERVAL = 60
 
@@ -1521,22 +1530,34 @@ class QueueWorker:
         self._placing = asyncio.create_task(self._place_approved_loop())
 
     async def _place_approved_loop(self) -> None:
+        running: set[asyncio.Task] = set()
+        started, placed = time.monotonic(), 0
         while True:
-            try:
-                job = await self.queue.claim_approved_review()
-            except Exception as exc:
-                print(f"[WORKER] Couldn't pick an approved review ({exc}); trying again shortly", flush=True)
-                await asyncio.sleep(5)
-                continue
-            if job is None:
+            while len(running) < self.PLACE_LANES:
+                try:
+                    job = await self.queue.claim_approved_review()
+                except Exception as exc:
+                    print(f"[WORKER] Couldn't pick an approved review ({exc}); trying again shortly", flush=True)
+                    await asyncio.sleep(5)
+                    break
+                if job is None:
+                    break
+                print(f"[WORKER] Placing approved job {job['id']}: {job['file_path']}", flush=True)
+                self._placing_ids.add(job["id"])
+                task = asyncio.create_task(self._worker_task(job))
+                task.add_done_callback(lambda _t, job_id=job["id"]: self._placing_ids.discard(job_id))
+                self._active_tasks[job["id"]] = task  # the reaper leaves it alone
+                running.add(task)
+                placed += 1
+            if not running:
                 if self._place_again:
                     self._place_again = False
                     continue
-                return
-            print(f"[WORKER] Placing approved job {job['id']}: {job['file_path']}", flush=True)
-            task = asyncio.create_task(self._worker_task(job))
-            self._active_tasks[job["id"]] = task  # the reaper leaves it alone
-            await asyncio.wait({task})
+                break
+            _, still = await asyncio.wait(running, return_when=asyncio.FIRST_COMPLETED)
+            running = set(still)
+        if placed:
+            print(f"[WORKER] Placed {placed} approved file(s) in {time.monotonic() - started:.0f} s", flush=True)
 
     def start_if_idle(self) -> bool:
         """Start the queue for newly added work (webhooks, add-by-path, health
@@ -2022,7 +2043,7 @@ class QueueWorker:
             except Exception as exc:
                 print(f"[WORKER] Failed to read parallel_jobs setting: {exc}", flush=True)
                 max_parallel = 1
-            active_count = len(self._active_tasks)
+            active_count = self._encode_slots_used()
 
             if active_count >= max_parallel:
                 await asyncio.sleep(0.5)

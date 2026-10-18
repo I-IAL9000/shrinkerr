@@ -70,6 +70,36 @@ def _mark_rescanned(key: str):
     _recent_rescans[key] = time.monotonic()
 
 
+def _folder_id(items: list[dict], arr_path: str):
+    """The series / movie whose folder holds `arr_path` (walking up), or None."""
+    check_path = str(Path(arr_path).parent)
+    while check_path and check_path != "/":
+        for item in items:
+            if check_path.rstrip("/") == item.get("path", "").rstrip("/"):
+                return item.get("id")
+        check_path = str(Path(check_path).parent)
+    return None
+
+
+async def _find_folder_id(client: httpx.AsyncClient, service: str, url: str, api_key: str, arr_path: str):
+    """_folder_id in the cached list, an expired one too while a new one is
+    fetched in the background: every rescan after it expired waited 10-20 s
+    for the whole library (approving 270 reviews took 10+ minutes). A folder
+    that list doesn't know waits for the new one (added since), unless the
+    list is fresh."""
+    cache = _sonarr_cache if service == "sonarr" else _radarr_cache
+    found = _folder_id(await _arr_items(client, service, url, api_key, stale_ok=True), arr_path)
+    if found is None and time.monotonic() - cache.get("fetched_at", 0) >= _LIST_CACHE_TTL:
+        refresh = _refreshing.get(service)
+        if refresh is not None:  # the one under way, not a second fetch
+            await asyncio.shield(refresh)
+            items = cache.get("data") or []
+        else:
+            items = await _fetch_items(client, service, url, api_key)
+        found = _folder_id(items, arr_path)
+    return found
+
+
 async def trigger_sonarr_rescan(file_path: str) -> bool:
     """Look up the series in Sonarr by folder path and trigger a rescan."""
     settings = await _get_arr_settings()
@@ -93,34 +123,7 @@ async def trigger_sonarr_rescan(file_path: str) -> bool:
         _arr_timeout = httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=10.0)
         async with httpx.AsyncClient(timeout=_arr_timeout) as client:
             headers = {"X-Api-Key": api_key}
-
-            # Use cached series list (refreshes every 5 min)
-            now = time.monotonic()
-            if _sonarr_cache.get("data") and (now - _sonarr_cache.get("fetched_at", 0)) < _LIST_CACHE_TTL:
-                series_list = _sonarr_cache["data"]
-            else:
-                resp = await client.get(f"{url}/api/v3/series", headers=headers)
-                resp.raise_for_status()
-                series_list = resp.json()
-                _sonarr_cache["data"] = series_list
-                _sonarr_cache["fetched_at"] = now
-                print(f"[SONARR] Fetched {len(series_list)} series from Sonarr", flush=True)
-
-            # Walk up the path hierarchy to find a matching series
-            series_id = None
-            check_path = str(Path(arr_path).parent)
-            checked_paths = []
-            while check_path and check_path != "/":
-                checked_paths.append(check_path.rstrip("/"))
-                for s in series_list:
-                    s_path = s.get("path", "").rstrip("/")
-                    if check_path.rstrip("/") == s_path:
-                        series_id = s.get("id")
-                        break
-                if series_id is not None:
-                    break
-                check_path = str(Path(check_path).parent)
-
+            series_id = await _find_folder_id(client, "sonarr", url, api_key, arr_path)
             if series_id is None:
                 return False
 
@@ -167,32 +170,7 @@ async def trigger_radarr_rescan(file_path: str) -> bool:
         _arr_timeout = httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=10.0)
         async with httpx.AsyncClient(timeout=_arr_timeout) as client:
             headers = {"X-Api-Key": api_key}
-
-            # Use cached movie list (refreshes every 5 min)
-            now = time.monotonic()
-            if _radarr_cache.get("data") and (now - _radarr_cache.get("fetched_at", 0)) < _LIST_CACHE_TTL:
-                movie_list = _radarr_cache["data"]
-            else:
-                resp = await client.get(f"{url}/api/v3/movie", headers=headers)
-                resp.raise_for_status()
-                movie_list = resp.json()
-                _radarr_cache["data"] = movie_list
-                _radarr_cache["fetched_at"] = now
-                print(f"[RADARR] Fetched {len(movie_list)} movies from Radarr", flush=True)
-
-            # Walk up the path to find matching movie folder
-            movie_id = None
-            check_path = str(Path(arr_path).parent)
-            while check_path and check_path != "/":
-                for m in movie_list:
-                    m_path = m.get("path", "").rstrip("/")
-                    if check_path.rstrip("/") == m_path:
-                        movie_id = m.get("id")
-                        break
-                if movie_id is not None:
-                    break
-                check_path = str(Path(check_path).parent)
-
+            movie_id = await _find_folder_id(client, "radarr", url, api_key, arr_path)
             if movie_id is None:
                 print(f"[RADARR] No match for folder: {str(Path(arr_path).parent)}", flush=True)
                 return False

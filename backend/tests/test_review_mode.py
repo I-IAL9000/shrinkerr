@@ -182,6 +182,36 @@ async def test_approved_reviews_survive_a_restart(test_db):
 
 
 @pytest.mark.asyncio
+async def test_approve_all_places_several_at_once(test_db, monkeypatch):
+    """Approving 270 placed them one at a time: 10+ minutes on a NAS. Up to
+    PLACE_LANES at once now, and they don't take the encoders' slots."""
+    import asyncio
+    queue = JobQueue(test_db)
+    review = json.dumps({"state": {}, "result": {}})
+    async with aiosqlite.connect(test_db) as db:
+        for n in range(7):
+            await db.execute("INSERT INTO jobs (file_path, job_type, status, created_at, review_json, review_approved) "
+                             "VALUES (?, 'convert', 'review', 'x', ?, 1)", (f"/m/{n}.mkv", review))
+        await db.commit()
+    worker = QueueWorker(test_db)
+    busy, peak, slots = set(), [0], []
+
+    async def place(job):
+        busy.add(job["id"])
+        peak[0] = max(peak[0], len(busy))
+        slots.append(worker._encode_slots_used())
+        await asyncio.sleep(0.02)
+        busy.discard(job["id"])
+        await queue.update_status(job["id"], "completed")
+        worker._active_tasks.pop(job["id"], None)  # as _worker_task's finally does
+    monkeypatch.setattr(worker, "_worker_task", place)
+    worker.place_approved()
+    await asyncio.wait_for(worker._placing, 5)
+    assert peak[0] == worker.PLACE_LANES == 4 and set(slots) == {0}
+    assert len(await queue.get_jobs_by_status("completed")) == 7
+
+
+@pytest.mark.asyncio
 async def test_remote_workers(test_db, monkeypatch):
     """A worker's held conversion is recorded with this server's paths, and an
     approved one is never handed to a worker."""
