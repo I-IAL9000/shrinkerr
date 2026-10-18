@@ -477,6 +477,10 @@ export const getPosterPrefetchStatus = () =>
   apiFetch<{ status: string; total: number; resolved: number; cached: number; phase?: "details" }>("/posters/prefetch-status");
 export const getRecentConversions = (limit: number = 20) =>
   apiFetch<any[]>(`/jobs/recent-conversions?limit=${limit}`);
+// Keep anyway (v0.10.0): a conversion that came out larger, held while
+// originals are kept, goes in place.
+export const keepLarger = (jobId: number) =>
+  apiFetch<{ kept: boolean }>(`/jobs/${jobId}/keep-larger`, { method: "POST" });
 export const undoConversion = (jobId: number) =>
   apiFetch<any>(`/jobs/${jobId}/undo`, { method: "POST" });
 export const getJobLog = (jobId: number) =>

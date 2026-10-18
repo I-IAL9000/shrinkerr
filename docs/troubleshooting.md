@@ -245,9 +245,12 @@ Failure here surfaces the actual HTTP error Plex returned.
 
 ## Encoded file is larger than original
 
-Shrinkerr detects this and keeps the original. The job's details show
-"(N% larger — discarded)", file auto-added to ignore list so
-subsequent scans skip it.
+Shrinkerr detects this and keeps the original. The job shows **Larger**
+("The converted file was N% larger…"), and the file is added to the
+ignore list so subsequent scans skip it. To use the larger file anyway
+(say, for HEVC everywhere), open the job and press **Keep anyway**: it
+needs originals kept (Settings → Automation → Originals & Backups), which
+holds the larger file for as long as the originals.
 
 Causes:
 - Original was already encoded at very low bitrate (pre-compressed

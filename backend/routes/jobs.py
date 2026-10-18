@@ -1533,6 +1533,20 @@ async def approve_reviews(req: ReviewRequest):
     return {"approved": approved}
 
 
+@router.post("/{job_id}/keep-larger")
+async def keep_larger(job_id: int):
+    """Keep anyway (v0.10.0): put a conversion that came out larger in place,
+    held while originals are kept."""
+    if _queue is None:
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
+    if not await _queue.keep_larger(job_id):
+        raise ApiError(status_code=409, detail="The larger converted file isn't kept any more.",
+                       code="jobs.largerGone")
+    if _worker is not None:
+        _worker.place_approved()
+    return {"kept": True}
+
+
 @router.post("/review/reject")
 async def reject_reviews(req: ReviewRequest):
     """Review mode (v0.10.0): delete these outputs; the originals stay."""

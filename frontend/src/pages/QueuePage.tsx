@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { mergeHead } from "../utils/mergeHead";
 import { encoderSettingsLabel, jobEncoderSettings } from "../utils/encoderLabel";
 import VirtualJobList from "../components/VirtualJobList";
-import { getJobs, getJobIds, getJobStats, startQueue, pauseQueue, cancelJob, cancelCurrentJob, removeJob, retryJob, clearCompleted, clearPending, ignoreFile, bulkUpdateJobSettings, bulkMoveJobs, bulkIgnoreJobs, getEncodingSettings, getTracksByPath, reorderJobs, researchFilesBulk, getNodes, undoConversion } from "../api";
+import { getJobs, getJobIds, getJobStats, startQueue, pauseQueue, cancelJob, cancelCurrentJob, removeJob, retryJob, clearCompleted, clearPending, ignoreFile, bulkUpdateJobSettings, bulkMoveJobs, bulkIgnoreJobs, getEncodingSettings, getTracksByPath, reorderJobs, researchFilesBulk, getNodes, undoConversion, keepLarger } from "../api";
 import { fmtNum, fmtBytes } from "../fmt";
 import JobCard from "../components/JobCard";
 import JobListItem from "../components/JobListItem";
@@ -547,6 +547,20 @@ export default function QueuePage() {
     loadRef.current();
   };
 
+  const handleKeepLarger = async (id: number) => {
+    const job = jobs.find(j => j.id === id);
+    const pct = (job?.error_params as any)?.pct ?? "?";
+    if (!job || !await confirm({ message: t("queue:keepLarger.confirm", { pct, days: keepDays }),
+                                 confirmLabel: t("queue:keepLarger.button") })) return;
+    try {
+      await keepLarger(id);
+      toast(t("queue:keepLarger.done"), "success");
+    } catch (e) {
+      toast((e as Error).message, "error");
+    }
+    loadRef.current();
+  };
+
   const renderCompletedRow = (i: number) => {
     const undo = undoState(tabJobs[i]);
     return (
@@ -558,6 +572,7 @@ export default function QueuePage() {
         onUndo={undo ? handleUndo : undefined}
         undoBlocked={undo === "ok" ? null : undo}
         keepDays={keepDays}
+        onKeepLarger={handleKeepLarger}
       />
     );
   };

@@ -16,7 +16,8 @@
     "taskNotFound": "Task not found",
     "undoFailed": "Could not restore the original: {{error}}",
     "undoTargetExists": "Something already exists where the original goes: {{path}}",
-    "vmafRemeasureRunning": "A VMAF re-measure pass is already running."
+    "vmafRemeasureRunning": "A VMAF re-measure pass is already running.",
+    "largerGone": "The larger converted file isn't kept any more."
   },
   "media": {
     "noMediaDirs": "No media directories configured",

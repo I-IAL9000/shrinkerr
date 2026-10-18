@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import signal
 import time
 from datetime import datetime, timezone
@@ -882,6 +883,31 @@ class JobQueue:
         finally:
             await db.close()
 
+    async def keep_larger(self, job_id: int) -> bool:
+        """Keep anyway (v0.10.0): a conversion that came out larger, held
+        while originals are kept, goes in place like an approved review (the
+        placement lane). The file stays ignored, so it isn't converted again.
+        False when there's no held output (any more)."""
+        db = await self._connect()
+        try:
+            async with db.execute("SELECT file_path, review_json FROM jobs WHERE id = ? AND status = 'completed' "
+                                  "AND error_key = 'errors.encodeLarger' AND review_json IS NOT NULL", (job_id,)) as cur:
+                row = await cur.fetchone()
+            if not row:
+                return False
+            held = (json.loads(row["review_json"]) or {}).get("state") or {}
+            if not held.get("review_path") or not await asyncio.to_thread(os.path.exists, held["review_path"]):
+                await db.execute("UPDATE jobs SET review_json = NULL WHERE id = ?", (job_id,))
+                await db.commit()
+                return False
+            cur = await db.execute(
+                "UPDATE jobs SET status = 'review', review_approved = 1, error_log = NULL, error_key = NULL, "
+                "error_params = NULL WHERE id = ? AND status = 'completed'", (job_id,))
+            await db.commit()
+            return cur.rowcount > 0
+        finally:
+            await db.close()
+
     async def claim_approved_review(self) -> Optional[dict]:
         """The next approved review, marked running for the local worker to put
         in place; None when there's none."""
@@ -982,6 +1008,42 @@ def local_node_outcome(job: dict, final_status: str) -> tuple[bool, bool]:
     return True, final_status != "failed"
 
 
+async def expire_held_larger() -> int:
+    """Larger outputs held for Keep anyway go when the originals would: after
+    backup_original_days (none set: kept, as backups are). How many."""
+    from backend.converter import discard_review_output
+    from backend.database import connect_db
+    db = await connect_db()
+    try:
+        async with db.execute("SELECT value FROM settings WHERE key = 'backup_original_days'") as cur:
+            row = await cur.fetchone()
+        try:
+            days = int(row[0]) if row and row[0] else 0
+        except (TypeError, ValueError):
+            days = 0
+        if days <= 0:
+            return 0
+        async with db.execute(
+            "SELECT id, review_json, error_params FROM jobs WHERE status = 'completed' AND error_key = 'errors.encodeLarger' "
+            "AND review_json IS NOT NULL AND julianday(completed_at) < julianday('now') - ?", (days,)) as cur:
+            rows = await cur.fetchall()
+        for job_id, review_json, params in rows:
+            state = (json.loads(review_json) or {}).get("state") or {}
+            if state.get("review_path"):
+                await asyncio.to_thread(discard_review_output, state["review_path"])
+            try:
+                kept = {**json.loads(params or "{}"), "held": False}
+            except ValueError:
+                kept = {"held": False}
+            await db.execute("UPDATE jobs SET review_json = NULL, error_params = ? WHERE id = ?", (json.dumps(kept), job_id))
+        await db.commit()
+        if rows:
+            print(f"[BACKUP] Deleted {len(rows)} larger output(s) held for Keep anyway (older than {days} days)", flush=True)
+        return len(rows)
+    finally:
+        await db.close()
+
+
 async def backup_expiry_loop(first_delay: float = 600, every: float = 3600) -> None:
     """Expired originals are deleted hourly, in the background (v0.10.0). It
     walks every media folder: run after each job, it held that job up and
@@ -990,6 +1052,7 @@ async def backup_expiry_loop(first_delay: float = 600, every: float = 3600) -> N
     while True:
         try:
             await _cleanup_expired_backups()
+            await expire_held_larger()
         except Exception as exc:
             print(f"[BACKUP] Expiring old originals failed: {exc}", flush=True)
         await asyncio.sleep(every)
@@ -2969,6 +3032,22 @@ class QueueWorker:
                 # also says why on the job (the Queue's details show it).
                 if video_kept:
                     completion_note = (video_kept["error"], video_kept["error_key"], video_kept.get("error_params"))
+                else:
+                    # Held with originals kept, for Keep anyway (keep_larger).
+                    held = result.get("held")
+                    pct = abs(round(float((result.get("encoding_stats") or {}).get("ratio") or 0)))
+                    completion_note = (f"The converted file was {pct}% larger than the original, so the original was kept.",
+                                       "errors.encodeLarger", {"pct": pct, "held": bool(held)})
+                    if held:
+                        try:
+                            db_h = await self._db()
+                            try:
+                                await db_h.execute("UPDATE jobs SET review_json = ? WHERE id = ?", (json.dumps(held), job_id))
+                                await db_h.commit()
+                            finally:
+                                await db_h.close()
+                        except Exception as exc:
+                            print(f"[WORKER] Couldn't record the held larger output: {exc}", flush=True)
                 try:
                     db = await self._db()
                     try:

@@ -16,7 +16,8 @@
     "taskNotFound": "Tarea no encontrada",
     "undoFailed": "No se pudo restaurar el original: {{error}}",
     "undoTargetExists": "Ya existe algo donde va el original: {{path}}",
-    "vmafRemeasureRunning": "Ya hay una nueva medición de VMAF en curso."
+    "vmafRemeasureRunning": "Ya hay una nueva medición de VMAF en curso.",
+    "largerGone": "El archivo convertido más grande ya no se conserva."
   },
   "media": {
     "noMediaDirs": "No hay directorios de medios configurados",

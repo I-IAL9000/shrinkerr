@@ -52,6 +52,7 @@
     },
     "hdrKept8Bit": "Se conservó el vídeo tal cual: el vídeo HDR necesita un codificador de 10 bits; {{encoder}} codifica en 8 bits aquí. Usa NVENC, libx265 o VideoToolbox.",
     "dolbyVisionNotDropped": "Había que descartar Dolby Vision, pero la codificación aún lo lleva. Se conservó el original.",
+    "encodeLarger": "El archivo convertido era un {{pct}} % más grande que el original, así que se conservó el original.",
     "hdrLost": "El original {{format}} perdió su HDR en la codificación. Se ha conservado el original.",
     "remuxOutputMissing": "El archivo de salida falta o está vacío tras el remux.",
     "sourceDamaged": "El archivo de origen parece dañado: ffmpeg encontró fotogramas rotos que no pudo decodificar. Está marcado como corrupto en el Escáner; solicita un reemplazo a Sonarr o Radarr.",

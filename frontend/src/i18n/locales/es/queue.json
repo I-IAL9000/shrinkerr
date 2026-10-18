@@ -149,6 +149,7 @@
     "vmafRejected": "Rechazado por VMAF",
     "ignored": "Ignorado",
     "videoKept": "Vídeo conservado",
+    "larger": "Más grande",
     "restoreOriginal": "Restaurar original",
     "ignoreFile": "Ignorar este archivo",
     "removeFromQueue": "Quitar de la cola",
@@ -317,6 +318,15 @@
       "expired": "Se borró el original de este trabajo: los originales se conservan {{days}} días."
     },
     "settingsLink": "Ajustes de originales y copias de seguridad"
+  },
+  "keepLarger": {
+    "button": "Conservar igualmente",
+    "confirm": "¿Reemplazar el original por el archivo convertido? Es un {{pct}} % más grande. El original se conserva {{days}} días, así que puedes restaurarlo.",
+    "done": "Colocando el archivo más grande…",
+    "blocked": {
+      "off": "Conservar una conversión más grande requiere conservar los originales: elige «Se guarda durante… días» para conservar las próximas.",
+      "gone": "El archivo más grande no se conserva: se convirtió cuando no se conservaban los originales, o se eliminó pasados {{days}} días."
+    }
   },
   "planner": {
     "open": "Liberar espacio…",

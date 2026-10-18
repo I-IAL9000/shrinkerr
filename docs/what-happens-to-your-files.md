@@ -24,9 +24,12 @@ The new file replaces the original only if it passes all of these:
 4. **HDR is still HDR.** An HDR10 or HLG original that came out as SDR is
    thrown away. Dolby Vision profiles 7 and 8 keep their Dolby Vision, or the
    conversion fails ([Encoding guide](encoding-guide.md#hdr-and-dolby-vision)).
-5. **It's smaller.** A new file larger than the original is thrown away, and
+5. **It's smaller.** A new file larger than the original isn't used, and
    the file is marked ignored so it isn't tried again. Tracks you asked to
-   remove are still removed, from the original.
+   remove are still removed, from the original. With originals kept for N
+   days, the larger file waits beside the original (in `.shrinkerr-review/`)
+   as long, and **Keep anyway** in the Queue's Completed tab puts it in
+   place; otherwise it's deleted.
 6. **The quality is good enough.** With VMAF on, a new file scoring below
    your minimum is thrown away (Settings → Video; new installs reject below
    88, and a rule can set its own).

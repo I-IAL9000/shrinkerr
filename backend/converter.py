@@ -2926,6 +2926,21 @@ async def _place_output(input_path: str, temp_path: str, final_path: str, disc_t
     return result_backup_path
 
 
+def _hold_output(temp: Path, final_path: str) -> Path:
+    """Move an output into .shrinkerr-review/ beside its destination, where
+    it waits: for review (v0.10.0), or, larger than the original with
+    originals kept, for Keep anyway. A free name, never onto a file."""
+    review_dir = Path(final_path).parent / ".shrinkerr-review"
+    review_dir.mkdir(exist_ok=True)
+    review_path = review_dir / Path(final_path).name
+    _n = 1
+    while review_path.exists() or review_path.is_symlink():
+        review_path = review_dir / f"{Path(final_path).stem}.{_n}{Path(final_path).suffix}"
+        _n += 1
+    temp.rename(review_path)
+    return review_path
+
+
 # How often a long step before the encode says its name again (_with_step).
 _STEP_REPEAT_S = 5
 
@@ -4387,10 +4402,33 @@ async def convert_file(
             + (" (audio/sub cleanup will be retried as audio-only follow-up)" if had_track_removal else ""),
             flush=True,
         )
-        try:
-            temp.unlink()
-        except OSError:
-            pass
+        # Originals kept for N days: the larger output is held as long, for
+        # Keep anyway (QueueWorker places it like an approved review); else
+        # deleted, as before (v0.10.0).
+        held_state, held_frames = None, None
+        if int(live_settings.get("backup_original_days") or 0) > 0 and not disc_type:
+            try:
+                held_path = _hold_output(temp, final_path)
+                source_stat = p.stat()
+                held_state = {
+                    "input_path": input_path, "review_path": str(held_path), "final_path": final_path,
+                    "disc_type": disc_type, "source_size": source_stat.st_size, "source_mtime": source_stat.st_mtime,
+                    "external_sub_files": external_sub_files, "delete_merged_subs": delete_merged_subs,
+                }
+                print(f"[CONVERT] Holding the larger output for Keep anyway: {held_path}", flush=True)
+                if live_settings.get("compare_frames", True):
+                    from backend.frames import grab
+                    try:
+                        held_frames = await grab(input_path, str(held_path), duration)
+                    except Exception as exc:
+                        print(f"[CONVERT] Before / after frames skipped: {exc}", flush=True)
+            except OSError as exc:
+                print(f"[CONVERT] Couldn't hold the larger output ({exc}); deleting it", flush=True)
+        if not held_state:
+            try:
+                temp.unlink()
+            except OSError:
+                pass
         if prestrip_path:
             try: Path(prestrip_path).unlink(missing_ok=True)
             except OSError: pass
@@ -4401,7 +4439,7 @@ async def convert_file(
         # rendered with no body at all — users couldn't see WHY the encode
         # was rejected or what threshold to tune. v0.3.55+.
         encode_time_skipped = time.monotonic() - encode_start_time
-        return {
+        larger = {
             "success": True,  # Not an error, just no savings
             "output_path": input_path,  # Keep original path
             "space_saved": 0,
@@ -4450,6 +4488,16 @@ async def convert_file(
                 "had_track_removal": had_track_removal,
             },
         }
+        if held_state:
+            # What placing it gives, as an approved review's: a conversion
+            # that grew the file (its savings negative).
+            larger["held"] = {"state": held_state, "result": {
+                "success": True, "output_path": final_path, "space_saved": space_saved, "error": None,
+                "ffmpeg_command": full_command, "ffmpeg_log": larger["ffmpeg_log"],
+                "encoding_stats": {k: v for k, v in larger["encoding_stats"].items() if k != "skipped_larger"}}}
+            if held_frames:
+                larger["frames"] = held_frames
+        return larger
 
     # VMAF analysis — compare original vs encoded BEFORE the original is moved/deleted.
     # `vmaf_error` carries the reason to the caller (queue.py / worker_mode.py) so a
@@ -4991,15 +5039,8 @@ async def convert_file(
             print(f"[CONVERT] Before / after frames skipped: {exc}", flush=True)
 
     if live_settings.get("review_before_replace"):
-        review_dir = Path(final_path).parent / ".shrinkerr-review"
         try:
-            review_dir.mkdir(exist_ok=True)
-            review_path = review_dir / Path(final_path).name
-            _n = 1
-            while review_path.exists() or review_path.is_symlink():
-                review_path = review_dir / f"{Path(final_path).stem}.{_n}{Path(final_path).suffix}"
-                _n += 1
-            temp.rename(review_path)
+            review_path = _hold_output(temp, final_path)
             source_stat = p.stat()
         except OSError as exc:
             return {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}

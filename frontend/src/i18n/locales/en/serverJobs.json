@@ -52,6 +52,7 @@
     },
     "hdrKept8Bit": "The video was kept as it is: HDR video needs a 10-bit encoder; {{encoder}} encodes 8-bit here. Use NVENC, libx265 or VideoToolbox.",
     "dolbyVisionNotDropped": "Dolby Vision was to be dropped, but the encode still carries it. Original kept.",
+    "encodeLarger": "The converted file was {{pct}}% larger than the original, so the original was kept.",
     "hdrLost": "The {{format}} source lost its HDR in the encode. Original kept.",
     "remuxOutputMissing": "Output file missing or empty after remux.",
     "sourceDamaged": "The source file looks damaged: ffmpeg found broken frames it couldn't decode. It's marked corrupt in the Scanner; request a replacement from Sonarr or Radarr.",

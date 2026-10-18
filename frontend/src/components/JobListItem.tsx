@@ -26,6 +26,8 @@ interface JobListItemProps {
   // after keepDays. null = it can.
   undoBlocked?: "off" | "notKept" | "expired" | null;
   keepDays?: number;
+  // Keep anyway: a conversion that came out larger, held with originals kept.
+  onKeepLarger?: (id: number) => void;
   checked?: boolean;
   onCheck?: (e: { shiftKey: boolean }) => void;
   encodingDefaults?: any;
@@ -50,7 +52,7 @@ const videoKept = (job: Job) =>
 // Icons on one row share a centre whatever their glyph.
 const centeredIcon: React.CSSProperties = { display: "inline-flex", alignItems: "center", justifyContent: "center" };
 
-function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, undoBlocked = null, keepDays = 0, checked, onCheck, encodingDefaults, expanded: expandedProp, onToggleExpand, onPlanChanged }: JobListItemProps) {
+function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, undoBlocked = null, keepDays = 0, onKeepLarger, checked, onCheck, encodingDefaults, expanded: expandedProp, onToggleExpand, onPlanChanged }: JobListItemProps) {
   const { t } = useTranslation(["queue", "common", "fileDetail"]);
   const { request: requestReplacement, requesting } = useRequestReplacement();
   // A damaged source (v0.10.0): its replacement is one click from the
@@ -217,6 +219,11 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
                 >
                   {t("queue:item.vmafRejected")}
                 </span>
+              ) : job.space_saved <= 0 && job.error_key === "errors.encodeLarger" ? (
+                <span title={jobErrorHeadline(job) ?? job.error_log ?? undefined}
+                  style={{ fontSize: 11, color: "var(--text-secondary)", background: "var(--bg-tertiary)", padding: "1px 6px", borderRadius: 3 }}>
+                  {t("queue:item.larger")}
+                </span>
               ) : job.space_saved <= 0 && videoKept(job) ? (
                 <span title={jobErrorHeadline(job) ?? job.error_log ?? undefined}
                   style={{ fontSize: 11, color: "var(--text-secondary)", background: "var(--bg-tertiary)", padding: "1px 6px", borderRadius: 3 }}>
@@ -325,6 +332,22 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
                 restore under them, and the comparison under that (order). */}
             {(onUndo || job.job_type !== "audio") && (
               <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                {onKeepLarger && job.error_key === "errors.encodeLarger" && (() => {
+                  const held = !!(job.error_params as any)?.held;
+                  return (<>
+                    <button className="btn btn-xs btn-secondary" disabled={!held}
+                      onClick={(e) => { e.stopPropagation(); onKeepLarger(job.id); }}>
+                      {t("queue:keepLarger.button")}
+                    </button>
+                    {!held && (
+                      <span style={{ flexBasis: "100%", order: 1, fontSize: 11, color: "var(--text-muted)" }}>
+                        {t(keepDays > 0 ? "queue:keepLarger.blocked.gone" : "queue:keepLarger.blocked.off", { days: keepDays })}{" "}
+                        <Link to="/settings/automation#originals" onClick={(e) => e.stopPropagation()}
+                          style={{ color: "var(--accent-text)" }}>{t("queue:undo.settingsLink")}</Link>
+                      </span>
+                    )}
+                  </>);
+                })()}
                 {onUndo && (
                   <button className="btn btn-xs btn-secondary" disabled={!!undoBlocked}
                     onClick={(e) => { e.stopPropagation(); onUndo(job.id); }}>
@@ -771,6 +794,7 @@ const JobListItem = memo(JobListItemImpl, (prev, next) => {
   if (prev.encodingDefaults !== next.encodingDefaults) return false;
   if (prev.expanded !== next.expanded) return false;
   if (prev.undoBlocked !== next.undoBlocked || prev.keepDays !== next.keepDays || !prev.onUndo !== !next.onUndo) return false;
+  if (!prev.onKeepLarger !== !next.onKeepLarger) return false;
   // We intentionally ignore callback identity — parent recreates them on every
   // render but their behavior is stable. If a callback changes semantics the
   // parent also re-renders; stale closures aren't a concern here because the

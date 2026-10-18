@@ -129,6 +129,7 @@
     "vmafRejected": "VMAF rejected",
     "ignored": "Ignored",
     "videoKept": "Video kept",
+    "larger": "Larger",
     "restoreOriginal": "Restore original",
     "ignoreFile": "Ignore this file",
     "removeFromQueue": "Remove from queue",
@@ -284,6 +285,15 @@
       "expired": "This job's original was deleted: originals are kept for {{days}} days."
     },
     "settingsLink": "Originals & Backups settings"
+  },
+  "keepLarger": {
+    "button": "Keep anyway",
+    "confirm": "Replace the original with the converted file? It's {{pct}}% larger. The original is kept for {{days}} days, so you can restore it.",
+    "done": "Putting the larger file in place…",
+    "blocked": {
+      "off": "Keeping a larger conversion needs originals kept: choose “Kept for … days” to keep the next ones.",
+      "gone": "The larger file isn't kept: it was converted while originals weren't kept, or deleted after {{days}} days."
+    }
   },
   "planner": {
     "open": "Free space…",
