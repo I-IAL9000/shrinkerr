@@ -77,6 +77,17 @@ async def test_quality_presets_say_which_one_is_saved(settings_route, test_db):
     assert [p["savings_pct"] for p in r["presets"]] == [35, 45, 55, 70, 80]
 
 
+@pytest.mark.asyncio
+async def test_automatic_is_the_vmaf_target_at_93(settings_route, test_db):
+    """The wizard's Automatic: each title's own quality for VMAF 93, which
+    the app counts as transparent (the target was 95 by default)."""
+    got = await settings_route.get_encoding_settings()
+    assert (got["vmaf_target_enabled"], got["vmaf_target_score"]) == (False, 93.0)
+    assert (await settings_route.get_quality_presets())["automatic"] is False
+    await _set(test_db, vmaf_target_enabled="true")
+    assert (await settings_route.get_quality_presets())["automatic"] is True
+
+
 SAMPLE = [{
     "path": "/media/Anime/Show/ep1.mkv", "duration": 1400,
     "audio": [

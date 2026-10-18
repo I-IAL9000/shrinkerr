@@ -1173,6 +1173,7 @@ input[type="checkbox"] { cursor: pointer; }
 .wizard-option-title { display: block; font-size: 14px; font-weight: 600; color: var(--text-primary); }
 .wizard-option-help { display: block; font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 .wizard-savings { font-weight: normal; font-size: 12px; color: var(--success); margin-left: 6px; }
+.wizard-badge { font-weight: 500; font-size: 11px; color: var(--accent-text); border: 1px solid var(--accent); border-radius: 3px; padding: 0 6px; margin-left: 8px; }
 .wizard-days { width: 64px; height: 28px; padding: 0 6px; font-size: 13px; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; }
 .wizard-field { margin-bottom: 18px; }
 .wizard-label { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }

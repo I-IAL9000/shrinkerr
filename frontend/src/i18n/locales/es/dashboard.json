@@ -28,7 +28,15 @@
     },
     "quality": {
       "title": "Calidad",
-      "description": "Cuánto comprimir. El ahorro es el típico con fuentes H.264; puedes ajustarlo después en Ajustes → Vídeo.",
+      "description": "Cuánto comprimir. El ahorro es el típico con fuentes H.264; puedes cambiarlo después en Ajustes → Vídeo.",
+      "descriptionLearned": "Cuánto comprimir. El ahorro es lo que tus conversiones han ahorrado con cada ajuste; puedes cambiarlo después en Ajustes → Vídeo.",
+      "automatic": {
+        "name": "Automático",
+        "recommended": "Recomendado",
+        "savings": "el ahorro varía según el título",
+        "desc": "Cada título recibe su propio ajuste: el archivo más pequeño que aún puntúa VMAF {{score}}, que se ve igual que el original. Las películas antiguas con grano conservan más detalle; los estrenos limpios se reducen más.",
+        "slower": "Más lento: antes se codifican de prueba unas muestras de 10 segundos de cada archivo."
+      },
       "custom": {
         "name": "Mantener mis ajustes",
         "desc": "Tu ajuste de calidad actual no es ninguno de estos."

@@ -300,14 +300,16 @@ average the target. Grainy films get more bits, clean animation fewer —
 the way [ab-av1](https://github.com/alexheretic/ab-av1)'s CRF search
 works.
 
-- **Target:** 80–99, 95 by default (≈ "transparent" on the table above).
+- **Target:** 80–99, 93 by default: the score Shrinkerr counts as
+  transparent, where the encode looks the same as the original. The setup
+  wizard's **Automatic** quality turns this on at 93.
 - **The search** runs on NVENC's CQ scale from 14 to 34 (mapped to each
   encoder's own setting, e.g. libx265's CRF is CQ + 2), starting from the
   job's quality, and needs about five rounds of samples. If even CQ 14
   misses the target, CQ 14 is used.
 - **It replaces** the quality from presets, rules and content type for
   that file. The job's details show the quality chosen and the samples'
-  score ("VMAF target: CQ 23: samples scored 95.4 (target 95)").
+  score ("VMAF target: CQ 25: samples scored 93.4 (target 93)").
 - **Cost:** a few minutes per file on a GPU encoder; more on libx265
   (fifteen-odd sample encodes at your preset).
 - **Not searched:** files under two minutes, discs, and ffmpeg builds

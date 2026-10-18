@@ -17,6 +17,7 @@ from pydantic import BaseModel, ValidationError
 from backend.database import DB_PATH, connect_db
 from backend.models import MediaDir, SettingsUpdate
 from backend.scanner import DEFAULT_SOURCE_CODECS
+from backend.vmaf_target import DEFAULT_TARGET as VMAF_TARGET_DEFAULT
 
 BACKUP_DIR = Path(DB_PATH).parent / "backups"
 
@@ -188,7 +189,7 @@ _ENCODING_DEFAULTS = {
     "vmaf_min_score": "88",  # v0.10.0: reject encodes scoring below this (0 = never)
     # v0.10.0: each title's quality found on samples to score this VMAF
     "vmaf_target_enabled": "false",
-    "vmaf_target_score": "95",
+    "vmaf_target_score": str(VMAF_TARGET_DEFAULT),
     "resolution_aware_cq": "false",
     "resolution_cq_4k": "24",
     "resolution_cq_1080p": "20",
@@ -764,9 +765,9 @@ async def get_encoding_settings():
         result["vmaf_min_score"] = 0.0
     result["vmaf_target_enabled"] = merged.get("vmaf_target_enabled", "false").lower() == "true"
     try:
-        result["vmaf_target_score"] = float(merged.get("vmaf_target_score", "95") or "95")
+        result["vmaf_target_score"] = float(merged.get("vmaf_target_score") or VMAF_TARGET_DEFAULT)
     except (TypeError, ValueError):
-        result["vmaf_target_score"] = 95.0
+        result["vmaf_target_score"] = float(VMAF_TARGET_DEFAULT)
     result["content_type_detection"] = merged.get("content_type_detection", "true").lower() == "true"
     result["resolution_aware_cq"] = merged.get("resolution_aware_cq", "false").lower() == "true"
     from backend.content_detect import CONTENT_TYPES, CQ_TABLE, content_cq_table
@@ -1677,7 +1678,10 @@ async def get_quality_presets(encoder: Optional[str] = None):
                         "wizard": pid in WIZARD_PRESETS})
         if all(str(saved.get(k, "")) == str(v) for k, v in values.items()):
             current = pid
-    return {"encoder": enc, "presets": presets, "current": current, "learned_from": savings_model.current().samples}
+    # The wizard's Automatic: each title's own quality for the VMAF target.
+    automatic = str(saved.get("vmaf_target_enabled", "")).lower() == "true"
+    return {"encoder": enc, "presets": presets, "current": current, "automatic": automatic,
+            "learned_from": savings_model.current().samples}
 
 
 # The setup wizard's language preview (v0.10.0) classifies the tracks of a

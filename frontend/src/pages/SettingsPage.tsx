@@ -4,7 +4,7 @@ import { useVisibleInterval } from "../useVisibleInterval";
 import { useRangeFill } from "../useRangeFill";
 import FolderBrowser from "../components/FolderBrowser";
 import RenamingSettings, { type SaveBarPart } from "../components/RenamingSettings";
-import { vmafColor } from "../utils/vmaf";
+import { vmafColor, VMAF_EXCELLENT_MIN } from "../utils/vmaf";
 import { copyText } from "../utils/clipboard";
 import { shortcutsEnabled, setShortcutsEnabled } from "../shortcuts";
 import type { ThemePref } from "../App";
@@ -1686,7 +1686,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         on encoded samples (backend/vmaf_target.py). */}
                     {(() => {
                       const on = encoding.vmaf_target_enabled === true || encoding.vmaf_target_enabled === "true";
-                      const target = Number(encoding.vmaf_target_score ?? 95) || 95;
+                      const target = Number(encoding.vmaf_target_score ?? VMAF_EXCELLENT_MIN) || VMAF_EXCELLENT_MIN;
                       return (
                         <div style={{ marginTop: 16, padding: 12, background: "var(--bg-primary)", borderRadius: 4 }}>
                           <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>

@@ -255,7 +255,7 @@ A heavily-commented production template is at [`docker-compose.portainer.yml`](d
 
 ## First-time setup
 
-After you set up sign-in, the setup wizard walks you through six steps: media folders, hardware (the encoder), quality, the languages to keep, what happens to originals, and a first scan. Then it opens the Scanner. Reopen it any time at `/?setup`.
+After you set up sign-in, the setup wizard walks you through six steps: media folders, hardware (the encoder), quality (Automatic, recommended, finds each title's own for VMAF 93), the languages to keep, what happens to originals, and a first scan. Then it opens the Scanner. Reopen it any time at `/?setup`.
 
 To do the same by hand:
 

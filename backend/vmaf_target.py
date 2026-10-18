@@ -19,6 +19,9 @@ from typing import Awaitable, Callable
 
 # The search range, on NVENC's CQ scale.
 CQ_BEST, CQ_WORST = 14, 34
+# The default target: the score the app counts as transparent (the
+# Excellent tier; 95 before the setup wizard offered it as Automatic).
+DEFAULT_TARGET = 93
 # Samples spread through the file; shorter files aren't searched.
 SAMPLE_AT = (0.2, 0.5, 0.8)
 SAMPLE_SECONDS = 10

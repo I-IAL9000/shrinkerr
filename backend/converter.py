@@ -3506,12 +3506,12 @@ async def convert_file(
     vmaf_target = None
     if live_settings.get("vmaf_target_enabled") and not command_only and not disc_type:
         from backend.encoding_estimates import _CRF_OFFSET, quality_settings
-        from backend.vmaf_target import find_quality
+        from backend.vmaf_target import DEFAULT_TARGET, find_quality
         if progress_callback:
             await progress_callback(progress=0, fps=0, eta_seconds=None, step="Finding the quality for the VMAF target…")
         vmaf_target = await find_quality(
             input_path, encoder, float((probe_data or {}).get("duration") or duration or 0),
-            float(live_settings.get("vmaf_target_score") or 95),
+            float(live_settings.get("vmaf_target_score") or DEFAULT_TARGET),
             start=crf - _CRF_OFFSET if encoder == "libx265" else cq,
             convert_kwargs={"override_preset": override_preset, "override_libx265_preset": override_libx265_preset,
                             "override_target_resolution": override_target_resolution, "pre_settings": live_settings,

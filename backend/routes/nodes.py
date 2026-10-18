@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from backend.database import connect_db
 from backend.websocket import ws_manager, step_code
 from backend.nodes import nvenc_reason_code
+from backend.vmaf_target import DEFAULT_TARGET as VMAF_TARGET_DEFAULT
 
 
 router = APIRouter(prefix="/api/nodes")
@@ -506,9 +507,9 @@ async def request_job(req: RequestJobBody, request: Request):
     assigned.update(job_settings)
     assigned["vmaf_target_enabled"] = (srv_settings.get("vmaf_target_enabled") or "false").lower() == "true"
     try:
-        assigned["vmaf_target_score"] = float(srv_settings.get("vmaf_target_score") or 95)
+        assigned["vmaf_target_score"] = float(srv_settings.get("vmaf_target_score") or VMAF_TARGET_DEFAULT)
     except (TypeError, ValueError):
-        assigned["vmaf_target_score"] = 95.0
+        assigned["vmaf_target_score"] = float(VMAF_TARGET_DEFAULT)
     # libx265 defaults the CPU worker should use for an NVENC job:
     #   1. Explicit "NVENC→CPU fallback" (user intentionally tuned these)
     #   2. Main libx265 settings IF libx265 is the server's default encoder

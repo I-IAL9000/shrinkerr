@@ -8,6 +8,7 @@ import {
 } from "../api";
 import FolderBrowser from "./FolderBrowser";
 import { presetSetting } from "../qualityPresets";
+import { VMAF_EXCELLENT_MIN } from "../utils/vmaf";
 import LanguagePicker from "./LanguagePicker";
 import { useToast } from "../useToast";
 
@@ -20,7 +21,8 @@ import { useToast } from "../useToast";
 
 const STEPS = ["folders", "hardware", "quality", "languages", "originals", "finish"] as const;
 type Step = (typeof STEPS)[number];
-type PresetChoice = QualityPreset["id"] | "custom";
+// "automatic": each title's own quality for a VMAF target (vmaf_target.py).
+type PresetChoice = QualityPreset["id"] | "automatic" | "custom";
 type Originals = "keep" | "trash" | "delete";
 
 // UI language → the ISO 639-2 code tracks use, for the "Add English" hint.
@@ -77,7 +79,8 @@ export default function SetupWizard({ setup, onClose }: {
   const [presets, setPresets] = useState<QualityPreset[]>([]);
   const [currentPreset, setCurrentPreset] = useState<string | null>(null);
   const [preset, setPreset] = useState<PresetChoice>("quality");
-  const [custom, setCustom] = useState(false);  // saved quality matches no preset
+  const [custom, setCustom] = useState(false);  // saved quality matches no preset (and isn't Automatic)
+  const [learned, setLearned] = useState(false);  // the savings shown are from this server's conversions
   const [audioLangs, setAudioLangs] = useState<string[]>([]);
   const [subLangs, setSubLangs] = useState<string[]>([]);
   const [preview, setPreview] = useState<Awaited<ReturnType<typeof getLanguagePreview>> | null>(null);
@@ -99,14 +102,16 @@ export default function SetupWizard({ setup, onClose }: {
   }, []);
 
   // The presets for the chosen encoder, and which one the settings are. A
-  // new install starts on Quality; someone who has converted with their own
+  // new install starts on Automatic; someone who has converted with their own
   // values keeps them unless they pick a preset.
   useEffect(() => {
     getQualityPresets(encoder).then(r => {
       setPresets(r.presets);
       setCurrentPreset(r.current);
-      setCustom(!r.current);
-      setPreset((r.current as PresetChoice) || (setup.has_jobs ? "custom" : "quality"));
+      setCustom(!r.current && !r.automatic);
+      setLearned(r.learned_from > 0);
+      const fresh = !setup.has_jobs && (!r.current || r.current === "quality");
+      setPreset(r.automatic || fresh ? "automatic" : (r.current as PresetChoice) || "custom");
     }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [encoder]);
@@ -140,8 +145,13 @@ export default function SetupWizard({ setup, onClose }: {
     try {
       let ok = true;
       if (step === "hardware") ok = await save({ default_encoder: encoder });
-      if (step === "quality" && preset !== "custom") {
-        ok = await save(presets.find(p => p.id === preset)!.settings);
+      if (step === "quality" && preset === "automatic") {
+        // Discs and short files keep the saved quality, and the search starts
+        // from it: Balanced, unless it's someone's own values.
+        const base = currentPreset || !setup.has_jobs ? presets.find(p => p.id === "balanced")!.settings : {};
+        ok = await save({ ...base, vmaf_target_enabled: true, vmaf_target_score: VMAF_EXCELLENT_MIN });
+      } else if (step === "quality" && preset !== "custom") {
+        ok = await save({ ...presets.find(p => p.id === preset)!.settings, vmaf_target_enabled: false });
       }
       if (step === "languages") {
         // Choosing subtitle languages is what turns subtitle cleanup on.
@@ -223,6 +233,13 @@ export default function SetupWizard({ setup, onClose }: {
   } else if (step === "quality") {
     body = (
       <>
+        <Option name="wizard-quality" checked={preset === "automatic"} onChange={() => setPreset("automatic")}
+          title={<>{t("dashboard:setup.quality.automatic.name")}
+            <span className="wizard-badge">{t("dashboard:setup.quality.automatic.recommended")}</span>
+            <span className="wizard-savings">{t("dashboard:setup.quality.automatic.savings")}</span></>}>
+          {t("dashboard:setup.quality.automatic.desc", { score: VMAF_EXCELLENT_MIN })}
+          <span className="wizard-muted" style={{ display: "block", fontSize: "inherit" }}>{t("dashboard:setup.quality.automatic.slower")}</span>
+        </Option>
         {/* The middle three of the shared presets, and the saved one if it's another. */}
         {presets.filter(p => p.wizard || p.id === currentPreset).map(p => (
           <Option key={p.id} name="wizard-quality" checked={preset === p.id} onChange={() => setPreset(p.id)}
@@ -317,7 +334,8 @@ export default function SetupWizard({ setup, onClose }: {
       <section className="wizard-card" aria-labelledby="wizard-step-title">
         <div className="wizard-muted">{t("dashboard:setup.stepOf", { n: index + 1, total: STEPS.length })}</div>
         <h2 id="wizard-step-title">{title(step)}</h2>
-        <p className="wizard-muted">{t(`dashboard:setup.${step}.description`)}</p>
+        <p className="wizard-muted">{t(step === "quality" && learned ? "dashboard:setup.quality.descriptionLearned"
+          : `dashboard:setup.${step}.description`)}</p>
         {body}
         <div className="wizard-nav">
           {index > 0 && <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => setStep(STEPS[index - 1])}>{t("dashboard:setup.back")}</button>}

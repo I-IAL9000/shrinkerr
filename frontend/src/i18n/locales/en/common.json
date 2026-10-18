@@ -89,15 +89,15 @@
     },
     "quality": {
       "name": "Quality",
-      "desc": "Looks the same as the original."
+      "desc": "Looks the same as the original, with a wide margin."
     },
     "balanced": {
       "name": "Balanced",
-      "desc": "Excellent quality, noticeably smaller files."
+      "desc": "Looks the same as the original on almost every title."
     },
     "max_savings": {
       "name": "Max savings",
-      "desc": "Good quality, much smaller files; dark or grainy scenes can show it."
+      "desc": "Looks the same on clean new releases; grainy or dark films can show it."
     },
     "smallest": {
       "name": "Smallest",

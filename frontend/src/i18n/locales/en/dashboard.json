@@ -28,7 +28,15 @@
     },
     "quality": {
       "title": "Quality",
-      "description": "How hard to compress. Savings are typical for H.264 sources; you can fine-tune this later in Settings → Video.",
+      "description": "How much to compress. Savings are typical for H.264 sources; you can change this later in Settings → Video.",
+      "descriptionLearned": "How much to compress. Savings are what your conversions have saved at each setting; you can change this later in Settings → Video.",
+      "automatic": {
+        "name": "Automatic",
+        "recommended": "Recommended",
+        "savings": "savings vary by title",
+        "desc": "Each title gets its own setting: the smallest file that still scores VMAF {{score}}, which looks the same as the original. Grainy older films keep more detail, clean new releases shrink more.",
+        "slower": "Slower: a few 10-second samples of each file are test-encoded first."
+      },
       "custom": {
         "name": "Keep my settings",
         "desc": "Your current quality setting isn't one of these presets."
