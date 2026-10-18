@@ -828,7 +828,10 @@ export const testEncodingRule = (filePath: string) =>
   apiFetch<RuleTestResult>("/rules/test", { method: "POST", body: JSON.stringify({ file_path: filePath }) });
 // Before / after frames of a conversion (v0.10.0): data URLs, [] when none.
 export interface JobFrame { t: number; before: string; after: string }
-export const getJobFrames = (jobId: number) => apiFetch<JobFrame[]>(`/jobs/${jobId}/frames`);
+// "missing": why a job has none — "deleted" (only the `keep` most recent
+// conversions and files in Review keep them), "off", or "unknown".
+export interface JobFrames { frames: JobFrame[]; missing: "deleted" | "off" | "unknown" | null; keep: number }
+export const getJobFrames = (jobId: number) => apiFetch<JobFrames>(`/jobs/${jobId}/frames`);
 // Rules files (v0.10.0): the rules as YAML, and the library's ready-made ones.
 export interface RuleImportResult {
   added: number;

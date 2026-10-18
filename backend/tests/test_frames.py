@@ -85,6 +85,34 @@ async def test_the_frames_people_can_still_look_at_stay(test_db, monkeypatch):
     assert kept == [1, 2, 3, 5, 6]  # 4: the oldest completion
 
 
+@pytest.mark.asyncio
+async def test_why_a_job_has_none(test_db, monkeypatch):
+    """Frames deleted to keep the newest ones say so ("only the 100 most
+    recent…"), not the catch-all reasons."""
+    from backend.routes.jobs import job_frames
+    monkeypatch.setattr(frames, "KEEP_JOBS", 1)
+    one = [{"t": 1.0, "before": base64.b64encode(b"B").decode(), "after": base64.b64encode(b"A").decode()}]
+    async with aiosqlite.connect(test_db) as db:
+        for job_id, done in ((1, "2026-10-10T12:00:00"), (2, "2026-10-11T12:00:00"), (3, None)):
+            await db.execute("INSERT INTO jobs (id, file_path, job_type, status, created_at, completed_at) "
+                             "VALUES (?, ?, 'convert', ?, 'x', ?)", (job_id, f"/m/{job_id}.mkv",
+                                                                    "completed" if done else "failed", done))
+        await db.commit()
+    await frames.store(1, one)
+    await frames.store(2, one)  # 1 is no longer among the newest
+    assert await job_frames(1) == {"frames": [], "missing": "deleted", "keep": 1}
+    assert len((await job_frames(2))["frames"]) == 1 and (await job_frames(2))["missing"] is None
+    assert (await job_frames(3))["missing"] == "unknown"  # never had any (before 0.10, a disc…)
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("UPDATE jobs SET frames_count = 0")
+        await db.commit()
+    await frames.record_existing()  # frames saved before they were counted
+    assert (await job_frames(2))["missing"] is None
+    async with aiosqlite.connect(test_db) as db:
+        async with db.execute("SELECT id, frames_count FROM jobs ORDER BY id") as cur:
+            assert [tuple(r) for r in await cur.fetchall()] == [(1, 0), (2, 1), (3, 0)]
+
+
 def _x265() -> bool:
     return bool(shutil.which("ffmpeg")) and "libx265" in subprocess.run(
         ["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True).stdout
@@ -126,7 +154,7 @@ async def test_a_conversion_keeps_its_frames(test_db, tmp_path, monkeypatch):
     from backend.routes.jobs import job_frames
     job = await _convert(test_db, tmp_path, monkeypatch)
     assert job["status"] == "completed"
-    shown = await job_frames(job["id"])
+    shown = (await job_frames(job["id"]))["frames"]
     assert [f["t"] for f in shown] == [0.8, 2.0, 3.2]
     assert all(f["before"].startswith("data:image/jpeg;base64,") and f["before"] != f["after"] for f in shown)
 
@@ -136,7 +164,8 @@ async def test_a_conversion_keeps_its_frames(test_db, tmp_path, monkeypatch):
 async def test_turned_off(test_db, tmp_path, monkeypatch):
     from backend.routes.jobs import job_frames
     job = await _convert(test_db, tmp_path, monkeypatch, compare_frames="false")
-    assert job["status"] == "completed" and await job_frames(job["id"]) == []
+    assert job["status"] == "completed"
+    assert await job_frames(job["id"]) == {"frames": [], "missing": "off", "keep": frames.KEEP_JOBS}
 
 
 @pytest.mark.skipif(not _x265(), reason="needs ffmpeg with libx265")

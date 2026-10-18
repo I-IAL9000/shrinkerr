@@ -198,7 +198,11 @@
     "frames": {
       "show": "Compare before / after",
       "loading": "Loading frames…",
-      "none": "No frames for this job. They're kept for files in Review and your most recent conversions; there are none for jobs converted before 0.10, discs, or with frames turned off.",
+      "missing": {
+        "deleted": "This job's frames were deleted: only files in Review and the {{keep}} most recent conversions keep theirs.",
+        "off": "Before / after frames are turned off, so conversions don't keep any.",
+        "unknown": "No frames for this job. Only files in Review and the {{keep}} most recent conversions keep theirs, and there are none for discs, jobs converted before 0.10, or while frames were turned off."
+      },
       "before": "Before",
       "after": "After",
       "slider": "Before / after divider",

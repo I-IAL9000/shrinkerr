@@ -823,10 +823,13 @@ async def list_jobs(status: Optional[str] = None, limit: int = 0, offset: int = 
 @router.get("/{job_id}/frames")
 async def job_frames(job_id: int):
     """The job's before / after frames (v0.10.0, backend/frames.py):
-    [{"t", "before", "after"}] with data URLs; [] when it has none."""
+    {"frames": [{"t", "before", "after"}] with data URLs, "missing": why
+    there are none (frames.why_missing) or None, "keep": how many recent
+    conversions keep theirs}."""
     import asyncio
     from backend import frames
-    return await asyncio.to_thread(frames.load, job_id)
+    shown = await asyncio.to_thread(frames.load, job_id)
+    return {"frames": shown, "missing": None if shown else await frames.why_missing(job_id), "keep": frames.KEEP_JOBS}
 
 
 @router.get("/ids")

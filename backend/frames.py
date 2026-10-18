@@ -105,8 +105,56 @@ async def store(job_id: int, frames: list[dict]) -> int:
             await db.close()
     except Exception as exc:  # keep everything rather than lose the conversion's frames
         print(f"[FRAMES] Couldn't read which jobs keep their frames ({exc}); none deleted this time", flush=True)
-        return await asyncio.to_thread(save, job_id, frames, None, False)
-    return await asyncio.to_thread(save, job_id, frames, keep)
+        keep = None
+    saved = await asyncio.to_thread(save, job_id, frames, keep, keep is not None)
+    if saved:
+        await _record(((saved, job_id),))
+    return saved
+
+
+async def _record(counts) -> None:
+    """jobs.frames_count: a job without frames that had some was pruned."""
+    from backend.database import connect_db
+    try:
+        db = await connect_db()
+        try:
+            await db.executemany("UPDATE jobs SET frames_count = ? WHERE id = ?", counts)
+            await db.commit()
+        finally:
+            await db.close()
+    except Exception as exc:
+        print(f"[FRAMES] Couldn't record frame counts ({exc})", flush=True)
+
+
+async def record_existing() -> None:
+    """Count the frames saved before jobs recorded it (at start-up), so they
+    too say they were deleted once they're pruned."""
+    def counts():
+        root = frames_dir()
+        if not root.is_dir():
+            return []
+        return [(n, int(p.name)) for p in root.iterdir() if p.is_dir() and p.name.isdigit()
+                for n in [sum(1 for _ in p.glob("*_before.jpg"))] if n]
+    found = await asyncio.to_thread(counts)
+    if found:
+        await _record(found)
+
+
+async def why_missing(job_id: int) -> str:
+    """Why a job has no frames: "deleted" (it had some: pruned, see store),
+    "off" (they're turned off), else "unknown" (before 0.10, a disc…)."""
+    from backend.database import connect_db
+    db = await connect_db()
+    try:
+        async with db.execute("SELECT frames_count FROM jobs WHERE id = ?", (job_id,)) as cur:
+            row = await cur.fetchone()
+        if row and row[0]:
+            return "deleted"
+        async with db.execute("SELECT value FROM settings WHERE key = 'compare_frames'") as cur:
+            setting = await cur.fetchone()
+    finally:
+        await db.close()
+    return "off" if setting and str(setting[0]).lower() == "false" else "unknown"
 
 
 def load(job_id: int) -> list[dict]:

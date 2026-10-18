@@ -571,6 +571,12 @@ async def init_db():
                 await db.execute(f"ALTER TABLE jobs ADD COLUMN {col} {coltype}")
             except Exception:
                 pass
+        # v0.10.0: how many before / after frames a job got, so one whose
+        # frames were deleted (frames.KEEP_JOBS) can say so.
+        try:
+            await db.execute("ALTER TABLE jobs ADD COLUMN frames_count INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass
         # Migration: conversion log per file
         for col, coltype in [
             ("ffmpeg_command", "TEXT DEFAULT NULL"),

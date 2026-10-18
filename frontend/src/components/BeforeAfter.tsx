@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
-import { getJobFrames, type JobFrame } from "../api";
+import { getJobFrames, type JobFrames } from "../api";
 
 const LABEL = {
   position: "absolute", top: 6, padding: "1px 6px", borderRadius: 3, fontSize: 11, lineHeight: 1.5,
@@ -26,7 +26,7 @@ export default function BeforeAfter({ jobId, open = false }: {
   open?: boolean;
 }) {
   const { t } = useTranslation("queue");
-  const [frames, setFrames] = useState<JobFrame[] | null>(null);
+  const [result, setResult] = useState<JobFrames | null>(null);
   const [loading, setLoading] = useState(false);
   const [index, setIndex] = useState(0);
   const [split, setSplit] = useState(50);
@@ -34,13 +34,13 @@ export default function BeforeAfter({ jobId, open = false }: {
 
   const load = async () => {
     setLoading(true);
-    try { setFrames(await getJobFrames(jobId)); } catch { setFrames([]); }
+    try { setResult(await getJobFrames(jobId)); } catch { setResult({ frames: [], missing: "unknown", keep: 100 }); }
     setLoading(false);
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (open) load(); }, []);
 
-  if (frames === null) {
+  if (result === null) {
     if (open) return <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>{t("item.frames.loading")}</div>;
     return (
       <button className="btn btn-xs btn-secondary" style={{ marginBottom: 12 }} disabled={loading}
@@ -49,12 +49,16 @@ export default function BeforeAfter({ jobId, open = false }: {
       </button>
     );
   }
+  const frames = result.frames;
   if (!frames.length) {
+    const why = result.missing || "unknown";
     return (
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>
-        {t("item.frames.none")}{" "}
-        <Link to="/settings/video#before-after" onClick={(e) => e.stopPropagation()}
-          style={{ color: "var(--accent-text)" }}>{t("item.frames.settingsLink")}</Link>
+        {t(`item.frames.missing.${why}`, { keep: result.keep })}
+        {why !== "deleted" && (<>{" "}
+          <Link to="/settings/video#before-after" onClick={(e) => e.stopPropagation()}
+            style={{ color: "var(--accent-text)" }}>{t("item.frames.settingsLink")}</Link>
+        </>)}
       </div>
     );
   }

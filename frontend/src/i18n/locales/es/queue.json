@@ -222,7 +222,11 @@
     "frames": {
       "show": "Comparar antes / después",
       "loading": "Cargando fotogramas…",
-      "none": "Este trabajo no tiene fotogramas. Se guardan para los archivos en Revisión y tus conversiones más recientes; no hay para trabajos convertidos antes de la 0.10, desde un disco o con los fotogramas desactivados.",
+      "missing": {
+        "deleted": "Se borraron los fotogramas de este trabajo: solo los conservan los archivos en Revisión y las {{keep}} conversiones más recientes.",
+        "off": "Los fotogramas antes / después están desactivados, así que las conversiones no guardan ninguno.",
+        "unknown": "Este trabajo no tiene fotogramas. Solo los conservan los archivos en Revisión y las {{keep}} conversiones más recientes, y no hay para discos, trabajos convertidos antes de la 0.10 o con los fotogramas desactivados."
+      },
       "before": "Antes",
       "after": "Después",
       "slider": "Divisor antes / después",
