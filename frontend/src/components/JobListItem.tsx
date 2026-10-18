@@ -42,6 +42,8 @@ const iconBtnStyle: React.CSSProperties = {
   background: "none", border: "none", cursor: "pointer",
   fontSize: 18, lineHeight: 1, padding: "4px 6px", borderRadius: 4,
 };
+// Icons on one row share a centre whatever their glyph.
+const centeredIcon: React.CSSProperties = { display: "inline-flex", alignItems: "center", justifyContent: "center" };
 
 function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, undoBlocked = null, keepDays = 0, checked, onCheck, encodingDefaults, expanded: expandedProp, onToggleExpand, onPlanChanged }: JobListItemProps) {
   const { t } = useTranslation(["queue", "common", "fileDetail"]);
@@ -220,19 +222,22 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
               disabled={!!undoBlocked}
               aria-label={t("queue:item.restoreOriginal")}
               onClick={(e) => { e.stopPropagation(); onUndo(job.id); }}
-              style={{ ...iconBtnStyle, color: undoBlocked ? "var(--text-muted)" : "var(--accent-text)", marginLeft: 4, fontSize: 14,
+              style={{ ...iconBtnStyle, ...centeredIcon, color: undoBlocked ? "var(--text-muted)" : "var(--accent-text)", marginLeft: 4,
                        opacity: undoBlocked ? 0.45 : 1, cursor: undoBlocked ? "not-allowed" : "pointer" }}
               title={undoBlocked ? t(`queue:undo.blocked.${undoBlocked}`, { days: keepDays }) : t("queue:item.restoreOriginal")}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
                 <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
               </svg>
             </button>
           )}
           <button aria-label={t("common:actions.remove")} onClick={(e) => { e.stopPropagation(); onRemove(job.id); }}
-            style={{ ...iconBtnStyle, color: "var(--text-muted)", marginLeft: 4 }}
+            style={{ ...iconBtnStyle, ...centeredIcon, color: "var(--text-muted)", marginLeft: 4 }}
             title={t("common:actions.remove")}>
-            &times;
+            {/* Drawn, not the × character, so it centres with the restore icon beside it. */}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" style={{ display: "block" }}>
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
           </button>
         </>
       )}
