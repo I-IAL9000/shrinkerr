@@ -67,7 +67,7 @@ async def _review_then(test_db, src):
 
 @needs_x265
 @pytest.mark.asyncio
-async def test_held_then_approved(test_db, library):
+async def test_held_then_approved(test_db, library, capsys):
     src = library
     original = src.read_bytes()
     queue, worker, job_id = await _review_then(test_db, src)
@@ -90,6 +90,13 @@ async def test_held_then_approved(test_db, library):
     # The placement lane, though the queue was never started (or is paused).
     worker.place_approved()
     await worker._placing
+    # Where the time went (approving 61 took 234 s, four at once).
+    timing = [line for line in capsys.readouterr().out.splitlines() if f"Job {job_id} placed in" in line]
+    assert len(timing) == 1, timing
+    for step in ("move", "re-read file", "bookkeeping", "health check", "library rows", "Plex/Jellyfin/Emby",
+                 "rename", "Sonarr/Radarr", "stats, backups, script"):
+        assert f"{step} " in timing[0], (step, timing[0])
+    assert not worker._step_times
 
     job = await _job(test_db, job_id)
     assert job["status"] == "completed" and job["review_json"] is None

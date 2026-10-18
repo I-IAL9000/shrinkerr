@@ -1325,11 +1325,27 @@ class QueueWorker:
         self._placing: Optional[asyncio.Task] = None
         self._place_again = False
         self._placing_ids: set[int] = set()
+        # Where an approved review's placement spends its time, by job: the
+        # log line _step_report prints (approving 61 took 234 s, four at once).
+        self._step_times: dict[int, list[tuple[str, float]]] = {}
 
     _MAX_LOCK_REQUEUES = 5
     # Approved reviews put in place at once: each mostly waits on the share,
     # Plex and Sonarr / Radarr, and one at a time 270 took 10+ minutes.
     PLACE_LANES = 4
+
+    def _stamp(self, job_id: int, step: str) -> None:
+        """The time since the job's last stamp went to `step` (placements only)."""
+        times = self._step_times.get(job_id)
+        if times is not None:
+            times.append((step, time.monotonic()))
+
+    def _step_report(self, job_id: int) -> None:
+        times = self._step_times.pop(job_id, None)
+        if not times or len(times) < 2:
+            return
+        steps = ", ".join(f"{step} {t - times[i][1]:.1f}" for i, (step, t) in enumerate(times[1:]))
+        print(f"[WORKER] Job {job_id} placed in {times[-1][1] - times[0][1]:.1f} s: {steps}", flush=True)
 
     def _encode_slots_used(self) -> int:
         """Running jobs that count against the parallel-jobs limit: not the
@@ -2153,6 +2169,7 @@ class QueueWorker:
             self._active_procs.pop(job_id, None)
             self._active_tasks.pop(job_id, None)
             self._cancel_flags.discard(job_id)
+            self._step_times.pop(job_id, None)  # a placement that ended early
 
             # Release the WebSocket progress-throttle entry on every exit
             # path (completion, cancel, requeue, exception). Without this,
@@ -2626,10 +2643,12 @@ class QueueWorker:
             review = json.loads(job["review_json"]) if job.get("review_approved") and job.get("review_json") else None
             if review:  # approved in review mode (v0.10.0): put the held output in place
                 from backend.converter import finalize_review
+                self._step_times[job_id] = [("start", time.monotonic())]
                 result = await finalize_review(review["state"], review["result"],
                                                on_output_placed=lambda: self._finalize(job_id),
                                                pre_settings=job_settings)
                 await self._clear_review(job_id)  # placed, or failed: a retry converts it again
+                self._stamp(job_id, "move")
             else:
                 result = await convert_file(
                     input_path=current_file_path,
@@ -2747,6 +2766,7 @@ class QueueWorker:
                 output_video_codec = (result.get("encoding_stats") or {}).get("output_codec") or "hevc"
                 output_probe = (current_file_path, await refresh_converted_scan_row(
                     self.db_path, job_id, file_path, current_file_path, output_video_codec))
+            self._stamp(job_id, "re-read file")
 
             # Always record the pre-rename source path so the VMAF
             # re-measure pass can find this job as a candidate even when
@@ -3383,6 +3403,7 @@ class QueueWorker:
         except Exception as exc:
             print(f"[WORKER] Audio codec rename failed (non-fatal): {exc}", flush=True)
 
+        self._stamp(job_id, "bookkeeping")
         await self.queue.update_space_saved(job_id, space_saved)
 
         # Inline post-conversion health check (keeps the same job card up; no re-queue)
@@ -3487,6 +3508,7 @@ class QueueWorker:
         except Exception as exc:
             print(f"[WORKER] Failed to run inline health check: {exc}", flush=True)
 
+        self._stamp(job_id, "health check")
         await self.queue.update_status(job_id, "completed")
 
         # Log the completed conversion to file_events. Three outcomes:
@@ -3644,6 +3666,7 @@ class QueueWorker:
             except Exception as exc:
                 pass
 
+        self._stamp(job_id, "library rows")
         # Trigger Plex partial scan for the converted file's folder (if enabled)
         try:
             plex_scan_enabled = str((await self._settings()).get("plex_scan_after_conversion") or "").lower() != "false"
@@ -3694,6 +3717,7 @@ class QueueWorker:
         except Exception as exc:
             print(f"[WORKER] Emby library refresh failed (non-fatal): {exc}", flush=True)
 
+        self._stamp(job_id, "Plex/Jellyfin/Emby")
         # Auto-rename after conversion, if enabled
         try:
             import os as _os
@@ -3725,6 +3749,7 @@ class QueueWorker:
         except Exception as exc:
             print(f"[WORKER] Auto-rename hook error (non-fatal): {exc}", flush=True)
 
+        self._stamp(job_id, "rename")
         # Trigger Sonarr/Radarr rescan (skip for NZBGet-sourced files —
         # Sonarr/Radarr will import them automatically after post-processing)
         from backend.config import settings
@@ -3767,6 +3792,7 @@ class QueueWorker:
                     await db.close()
             except Exception as exc:
                 print(f"[WORKER] Failed to mark ignored: {exc}", flush=True)
+        self._stamp(job_id, "Sonarr/Radarr")
         await ws_manager.send_job_complete(job_id, "completed", space_saved, None)
 
         # Update daily stats aggregation
@@ -3805,5 +3831,7 @@ class QueueWorker:
             await _run_post_conversion_script(job_id, current_file_path, file_path, result, dict(job))
         except Exception as exc:
             print(f"[WORKER] Post-conversion script wrapper failed: {exc}", flush=True)
+        self._stamp(job_id, "stats, backups, script")
+        self._step_report(job_id)
 
         # (post-conversion health check runs inline before the job is marked complete)
