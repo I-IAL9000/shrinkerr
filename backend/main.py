@@ -393,6 +393,9 @@ async def lifespan(app: FastAPI):
     backup_task = asyncio.create_task(scheduled_backup_loop())
     # Background: stale node detection + job release
     stale_task = asyncio.create_task(stale_release_loop(node_manager))
+    # Hourly: expired originals (it ran after each job, holding it up).
+    from backend.queue import backup_expiry_loop
+    expiry_task = None if demo.ENABLED else asyncio.create_task(backup_expiry_loop())
 
     # Background: keep the built-in "local" node's last_heartbeat fresh so
     # the Nodes page doesn't show the server itself going stale (it clearly
@@ -443,6 +446,8 @@ async def lifespan(app: FastAPI):
     watcher.stop()
     backup_task.cancel()
     stale_task.cancel()
+    if expiry_task:
+        expiry_task.cancel()
     local_heartbeat_task.cancel()
     version_check_task.cancel()
     estimates_task.cancel()

@@ -102,3 +102,22 @@ async def test_delete_backups_by_age_works(test_db, tmp_path, monkeypatch):
 
     assert res["deleted"] == 1
     assert sorted(p.name for p in backups.iterdir()) == ["new.mkv"]
+
+
+@pytest.mark.asyncio
+async def test_expiry_runs_hourly_in_the_background(monkeypatch):
+    """Not after each job, where its walk of every media folder held the job
+    up and loaded the share (approving 61 reviews took 234 s); an error
+    doesn't stop it."""
+    import asyncio
+    runs = []
+
+    async def sweep():
+        runs.append(1)
+        if len(runs) == 1:
+            raise OSError("share not mounted")
+    monkeypatch.setattr(queue_mod, "_cleanup_expired_backups", sweep)
+    task = asyncio.create_task(queue_mod.backup_expiry_loop(first_delay=0, every=0.01))
+    await asyncio.sleep(0.1)
+    task.cancel()
+    assert len(runs) >= 3

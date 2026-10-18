@@ -59,7 +59,8 @@ Backups says, or the way a matching rule says:
 - **Keep for N days** (new installs: 7). The original moves into a
   `.shrinkerr_backup/` folder in the same directory, or into the backup
   folder you set (in a subfolder named after the file's folder). Originals
-  older than N days are deleted after each job.
+  older than N days are deleted once an hour (the first check comes 10
+  minutes after Shrinkerr starts).
 - **Move to the trash.** Shrinkerr uses the system trash: on Linux, a
   `.Trash-<uid>` folder at the top of the drive or share. If the trash can't
   take a file, the original goes to the backup folder instead (kept until you

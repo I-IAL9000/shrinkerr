@@ -67,7 +67,14 @@ async def _review_then(test_db, src):
 
 @needs_x265
 @pytest.mark.asyncio
-async def test_held_then_approved(test_db, library, capsys):
+async def test_held_then_approved(test_db, library, capsys, monkeypatch):
+    import backend.queue as queue_mod
+    sweeps = []
+
+    async def sweep():
+        sweeps.append(1)
+    # The hourly backup clean-up walks every media folder: never in a job (v0.10.0).
+    monkeypatch.setattr(queue_mod, "_cleanup_expired_backups", sweep)
     src = library
     original = src.read_bytes()
     queue, worker, job_id = await _review_then(test_db, src)
@@ -97,6 +104,7 @@ async def test_held_then_approved(test_db, library, capsys):
                  "rename", "Sonarr/Radarr", "stats, backups, script"):
         assert f"{step} " in timing[0], (step, timing[0])
     assert not worker._step_times
+    assert sweeps == []
 
     job = await _job(test_db, job_id)
     assert job["status"] == "completed" and job["review_json"] is None

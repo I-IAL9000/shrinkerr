@@ -974,6 +974,19 @@ def local_node_outcome(job: dict, final_status: str) -> tuple[bool, bool]:
     return True, final_status != "failed"
 
 
+async def backup_expiry_loop(first_delay: float = 600, every: float = 3600) -> None:
+    """Expired originals are deleted hourly, in the background (v0.10.0). It
+    walks every media folder: run after each job, it held that job up and
+    loaded the share (approving 61 reviews took 234 s while it ran)."""
+    await asyncio.sleep(first_delay)
+    while True:
+        try:
+            await _cleanup_expired_backups()
+        except Exception as exc:
+            print(f"[BACKUP] Expiring old originals failed: {exc}", flush=True)
+        await asyncio.sleep(every)
+
+
 _last_backup_cleanup = 0.0  # Throttle: at most once per hour
 
 
@@ -3816,12 +3829,6 @@ class QueueWorker:
             })
         except Exception as exc:
             print(f"[WORKER] daily_stats update failed (non-fatal): {exc}", flush=True)
-
-        # Cleanup expired backups (runs after each job — lightweight check)
-        try:
-            await _cleanup_expired_backups()
-        except Exception:
-            pass
 
         # Notifications: check if queue is now empty
         try:
