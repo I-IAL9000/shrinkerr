@@ -72,9 +72,18 @@ export default function QueuePage() {
   const PAGE_SIZE = 100; // infinite-scroll batch for completed/failed history
 
   // Filename search (server-side, so it covers the FULL history, not just the
-  // loaded page). Applies to every tab. Debounced into appliedSearch. v0.9.130.
+  // loaded page). Applies to the open tab; switching tabs clears it (v0.10.0).
+  // Debounced into appliedSearch. v0.9.130.
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
+  // A search belongs to its tab: switching starts the next one unfiltered,
+  // in the same render so it loads once.
+  const switchTab = (next: typeof tab) => {
+    if (next === tab) return;
+    setTab(next);
+    setSearch("");
+    setAppliedSearch("");
+  };
   // Infinite-scroll paging for the completed/failed history tabs.
   const [tabOffset, setTabOffset] = useState(0);
   const [tabHasMore, setTabHasMore] = useState(false);
@@ -291,8 +300,8 @@ export default function QueuePage() {
 
   // Auto-switch to pending if failed tab becomes empty
   useEffect(() => {
-    if (tab === "failed" && failedCount === 0) setTab("pending");
-    if (tab === "review" && reviewCount === 0) setTab("pending");
+    if (tab === "failed" && failedCount === 0) switchTab("pending");
+    if (tab === "review" && reviewCount === 0) switchTab("pending");
   }, [tab, failedCount, reviewCount]);
 
   // For pending tab: use tabJobs when on pending tab
@@ -741,7 +750,7 @@ export default function QueuePage() {
         <button
           role="tab"
           aria-selected={tab === "pending"}
-          onClick={() => setTab("pending")}
+          onClick={() => switchTab("pending")}
           style={{
             padding: "10px 20px", fontSize: 13, cursor: "pointer",
             background: "none", border: "none",
@@ -754,7 +763,7 @@ export default function QueuePage() {
         <button
           role="tab"
           aria-selected={tab === "completed"}
-          onClick={() => setTab("completed")}
+          onClick={() => switchTab("completed")}
           style={{
             padding: "10px 20px", fontSize: 13, cursor: "pointer",
             background: "none", border: "none",
@@ -768,7 +777,7 @@ export default function QueuePage() {
           <button
             role="tab"
             aria-selected={tab === "review"}
-            onClick={() => setTab("review")}
+            onClick={() => switchTab("review")}
             style={{
               padding: "10px 20px", fontSize: 13, cursor: "pointer",
               background: "none", border: "none",
@@ -783,7 +792,7 @@ export default function QueuePage() {
           <button
             role="tab"
             aria-selected={tab === "failed"}
-            onClick={() => setTab("failed")}
+            onClick={() => switchTab("failed")}
             style={{
               padding: "10px 20px", fontSize: 13, cursor: "pointer",
               background: "none", border: "none",
@@ -857,7 +866,7 @@ export default function QueuePage() {
                   load();
                   toast(t("queue:toasts.retrying", { count: retried }), "success");
                   if (refused) toast(t("queue:toasts.retryRefused", { count: refused }));
-                  setTab("pending");
+                  switchTab("pending");
                 }}>
                 {t("queue:actions.retryAll")}
               </button>
@@ -895,7 +904,7 @@ export default function QueuePage() {
                   }
                   load();
                   toast(t("queue:toasts.clearedFailed", { count: tabJobs.length }), "error");
-                  setTab("pending");
+                  switchTab("pending");
                 }}>
                 {t("common:actions.clearAll")}
               </button>
