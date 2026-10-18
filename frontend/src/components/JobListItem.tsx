@@ -306,14 +306,19 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
           </div>
         ) : logData ? (
           <>
-            {onUndo && (
+            {/* Restore original and Compare side by side; why it can't
+                restore under them, and the comparison under that (order). */}
+            {(onUndo || job.job_type !== "audio") && (
               <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                <button className="btn btn-xs btn-secondary" disabled={!!undoBlocked}
-                  onClick={(e) => { e.stopPropagation(); onUndo(job.id); }}>
-                  {t("queue:item.restoreOriginal")}
-                </button>
-                {undoBlocked && (
-                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                {onUndo && (
+                  <button className="btn btn-xs btn-secondary" disabled={!!undoBlocked}
+                    onClick={(e) => { e.stopPropagation(); onUndo(job.id); }}>
+                    {t("queue:item.restoreOriginal")}
+                  </button>
+                )}
+                {job.job_type !== "audio" && <BeforeAfter jobId={job.id} />}
+                {onUndo && undoBlocked && (
+                  <span style={{ flexBasis: "100%", order: 1, fontSize: 11, color: "var(--text-muted)" }}>
                     {t(`queue:undo.blocked.${undoBlocked}`, { days: keepDays })}{" "}
                     <Link to="/settings/automation#originals" onClick={(e) => e.stopPropagation()}
                       style={{ color: "var(--accent-text)" }}>{t("queue:undo.settingsLink")}</Link>
@@ -321,7 +326,6 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
                 )}
               </div>
             )}
-            {job.job_type !== "audio" && <BeforeAfter jobId={job.id} />}
             {/* Comparison table: original vs encoded.
                 Audio-only jobs (job_type="audio") get a cleanup-flavoured
                 variant that drops the codec/bitrate rows (no video

@@ -8,6 +8,10 @@ const LABEL = {
   background: "rgba(0, 0, 0, 0.6)", color: "white", pointerEvents: "none",
 } as const;
 
+// Under the buttons' row it opens from (a full line, after a Restore original
+// reason); elsewhere just a block.
+const BELOW = { flexBasis: "100%", order: 2, marginBottom: 12 } as const;
+
 function clock(seconds: number): string {
   const s = Math.round(seconds);
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
@@ -42,8 +46,9 @@ export default function BeforeAfter({ jobId, open = false }: {
 
   if (result === null) {
     if (open) return <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>{t("item.frames.loading")}</div>;
+    // In the job's details it sits beside Restore original, which spaces the row.
     return (
-      <button className="btn btn-xs btn-secondary" style={{ marginBottom: 12 }} disabled={loading}
+      <button className="btn btn-xs btn-secondary" disabled={loading}
         onClick={(e) => { e.stopPropagation(); load(); }}>
         {loading ? t("item.frames.loading") : t("item.frames.show")}
       </button>
@@ -53,7 +58,7 @@ export default function BeforeAfter({ jobId, open = false }: {
   if (!frames.length) {
     const why = result.missing || "unknown";
     return (
-      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>
+      <div style={{ ...BELOW, fontSize: 11, color: "var(--text-muted)" }}>
         {t(`item.frames.missing.${why}`, { keep: result.keep })}
         {why !== "deleted" && (<>{" "}
           <Link to="/settings/video#before-after" onClick={(e) => e.stopPropagation()}
@@ -68,7 +73,7 @@ export default function BeforeAfter({ jobId, open = false }: {
     if (r && r.width) setSplit(Math.min(100, Math.max(0, ((clientX - r.left) / r.width) * 100)));
   };
   return (
-    <div onClick={(e) => e.stopPropagation()} style={{ marginBottom: 12, maxWidth: 1280 }}>
+    <div onClick={(e) => e.stopPropagation()} style={{ ...BELOW, maxWidth: 1280 }}>
       <div ref={box} style={{ position: "relative", lineHeight: 0, userSelect: "none", touchAction: "none", cursor: "ew-resize" }}
         onPointerDown={(e) => { e.currentTarget.setPointerCapture?.(e.pointerId); moveTo(e.clientX); }}
         onPointerMove={(e) => { if (e.buttons) moveTo(e.clientX); }}>
