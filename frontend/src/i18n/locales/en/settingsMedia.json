@@ -66,11 +66,11 @@
         },
         "keep_or_hdr10": {
           "label": "Keep it when possible, otherwise HDR10",
-          "desc": "Kept when the conversion allows it; otherwise Dolby Vision is dropped and the HDR10 (or HLG) under it is converted, so resizing to 1080p works. Profile 5 (most streaming releases) has no HDR10 under it and isn't converted."
+          "desc": "Kept when the conversion allows it; otherwise Dolby Vision is dropped and the HDR10 (or HLG) under it is converted, so resizing to 1080p works. Profile 5 is Dolby Vision without HDR10 (a file with both is profile 7 or 8): it has nothing under it to convert and is left as it is."
         },
         "hdr10": {
           "label": "Convert to HDR10",
-          "desc": "Dolby Vision is dropped and the HDR10 (or HLG) under it is converted like any HDR10 file: faster, with no room needed for three times the video. Profile 5 (most streaming releases) has no HDR10 under it and isn't converted."
+          "desc": "Dolby Vision is dropped and the HDR10 (or HLG) under it is converted like any HDR10 file: faster, with no room needed for three times the video. Profile 5 is Dolby Vision without HDR10 (a file with both is profile 7 or 8): it has nothing under it to convert and is left as it is."
         }
       }
     },

@@ -385,8 +385,8 @@ the original instead.
 
 A Dolby Vision file's video is kept as it is when the file is:
 
-- profile 5 (streaming releases): its base layer isn't HDR10, so a
-  re-encode turns it purple and green;
+- profile 5: Dolby Vision without HDR10 under it, so a re-encode turns it
+  purple and green (a file with Dolby Vision and HDR10 is profile 7 or 8);
 - resized (a rule's or the queue's target resolution) or encoded to AV1;
 - encoded with Quick Sync or VAAPI;
 - Blu-ray / DVD discs;

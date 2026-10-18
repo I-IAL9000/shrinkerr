@@ -66,11 +66,11 @@
         },
         "keep_or_hdr10": {
           "label": "Conservarlo si se puede; si no, HDR10",
-          "desc": "Se conserva cuando la conversión lo permite; si no, se descarta Dolby Vision y se convierte el HDR10 (o HLG) que hay debajo, así que se puede reducir a 1080p. El perfil 5 (la mayoría de los lanzamientos de streaming) no tiene HDR10 debajo y no se convierte."
+          "desc": "Se conserva cuando la conversión lo permite; si no, se descarta Dolby Vision y se convierte el HDR10 (o HLG) que hay debajo, así que se puede reducir a 1080p. El perfil 5 es Dolby Vision sin HDR10 (un archivo con ambos es perfil 7 u 8): no tiene nada debajo que convertir y se deja como está."
         },
         "hdr10": {
           "label": "Convertir a HDR10",
-          "desc": "Se descarta Dolby Vision y se convierte el HDR10 (o HLG) que hay debajo como cualquier archivo HDR10: más rápido y sin necesitar espacio para tres veces el vídeo. El perfil 5 (la mayoría de los lanzamientos de streaming) no tiene HDR10 debajo y no se convierte."
+          "desc": "Se descarta Dolby Vision y se convierte el HDR10 (o HLG) que hay debajo como cualquier archivo HDR10: más rápido y sin necesitar espacio para tres veces el vídeo. El perfil 5 es Dolby Vision sin HDR10 (un archivo con ambos es perfil 7 u 8): no tiene nada debajo que convertir y se deja como está."
         }
       }
     },
