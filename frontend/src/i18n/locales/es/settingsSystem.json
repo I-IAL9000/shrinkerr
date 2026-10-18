@@ -48,6 +48,8 @@
       "browse": "Examinar",
       "help": "Déjalo vacío para usar <code>.shrinkerr_backup</code> en la misma carpeta. Indica una ruta absoluta (p. ej. <code>/media/backups</code>) para centralizar el almacenamiento. Las copias de seguridad son necesarias para la función <b>Deshacer conversión</b>: sin ellas, las conversiones no se pueden revertir.",
       "deleteAll": "Eliminar todas las copias",
+      "finding": "Buscando copias… (revisa todas las carpetas de medios)",
+      "deleting": "Eliminando copias…",
       "noneFound": "No se encontraron copias de seguridad.",
       "deleteAllConfirm_one": "¿Eliminar {{count}} copia de seguridad ({{size}})? Esta acción no se puede deshacer.",
       "deleteAllConfirm_many": "¿Eliminar las {{count}} copias de seguridad ({{size}})? Esta acción no se puede deshacer.",

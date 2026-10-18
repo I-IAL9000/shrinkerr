@@ -2116,24 +2116,29 @@ async def list_backups():
                 except OSError:
                     pass
 
-    # Scan custom backup folder — not when it overlaps the library: its
-    # files would be media, and "Delete all" deletes what's listed (v0.10.0).
-    from backend.media_paths import backup_folder_conflict
-    if custom_folder and not backup_folder_conflict(custom_folder, media_dirs):
-        for entry in os.scandir(custom_folder) if os.path.isdir(custom_folder) else []:
-            if entry.is_dir(follow_symlinks=False):
-                scan_backup_dir(entry.path)
+    def scan() -> None:
+        # Scan custom backup folder — not when it overlaps the library: its
+        # files would be media, and "Delete all" deletes what's listed (v0.10.0).
+        from backend.media_paths import backup_folder_conflict
+        if custom_folder and not backup_folder_conflict(custom_folder, media_dirs):
+            for entry in os.scandir(custom_folder) if os.path.isdir(custom_folder) else []:
+                if entry.is_dir(follow_symlinks=False):
+                    scan_backup_dir(entry.path)
 
-    # Scan both the new .shrinkerr_backup and the legacy .squeezarr_backup
-    # folders — users upgrading from the old name will still have backups
-    # sitting under the old folder until they clean it up.
-    _BACKUP_DIRNAMES = {".shrinkerr_backup", ".squeezarr_backup"}
-    for media_dir in media_dirs:
-        for root, dirs, _files in os.walk(media_dir):
-            for backup_name in _BACKUP_DIRNAMES & set(dirs):
-                scan_backup_dir(os.path.join(root, backup_name))
-            # Don't recurse into backup dirs (either flavor).
-            dirs[:] = [d for d in dirs if d not in _BACKUP_DIRNAMES]
+        # Scan both the new .shrinkerr_backup and the legacy .squeezarr_backup
+        # folders — users upgrading from the old name will still have backups
+        # sitting under the old folder until they clean it up.
+        _BACKUP_DIRNAMES = {".shrinkerr_backup", ".squeezarr_backup"}
+        for media_dir in media_dirs:
+            for root, dirs, _files in os.walk(media_dir):
+                for backup_name in _BACKUP_DIRNAMES & set(dirs):
+                    scan_backup_dir(os.path.join(root, backup_name))
+                # Don't recurse into backup dirs (either flavor).
+                dirs[:] = [d for d in dirs if d not in _BACKUP_DIRNAMES]
+
+    # It walks every media folder on the share — minutes on a big library:
+    # off the event loop, which it froze, the whole app with it (v0.10.0).
+    await asyncio.to_thread(scan)
 
     backups.sort(key=lambda b: b["mtime"], reverse=True)
     return {
@@ -2170,47 +2175,47 @@ async def delete_backups(req: DeleteBackupsRequest):
             await db.close()
         if custom and backup_folder_conflict(custom, media_dirs):
             custom = ""
-        # Delete specific files
-        for path in req.paths:
-            # Safety: only files inside a recognised backup dir (new or
-            # legacy) or the configured centralized backup folder. Checked
-            # on the resolved path: ".shrinkerr_backup/../Movie.mkv"
-            # matched a substring test (v0.10.0).
-            real = os.path.realpath(path)
-            if not os.path.isfile(real):
-                continue
-            in_backup_dir = any(part in (".shrinkerr_backup", ".squeezarr_backup")
-                                for part in Path(real).parent.parts)
-            if not in_backup_dir and not (custom and is_within(real, custom)):
-                continue  # Skip — not a backup path
-            path = real
-            try:
-                size = os.path.getsize(path)
-                os.unlink(path)
-                deleted += 1
-                freed += size
-            except OSError:
-                pass
+
+        def delete_listed() -> None:
+            nonlocal deleted, freed
+            for path in req.paths:
+                # Safety: only files inside a recognised backup dir (new or
+                # legacy) or the configured centralized backup folder. Checked
+                # on the resolved path: ".shrinkerr_backup/../Movie.mkv"
+                # matched a substring test (v0.10.0).
+                real = os.path.realpath(path)
+                if not os.path.isfile(real):
+                    continue
+                in_backup_dir = any(part in (".shrinkerr_backup", ".squeezarr_backup")
+                                    for part in Path(real).parent.parts)
+                if not in_backup_dir and not (custom and is_within(real, custom)):
+                    continue  # Skip — not a backup path
+                try:
+                    size = os.path.getsize(real)
+                    os.unlink(real)
+                    deleted += 1
+                    freed += size
+                except OSError:
+                    pass
+        # On the share, off the event loop (v0.10.0).
+        await asyncio.to_thread(delete_listed)
     else:
         # Delete all or by age
         result = await list_backups()
         cutoff = time.time() - (req.older_than_days * 86400) if req.older_than_days else None
-        for backup in result["backups"]:
-            if cutoff and backup["mtime"] > cutoff:
-                continue  # Too new, skip
-            try:
-                os.unlink(backup["path"])
-                deleted += 1
-                freed += backup["size"]
-            except OSError:
-                pass
 
-    # Clean up empty backup directories
-    result2 = await list_backups()
-    for folder in set(b["folder"] for b in result2["backups"]):
-        pass  # folder still has files
-    # Find and remove now-empty dirs (OS handles this when unlink leaves
-    # the dir empty — no explicit cleanup needed here).
+        def delete_old() -> None:
+            nonlocal deleted, freed
+            for backup in result["backups"]:
+                if cutoff and backup["mtime"] > cutoff:
+                    continue  # Too new, skip
+                try:
+                    os.unlink(backup["path"])
+                    deleted += 1
+                    freed += backup["size"]
+                except OSError:
+                    pass
+        await asyncio.to_thread(delete_old)
 
     return {"deleted": deleted, "freed": freed}
 

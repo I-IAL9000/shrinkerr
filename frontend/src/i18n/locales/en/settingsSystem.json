@@ -48,6 +48,8 @@
       "browse": "Browse",
       "help": "Leave empty to use <code>.shrinkerr_backup</code> in the same directory. Set an absolute path (e.g. <code>/media/backups</code>) for centralized storage. Backup files are required for the <b>Undo Conversion</b> feature — without backups, conversions cannot be reverted.",
       "deleteAll": "Delete all backups",
+      "finding": "Finding backups… (it looks through every media folder)",
+      "deleting": "Deleting backups…",
       "noneFound": "No backup files found.",
       "deleteAllConfirm_one": "Delete {{count}} backup file ({{size}})? This cannot be undone.",
       "deleteAllConfirm_other": "Delete all {{count}} backup files ({{size}})? This cannot be undone.",

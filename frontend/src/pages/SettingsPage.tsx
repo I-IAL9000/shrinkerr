@@ -353,6 +353,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
   // Backup state
   const [backupList, setBackupList] = useState<{ name: string; size: number; created_at: string }[]>([]);
   const [backupCreating, setBackupCreating] = useState(false);
+  // Delete all backups: listing them walks every media folder (minutes on a
+  // big share), so the button says what it's doing straight away.
+  const [backupsBusy, setBackupsBusy] = useState<"finding" | "deleting" | null>(null);
   const [ruleDropIdx, setRuleDropIdx] = useState<number | null>(null);
   // Saved views (v0.10.0): for the rules' condition and the auto-queue limit.
   const [views, setViews] = useState<SavedView[]>([]);
@@ -3801,19 +3804,35 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 <div style={{ paddingLeft: 26, marginBottom: 16 }}>
                   <button
                     className="btn btn-xs btn-danger btn-secondary"
+                    disabled={backupsBusy !== null}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
                     onClick={async () => {
-                      const data = await getBackups();
-                      if (data.total_count === 0) {
-                        alert(t("settingsSystem:automation.originals.noneFound"));
-                        return;
-                      }
-                      if (confirm(t("settingsSystem:automation.originals.deleteAllConfirm", { count: data.total_count, size: fmtBytes(data.total_size) }))) {
-                        const result = await deleteBackups();
-                        alert(t("settingsSystem:automation.originals.deletedResult", { count: result.deleted, size: fmtBytes(result.freed) }));
+                      setBackupsBusy("finding");
+                      try {
+                        const data = await getBackups();
+                        if (data.total_count === 0) {
+                          toast(t("settingsSystem:automation.originals.noneFound"));
+                          return;
+                        }
+                        if (!await askConfirm({
+                          message: t("settingsSystem:automation.originals.deleteAllConfirm", { count: data.total_count, size: fmtBytes(data.total_size) }),
+                          confirmLabel: t("settingsSystem:automation.originals.deleteAll"), danger: true,
+                        })) return;
+                        setBackupsBusy("deleting");
+                        // The files just listed: no second walk of the library.
+                        const result = await deleteBackups(data.backups.map((b: any) => b.path));
+                        toast(t("settingsSystem:automation.originals.deletedResult", { count: result.deleted, size: fmtBytes(result.freed) }), "success");
+                      } catch (e) {
+                        toast((e as Error).message, "error");
+                      } finally {
+                        setBackupsBusy(null);
                       }
                     }}
                   >
-                    {t("settingsSystem:automation.originals.deleteAll")}
+                    {backupsBusy && <span className="spinner" style={{ width: 12, height: 12 }} />}
+                    {backupsBusy === "finding" ? t("settingsSystem:automation.originals.finding")
+                      : backupsBusy === "deleting" ? t("settingsSystem:automation.originals.deleting")
+                      : t("settingsSystem:automation.originals.deleteAll")}
                   </button>
                 </div>
 

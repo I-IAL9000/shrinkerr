@@ -121,3 +121,46 @@ async def test_expiry_runs_hourly_in_the_background(monkeypatch):
     await asyncio.sleep(0.1)
     task.cancel()
     assert len(runs) >= 3
+
+
+@pytest.mark.asyncio
+async def test_listing_backups_doesnt_freeze_the_app(test_db, tmp_path, monkeypatch):
+    """Delete all backups lists them first, walking every media folder on the
+    share: minutes on a big library, with the whole app frozen meanwhile
+    (the walk ran on the event loop). It runs off it now, and deleting what
+    was listed doesn't walk the library again (it walked it twice more)."""
+    import asyncio
+    pytest.importorskip("apscheduler")
+    import backend.routes.settings as settings_route
+    monkeypatch.setattr(settings_route, "DB_PATH", test_db)
+    media = tmp_path / "media"
+    backups = media / "Movie (2009)" / ".shrinkerr_backup"
+    backups.mkdir(parents=True)
+    (backups / "a.mkv").write_bytes(b"xx")
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO media_dirs (path) VALUES (?)", (str(media),))
+        await db.commit()
+    real_walk, walks = os.walk, []
+
+    def slow_walk(top, *a, **kw):
+        walks.append(top)
+        time.sleep(0.3)  # a big share
+        yield from real_walk(top, *a, **kw)
+    monkeypatch.setattr(os, "walk", slow_walk)
+
+    ticks = []
+
+    async def ticker():
+        for _ in range(5):
+            await asyncio.sleep(0.02)
+            ticks.append(1)
+    tick = asyncio.create_task(ticker())
+    listed = await settings_route.list_backups()
+    assert len(ticks) >= 3, "the app was frozen while backups were listed"
+    await tick
+    assert [b["name"] for b in listed["backups"]] == ["a.mkv"] and listed["total_size"] == 2
+
+    walks.clear()
+    res = await settings_route.delete_backups(settings_route.DeleteBackupsRequest(paths=[b["path"] for b in listed["backups"]]))
+    assert (res["deleted"], res["freed"], walks) == (1, 2, [])
+    assert not (backups / "a.mkv").exists()
