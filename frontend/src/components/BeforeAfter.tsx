@@ -68,7 +68,7 @@ export default function BeforeAfter({ jobId, open = false }: {
     if (r && r.width) setSplit(Math.min(100, Math.max(0, ((clientX - r.left) / r.width) * 100)));
   };
   return (
-    <div onClick={(e) => e.stopPropagation()} style={{ marginBottom: 12, maxWidth: 720 }}>
+    <div onClick={(e) => e.stopPropagation()} style={{ marginBottom: 12, maxWidth: 1920 }}>
       <div ref={box} style={{ position: "relative", lineHeight: 0, userSelect: "none", touchAction: "none", cursor: "ew-resize" }}
         onPointerDown={(e) => { e.currentTarget.setPointerCapture?.(e.pointerId); moveTo(e.clientX); }}
         onPointerMove={(e) => { if (e.buttons) moveTo(e.clientX); }}>
@@ -83,7 +83,11 @@ export default function BeforeAfter({ jobId, open = false }: {
         <span style={{ ...LABEL, right: 8 }}>{t("item.frames.after")}</span>
       </div>
       <input type="range" min={0} max={100} step={1} value={Math.round(split)} aria-label={t("item.frames.slider")}
-        onChange={(e) => setSplit(Number(e.target.value))} style={{ width: "100%", accentColor: "var(--accent)" }} />
+        onChange={(e) => setSplit(Number(e.target.value))}
+        // Its own fill: the app's slider fill repaints on input events only,
+        // and dragging on the picture moves it without one.
+        style={{ width: "100%", accentColor: "var(--accent)",
+                 background: `linear-gradient(to right, var(--accent) ${split}%, var(--border) ${split}%)` }} />
       {frames.length > 1 && (
         <div role="group" aria-label={t("item.frames.moments")} style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {frames.map((f, i) => (

@@ -17,7 +17,9 @@ from collections.abc import Container
 from pathlib import Path
 
 POINTS = (0.2, 0.5, 0.8)
-WIDTH = 960
+# 1080p as it is, to judge an encode by (it was 960 wide, and soft); 4K is
+# shown at 1920 too, to keep the files a reasonable size (a few hundred KB).
+WIDTH = 1920
 KEEP_JOBS = 100
 # Square pixels, at most WIDTH wide, even sizes; 10-bit / HDR sources to 8-bit JPEG.
 _SCALE = (f"scale=w='trunc(min({WIDTH},iw*sar)/2)*2':h='trunc(ow*ih/(iw*sar)/2)*2',setsar=1")
@@ -31,7 +33,7 @@ def frames_dir() -> Path:
 async def _grab_one(path: str, seconds: float) -> bytes | None:
     proc = await asyncio.create_subprocess_exec(
         "ffmpeg", "-v", "error", "-ss", f"{seconds:.3f}", "-i", path, "-frames:v", "1", "-an", "-sn",
-        "-vf", _SCALE, "-pix_fmt", "yuvj420p", "-q:v", "4", "-f", "image2", "-c:v", "mjpeg", "pipe:1",
+        "-vf", _SCALE, "-pix_fmt", "yuvj420p", "-q:v", "2", "-f", "image2", "-c:v", "mjpeg", "pipe:1",
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     try:
         out, _ = await asyncio.wait_for(proc.communicate(), timeout=60)
