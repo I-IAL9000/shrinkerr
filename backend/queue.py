@@ -963,6 +963,17 @@ class JobQueue:
             await db.close()
 
 
+def local_node_outcome(job: dict, final_status: str) -> tuple[bool, bool]:
+    """(counts, success) for the local node's stats once a job ends. Only
+    "completed" counted as a success: in review mode every conversion held
+    for review was a failure, and 5 in a row suspended the server (v0.10.0).
+    A cancelled or requeued job isn't the node's failure, and placing an
+    approved review only moves what was counted when it was converted."""
+    if job.get("review_approved") or final_status not in ("completed", "review", "failed"):
+        return False, True
+    return True, final_status != "failed"
+
+
 _last_backup_cleanup = 0.0  # Throttle: at most once per hour
 
 
@@ -2153,7 +2164,7 @@ class QueueWorker:
                         # r is a Row object (dict-like)
                         final_status = r["status"]
                         saved = int(r["space_saved"] or 0)
-                        success = (final_status == "completed")
+                        counts, success = local_node_outcome(job, final_status)
                         # Skip health_check jobs — they don't represent work
                         # in the useful sense (they don't transcode anything)
                         # and inflating jobs_completed on the local card with
@@ -2161,7 +2172,7 @@ class QueueWorker:
                         if job.get("job_type") != "health_check":
                             await nm.complete_job_on_node(
                                 "local", job_id,
-                                success=success, space_saved=saved,
+                                success=success, space_saved=saved, counts=counts,
                             )
             except Exception as exc:
                 print(f"[WORKER] Failed to update local node stats: {exc}", flush=True)

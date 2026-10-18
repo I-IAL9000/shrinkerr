@@ -254,3 +254,17 @@ async def test_remote_workers(test_db, monkeypatch):
         "/media/Film/.shrinkerr-review/film.mkv", "/media/Film/film.is.srt")
     await queue.approve_reviews([job_id])
     assert (await nodes_route.request_job(nodes_route.RequestJobBody(node_id="n1"), request))["job"] is None
+
+
+@pytest.mark.parametrize("status, approved, outcome", [
+    ("completed", 0, (True, True)),
+    ("review", 0, (True, True)),      # held for review: done work (it was a failure: 11 in a row suspended the server)
+    ("failed", 0, (True, False)),
+    ("cancelled", 0, (False, True)),  # not the node's failure
+    ("pending", 0, (False, True)),    # put back in the queue
+    ("completed", 1, (False, True)),  # placing an approved review: already counted when it was converted
+    ("failed", 1, (False, True)),     # the original changed meanwhile: not the node's failure
+])
+def test_what_counts_for_the_local_node(status, approved, outcome):
+    from backend.queue import local_node_outcome
+    assert local_node_outcome({"review_approved": approved}, status) == outcome
