@@ -428,7 +428,7 @@ async def request_job(req: RequestJobBody, request: Request):
             "              'lossless_target_codec', 'lossless_target_bitrate', 'lossless_keep_object_audio', "
             "              'review_before_replace', 'convert_dts', 'audio_compat_track', 'audio_compat_codec', "
             "              'audio_compat_bitrate', 'audio_compat_loudnorm', "
-            "              'image_subs_to_srt', 'image_subs_keep_original', 'compare_frames', "
+            "              'image_subs_to_srt', 'image_subs_keep_original', 'compare_frames', 'dolby_vision_mode', "
             "              'delete_external_subs_after_merge')"
         ) as cur:
             srv_settings = {r["key"]: r["value"] for r in await cur.fetchall()}
@@ -479,6 +479,7 @@ async def request_job(req: RequestJobBody, request: Request):
     assigned["image_subs_to_srt"] = (srv_settings.get("image_subs_to_srt") or "false").lower() == "true"
     assigned["image_subs_keep_original"] = (srv_settings.get("image_subs_keep_original") or "true").lower() == "true"
     assigned["compare_frames"] = (srv_settings.get("compare_frames") or "true").lower() == "true"
+    assigned["dolby_vision_mode"] = srv_settings.get("dolby_vision_mode") or "keep"
     # Quick Sync / VAAPI quality and NVENC bit depth (v0.10.0): workers used
     # the defaults — 10-bit NVENC whatever the server said, which a Maxwell
     # GPU can't encode.

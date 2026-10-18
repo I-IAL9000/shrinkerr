@@ -1064,6 +1064,21 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     </div>
                   </div>
 
+                  {/* Dolby Vision (v0.10.0, backend/dovi.py): keep it, or convert the HDR10 under it. */}
+                  <div>
+                    <label style={{ ...labelStyle, display: "block", marginBottom: 8 }} htmlFor="dolby-vision-mode">
+                      {t("settingsMedia:video.dolbyVision.label")}
+                    </label>
+                    <select id="dolby-vision-mode" style={{ ...inputStyle, width: "100%" }}
+                      value={encoding.dolby_vision_mode || "keep"}
+                      onChange={(e) => setEncoding({ ...encoding, dolby_vision_mode: e.target.value })}>
+                      {(["keep", "keep_or_hdr10", "hdr10"] as const).map(m => (
+                        <option key={m} value={m}>{t(`settingsMedia:video.dolbyVision.options.${m}.label`)}</option>
+                      ))}
+                    </select>
+                    <div style={helpStyle}>{t(`settingsMedia:video.dolbyVision.options.${encoding.dolby_vision_mode || "keep"}.desc`)}</div>
+                  </div>
+
                   {/* Source Codecs to Convert */}
                   <div>
                     <div style={{ ...labelStyle, marginBottom: 8 }}>{t("settingsMedia:video.convertFrom")}</div>

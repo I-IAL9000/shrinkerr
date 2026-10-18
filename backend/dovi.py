@@ -15,14 +15,100 @@ VAAPI (8-bit here); discs; and installs without dovi_tool and mkvmerge.
 from __future__ import annotations
 
 import asyncio
+import functools
+import json
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
 KEEPABLE = ("dv7", "dv8")
 TOOLS = ("dovi_tool", "mkvmerge", "mkvextract")
+
+
+# Settings → Video → Dolby Vision (v0.10.0): "keep" it (the video isn't
+# converted when it can't be kept), "keep_or_hdr10" (else convert the HDR
+# under it), "hdr10" (always drop it). Profile 5 has no HDR under it.
+MODES = ("keep", "keep_or_hdr10", "hdr10")
+_mode = "keep"
+
+
+def set_mode(mode: str | None) -> None:
+    """The saved setting (start-up and Settings), for scans: convertible()."""
+    global _mode
+    _mode = mode if mode in MODES else "keep"
+
+
+async def load_mode() -> None:
+    """The saved mode, at start-up."""
+    from backend.database import connect_db
+    db = await connect_db()
+    try:
+        async with db.execute("SELECT value FROM settings WHERE key = 'dolby_vision_mode'") as cur:
+            row = await cur.fetchone()
+    finally:
+        await db.close()
+    set_mode(row[0] if row else None)
+
+
+def drop_to(hdr_format: str | None, base: str | None) -> str | None:
+    """The HDR left when this Dolby Vision is dropped — "hdr10" or "hlg"
+    (scanner.dv_base_of) — or None when it can't be: only profiles 7 and 8
+    have an HDR picture under it (profile 5's turns purple and green)."""
+    return base if hdr_format in KEEPABLE and base in ("hdr10", "hlg") else None
+
+
+@functools.lru_cache(maxsize=1)
+def _strip_filter() -> bool:
+    """ffmpeg 7.1+ has the dovi_rpu filter, which strips the metadata."""
+    try:
+        out = subprocess.run(["ffmpeg", "-hide_banner", "-bsfs"], capture_output=True, text=True, timeout=20).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return any(line.strip() == "dovi_rpu" for line in out.splitlines())
+
+
+@functools.lru_cache(maxsize=1)
+def _x265_writes_it() -> bool:
+    """ffmpeg 7.1+'s libx265 writes Dolby Vision from the source's metadata
+    unless told not to (-dolbyvision); older ones have no such option."""
+    try:
+        out = subprocess.run(["ffmpeg", "-hide_banner", "-h", "encoder=libx265"],
+                             capture_output=True, text=True, timeout=20).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "-dolbyvision" in out
+
+
+def strip_args(encoder: str) -> list[str]:
+    """Output options that leave no Dolby Vision in an encode that drops it:
+    libx265 and SVT-AV1 write it from the source's metadata by default, and
+    the dovi_rpu filter removes what's left (its frames' metadata, the
+    configuration record)."""
+    args = ["-dolbyvision", "0"] if encoder == "libx265" and _x265_writes_it() else []
+    if _strip_filter():
+        args += ["-bsf:v", "dovi_rpu=strip=1"]
+    return args
+
+
+async def left_in(path: str) -> bool:
+    """Whether a file still carries Dolby Vision: its stream's configuration
+    record, or its first frame's metadata."""
+    from backend.scanner import first_frame_info, hdr_format_of
+    proc = await asyncio.create_subprocess_exec(
+        "ffprobe", "-v", "error", "-select_streams", "V:0", "-show_entries", "stream=side_data_list",
+        "-of", "json", path, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+    out, _ = await proc.communicate()
+    try:
+        streams = json.loads(out or b"{}").get("streams") or []
+    except ValueError:
+        streams = []
+    if any((hdr_format_of(s) or "").startswith("dv") for s in streams):
+        return True
+    frame = await first_frame_info(path)
+    return bool(frame) and (hdr_format_of(frame) or "").startswith("dv")
 
 
 def tools_available() -> bool:
@@ -31,8 +117,9 @@ def tools_available() -> bool:
 
 def convertible(hdr_format: str | None) -> bool:
     """Whether scans offer a Dolby Vision file for conversion (the job
-    decides the rest: the encoder, a resize, AV1)."""
-    return hdr_format in KEEPABLE and tools_available()
+    decides the rest: the encoder, a resize, AV1). Without the tools only
+    when the setting drops it."""
+    return hdr_format in KEEPABLE and (tools_available() or _mode != "keep")
 
 
 def why_not_kept(hdr_format: str | None, *, encoder: str, output_codec: str | None,

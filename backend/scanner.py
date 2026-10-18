@@ -262,6 +262,23 @@ def _dvd_logical_index(stream_id, kind: str) -> Optional[int]:
     return sid - 0x20 if 0x20 <= sid < 0x40 else None
 
 
+def dv_base_of(stream: dict) -> Optional[str]:
+    """The HDR under a Dolby Vision stream — "hdr10" or "hlg" — or None (no
+    HDR base: profile 5, an SDR base): what dropping its Dolby Vision would
+    leave (Settings → Video → Dolby Vision, v0.10.0). From the configuration
+    record's base-layer compatibility, else the stream's transfer."""
+    for side in stream.get("side_data_list") or []:
+        if "dovi configuration" in (side.get("side_data_type") or "").lower():
+            compat = side.get("dv_bl_signal_compatibility_id")
+            if compat is not None:
+                try:
+                    return {1: "hdr10", 6: "hdr10", 4: "hlg"}.get(int(compat))
+                except (TypeError, ValueError):
+                    return None
+    transfer = (stream.get("color_transfer") or "").lower()
+    return {"smpte2084": "hdr10", "arib-std-b67": "hlg"}.get(transfer)
+
+
 def hdr_format_of(stream: dict) -> Optional[str]:
     """"dv<profile>" for Dolby Vision, "hdr10" (PQ) or "hlg", else None —
     from an ffprobe stream or frame (v0.10.0)."""
@@ -531,6 +548,7 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
     video_dar = ""
     video_bitrate: Optional[int] = None
     hdr_format: Optional[str] = None
+    dv_base: Optional[str] = None
     audio_tracks = []
     subtitle_tracks = []
 
@@ -545,6 +563,7 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
             # consumer downstream sees the same value.
             video_pix_fmt = stream.get("pix_fmt", "") or ""
             hdr_format = hdr_format_of(stream)
+            dv_base = dv_base_of(stream) if is_dolby_vision(hdr_format) else None
             video_width = stream.get("width", 0) or 0
             video_height = stream.get("height", 0) or 0
             # Frame rate: prefer r_frame_rate ("24000/1001" → 23.976),
@@ -686,6 +705,7 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
         frame = await first_frame_info(probe_input, ffprobe_input_args)
         if frame:
             hdr_format = hdr_format_of(frame)
+            dv_base = dv_base_of(frame) if is_dolby_vision(hdr_format) else None
 
     result = {
         "video_codec": video_codec,
@@ -694,6 +714,7 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
         "video_stream_index": video_stream_index,
         "video_pix_fmt": video_pix_fmt,
         "hdr_format": hdr_format,
+        "dv_base": dv_base,  # the HDR under Dolby Vision (dv_base_of)
         "video_width": video_width,
         "video_height": video_height,
         "video_fps": video_fps,

@@ -384,6 +384,8 @@ async def lifespan(app: FastAPI):
     if not demo.ENABLED:  # the demo's files don't exist, and nothing runs
         await worker.restore_run_state()
         worker.place_approved()  # approved before a restart
+        from backend import dovi
+        await dovi.load_mode()
         from backend.frames import record_existing
         await record_existing()
         watcher.start()

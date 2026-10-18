@@ -190,6 +190,7 @@ _ENCODING_DEFAULTS = {
     # v0.10.0: each title's quality found on samples to score this VMAF
     "vmaf_target_enabled": "false",
     "vmaf_target_score": str(VMAF_TARGET_DEFAULT),
+    "dolby_vision_mode": "keep",  # | "keep_or_hdr10" | "hdr10" (backend/dovi.py)
     "resolution_aware_cq": "false",
     "resolution_cq_4k": "24",
     "resolution_cq_1080p": "20",
@@ -834,6 +835,7 @@ async def get_encoding_settings():
     result["bazarr_url"] = merged.get("bazarr_url", "")
     result["bazarr_api_key"] = ("****" + bazarr_key[-4:]) if bazarr_key else ""
     result["compare_frames"] = merged.get("compare_frames", "true").lower() == "true"
+    result["dolby_vision_mode"] = merged.get("dolby_vision_mode") or "keep"
     result["update_check"] = merged.get("update_check", "true").lower() != "false"
     result["mqtt_enabled"] = merged.get("mqtt_enabled", "false").lower() == "true"
     result["mqtt_tls"] = merged.get("mqtt_tls", "false").lower() == "true"
@@ -1444,6 +1446,9 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
                                      if update.bazarr_url.strip() else "")
         if update.bazarr_api_key is not None and not update.bazarr_api_key.startswith("****"):
             updates["bazarr_api_key"] = update.bazarr_api_key
+        if update.dolby_vision_mode is not None:  # v0.10.0 (backend/dovi.py)
+            from backend import dovi
+            updates["dolby_vision_mode"] = update.dolby_vision_mode if update.dolby_vision_mode in dovi.MODES else "keep"
         # Home Assistant over MQTT (v0.10.0); before / after frames
         for key in ("mqtt_enabled", "mqtt_tls", "compare_frames", "update_check"):
             if getattr(update, key) is not None:
@@ -1645,6 +1650,10 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
     if "notification_language" in updates:
         from backend.i18n import set_current_language
         set_current_language(updates["notification_language"])
+
+    if "dolby_vision_mode" in updates:  # what scans offer for conversion
+        from backend import dovi
+        dovi.set_mode(updates["dolby_vision_mode"])
 
     return {"status": "updated", "keys": list(updates.keys())}
 

@@ -57,6 +57,23 @@
       "verify": "Run <code>docker exec shrinkerr vainfo</code> to verify the encoder profiles your hardware exposes."
     },
     "outputCodec": {"label": "Output codec", "help": "What conversions encode to. AV1 files come out smaller at the same quality, but AV1 encodes fast only on an AV1-capable GPU (NVENC on an RTX 40 or later, Intel Arc QSV); otherwise it's the CPU (SVT-AV1), much slower. An encoding rule can choose the other codec for its files."},
+    "dolbyVision": {
+      "label": "Dolby Vision",
+      "options": {
+        "keep": {
+          "label": "Keep it",
+          "desc": "Dolby Vision is kept when the conversion allows it: HEVC at the same resolution, not Quick Sync or VAAPI. When it doesn't, the video isn't converted; the job does its other work and says why."
+        },
+        "keep_or_hdr10": {
+          "label": "Keep it when possible, otherwise HDR10",
+          "desc": "Kept when the conversion allows it; otherwise Dolby Vision is dropped and the HDR10 (or HLG) under it is converted, so resizing to 1080p works. Profile 5 (most streaming releases) has no HDR10 under it and isn't converted."
+        },
+        "hdr10": {
+          "label": "Convert to HDR10",
+          "desc": "Dolby Vision is dropped and the HDR10 (or HLG) under it is converted like any HDR10 file: faster, with no room needed for three times the video. Profile 5 (most streaming releases) has no HDR10 under it and isn't converted."
+        }
+      }
+    },
     "parallelJobs": "Parallel Jobs",
     "parallelJobsHelp": "Number of simultaneous encoding jobs. Higher = faster queue processing but more GPU/CPU load.",
     "ffmpegThreads": "FFmpeg Threads Per Job",

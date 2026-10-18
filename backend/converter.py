@@ -96,6 +96,7 @@ _ENCODING_SETTINGS: tuple[tuple[str, object, Callable], ...] = (
     ("image_subs_keep_original",         _ABSENT,   _str_to_bool),
     ("vmaf_target_enabled",              _ABSENT,   _str_to_bool),
     ("compare_frames",                   _ABSENT,   _str_to_bool),
+    ("dolby_vision_mode",                _ABSENT,   str),
     ("vmaf_target_score",                _ABSENT,   float),
     # Output shaping
     ("target_resolution",                _ABSENT,   str),
@@ -3315,6 +3316,16 @@ async def convert_file(
     # (QueueWorker: VIDEO_KEPT_KEYS), saying why the video wasn't converted.
     dv_why = dovi.why_not_kept(source_hdr, encoder=encoder, output_codec=output_codec,
                                target_resolution=_target_res, disc_type=disc_type) if is_dolby_vision(source_hdr) else None
+    # Settings → Video → Dolby Vision: drop it and convert the HDR10 / HLG
+    # under it — always, or when it can't be kept (a 4K remux resized to
+    # 1080p came out as nothing; it's 1080p HDR10 now).
+    dv_mode = live_settings.get("dolby_vision_mode") or "keep"
+    drop_dv = None
+    if is_dolby_vision(source_hdr) and not disc_type and (dv_mode == "hdr10" or (dv_mode == "keep_or_hdr10" and dv_why)):
+        drop_dv = dovi.drop_to(source_hdr, probe_data.get("dv_base"))
+    if drop_dv:
+        print(f"[CONVERT] Dropping Dolby Vision ({source_hdr}): converting the {drop_dv.upper()} under it", flush=True)
+        source_hdr, dv_why = drop_dv, None
     keep_dv = is_dolby_vision(source_hdr) and dv_why is None
     if dv_why:
         params = {"profile": (source_hdr or "")[2:] or "?", "encoder": encoder,
@@ -3886,6 +3897,9 @@ async def convert_file(
         # Append custom ffmpeg flags if configured (before the output path).
         if custom_flags:
             c = c[:-1] + custom_flags + c[-1:]
+        # Dolby Vision dropped (Settings → Video): none of it in the output.
+        if drop_dv:
+            c = c[:-1] + dovi.strip_args(encoder) + c[-1:]
         # During quiet hours, lower process priority.
         if nice:
             # ionice is Linux-only (util-linux); a native macOS install
@@ -4261,6 +4275,9 @@ async def convert_file(
     # H6 (v0.10.0): never let an output that stops early replace the original.
     _truncated = (await _truncation_failure(input_path, temp_path, duration, disc_type, all_lines)
                   or await _hdr_failure(source_hdr, temp_path))
+    if not _truncated and drop_dv and await dovi.left_in(temp_path):
+        _truncated = {"error": "Dolby Vision was to be dropped, but the encode still carries it. Original kept.",
+                      "error_key": "errors.dolbyVisionNotDropped"}
     if not _truncated and keep_dv:
         # v0.10.0: the original's Dolby Vision into the encode (dovi.py)
         _dv_error = await dovi.keep(input_path, temp_path, source_hdr)

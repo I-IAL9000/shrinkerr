@@ -57,6 +57,23 @@
       "verify": "Ejecuta <code>docker exec shrinkerr vainfo</code> para comprobar los perfiles de codificación que expone tu hardware."
     },
     "outputCodec": {"label": "Códec de salida", "help": "A qué codifican las conversiones. Los archivos AV1 quedan más pequeños con la misma calidad, pero AV1 solo codifica rápido en una GPU compatible (NVENC en una RTX 40 o posterior, Intel Arc QSV); si no, lo hace la CPU (SVT-AV1), mucho más lento. Una regla de codificación puede elegir el otro códec para sus archivos."},
+    "dolbyVision": {
+      "label": "Dolby Vision",
+      "options": {
+        "keep": {
+          "label": "Conservarlo",
+          "desc": "Dolby Vision se conserva cuando la conversión lo permite: HEVC a la misma resolución, no Quick Sync ni VAAPI. Si no, el vídeo no se convierte; el trabajo hace el resto y dice por qué."
+        },
+        "keep_or_hdr10": {
+          "label": "Conservarlo si se puede; si no, HDR10",
+          "desc": "Se conserva cuando la conversión lo permite; si no, se descarta Dolby Vision y se convierte el HDR10 (o HLG) que hay debajo, así que se puede reducir a 1080p. El perfil 5 (la mayoría de los lanzamientos de streaming) no tiene HDR10 debajo y no se convierte."
+        },
+        "hdr10": {
+          "label": "Convertir a HDR10",
+          "desc": "Se descarta Dolby Vision y se convierte el HDR10 (o HLG) que hay debajo como cualquier archivo HDR10: más rápido y sin necesitar espacio para tres veces el vídeo. El perfil 5 (la mayoría de los lanzamientos de streaming) no tiene HDR10 debajo y no se convierte."
+        }
+      }
+    },
     "parallelJobs": "Trabajos en paralelo",
     "parallelJobsHelp": "Número de trabajos de codificación simultáneos. Más = la cola avanza más rápido, pero con más carga de GPU/CPU.",
     "ffmpegThreads": "Hilos de FFmpeg por trabajo",

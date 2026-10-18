@@ -397,6 +397,17 @@ The job still does its other work on the original (removing tracks, Fix
 for direct play: SRT copies, a stereo track), completes with **Video kept**
 and the reason, and the file is ignored so it isn't queued again.
 
+**Settings → Video → Dolby Vision** chooses what happens to profiles 7 and 8:
+
+- **Keep it** (the default): as above.
+- **Keep it when possible, otherwise HDR10**: when it can't be kept,
+  Dolby Vision is dropped and the HDR10 (or HLG) under it is converted —
+  resizing a 4K remux to 1080p gives a 1080p HDR10 file.
+- **Convert to HDR10**: always dropped; the conversion is faster and needs
+  no room for three times the video.
+
+Profile 5 has no HDR10 under its Dolby Vision and is never converted.
+
 Dolby Vision files are HEVC, so they're only converted when HEVC is among
 the codecs you convert from (Settings → Video). Keeping Dolby Vision needs
 room for about three times the converted video next to the output while the

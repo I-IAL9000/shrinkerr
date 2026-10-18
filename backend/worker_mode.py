@@ -534,6 +534,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 "image_subs_to_srt": bool(job.get("image_subs_to_srt", False)),
                 "image_subs_keep_original": bool(job.get("image_subs_keep_original", True)),
                 "compare_frames": bool(job.get("compare_frames", True)),
+                "dolby_vision_mode": job.get("dolby_vision_mode") or "keep",
                 "compat_for_direct_play": bool(job.get("compat_for_direct_play", False)),  # v0.10.0
                 # Quick Sync / VAAPI quality and NVENC bit depth from the server
                 # (v0.10.0; the defaults otherwise, as before).

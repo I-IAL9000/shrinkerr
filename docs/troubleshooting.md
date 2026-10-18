@@ -272,7 +272,9 @@ The job's details say why:
   profile 5, the job resizes it (a rule's or the queue's target
   resolution), it encodes to AV1, it uses Quick Sync / VAAPI, the file is a
   disc, or dovi_tool / mkvmerge are missing (a native install). To convert
-  it, change what the reason names, then un-ignore the file (Scanner →
+  it, choose Settings → Video → Dolby Vision → **Keep it when possible,
+  otherwise HDR10** (or **Convert to HDR10**) — not for profile 5 — or
+  change what the reason names; then un-ignore the file (Scanner →
   Ignored).
 - **"The video was kept as it is: HDR video needs a 10-bit encoder"** —
   Quick Sync and VAAPI encode 8-bit here. Use NVENC, libx265 or
