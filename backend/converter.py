@@ -3323,6 +3323,10 @@ async def convert_file(
     drop_dv = None
     if is_dolby_vision(source_hdr) and not disc_type and (dv_mode == "hdr10" or (dv_mode == "keep_or_hdr10" and dv_why)):
         drop_dv = dovi.drop_to(source_hdr, probe_data.get("dv_base"))
+        if drop_dv and not dovi.can_strip():
+            print("[CONVERT] Can't drop Dolby Vision: this ffmpeg has no dovi_rpu filter (7.1 or later)", flush=True)
+            drop_dv = None
+            dv_why = dv_why and "ffmpeg"
     if drop_dv:
         print(f"[CONVERT] Dropping Dolby Vision ({source_hdr}): converting the {drop_dv.upper()} under it", flush=True)
         source_hdr, dv_why = drop_dv, None
@@ -3339,6 +3343,7 @@ async def convert_file(
                 "encoder": f"Dolby Vision is kept with NVENC, libx265 or VideoToolbox, not {encoder}.",
                 "codec": f"Dolby Vision is kept when converting to HEVC, not {params['codec']}.",
                 "resize": f"Dolby Vision is kept only at the same resolution, and this job resizes it to {_target_res}.",
+                "ffmpeg": "dropping Dolby Vision needs ffmpeg 7.1 or later, and it can't be kept for this job.",
             }[dv_why],
             "error_key": f"errors.dolbyVisionKept.{dv_why}", "error_params": params,
         }

@@ -47,3 +47,13 @@ def original_languages(request, monkeypatch):
             return found.get(path)
         monkeypatch.setattr(metadata, "lookup_original_language", lookup)
     return found
+
+
+def pytest_runtest_logreport(report):
+    """On GitHub Actions, a failing test is also an annotation ("::error"):
+    the API lists annotations to anyone, the job's log only to a signed-in
+    admin."""
+    if report.failed and os.environ.get("GITHUB_ACTIONS") == "true":
+        text = str(report.longrepr)[-1500:]
+        text = text.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+        print(f"\n::error title={report.nodeid}::{text}", flush=True)

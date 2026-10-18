@@ -82,6 +82,13 @@ def _x265_writes_it() -> bool:
     return "-dolbyvision" in out
 
 
+def can_strip() -> bool:
+    """Whether an encode can be left with no Dolby Vision: before 7.1 ffmpeg
+    has no dovi_rpu filter and copies the source's configuration record into
+    the output (v0.10.0)."""
+    return _strip_filter()
+
+
 def strip_args(encoder: str) -> list[str]:
     """Output options that leave no Dolby Vision in an encode that drops it:
     libx265 and SVT-AV1 write it from the source's metadata by default, and

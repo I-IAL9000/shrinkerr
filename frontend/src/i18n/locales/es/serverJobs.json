@@ -47,7 +47,8 @@
       "tools": "Se conservó el vídeo tal cual: conservar Dolby Vision requiere dovi_tool y mkvmerge, que no están instalados.",
       "encoder": "Se conservó el vídeo tal cual: Dolby Vision se conserva con NVENC, libx265 o VideoToolbox, no con {{encoder}}.",
       "codec": "Se conservó el vídeo tal cual: Dolby Vision se conserva al convertir a HEVC, no a {{codec}}.",
-      "resize": "Se conservó el vídeo tal cual: Dolby Vision solo se conserva con la misma resolución, y este trabajo la cambia a {{resolution}}."
+      "resize": "Se conservó el vídeo tal cual: Dolby Vision solo se conserva con la misma resolución, y este trabajo la cambia a {{resolution}}.",
+      "ffmpeg": "Se conservó el vídeo tal cual: descartar Dolby Vision requiere ffmpeg 7.1 o posterior, y no se puede conservar en este trabajo."
     },
     "hdrKept8Bit": "Se conservó el vídeo tal cual: el vídeo HDR necesita un codificador de 10 bits; {{encoder}} codifica en 8 bits aquí. Usa NVENC, libx265 o VideoToolbox.",
     "dolbyVisionNotDropped": "Había que descartar Dolby Vision, pero la codificación aún lo lleva. Se conservó el original.",

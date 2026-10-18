@@ -50,11 +50,11 @@ def test_what_strips_it(monkeypatch):
     assert dovi.strip_args("libx265") == []
 
 
-async def _command(test_db, tmp_path, mode, hdr_format, resolution, tools=True, monkeypatch=None):
+async def _command(test_db, tmp_path, mode, hdr_format, resolution, tools=True, monkeypatch=None, strip=True):
     from backend.converter import convert_file
     from backend.tests.test_same_name_conversion import _mkv
     monkeypatch.setattr(dovi, "tools_available", lambda: tools)
-    monkeypatch.setattr(dovi, "_strip_filter", lambda: True)
+    monkeypatch.setattr(dovi, "_strip_filter", lambda: strip)
     monkeypatch.setattr(dovi, "_x265_writes_it", lambda: True)
     async with aiosqlite.connect(test_db) as db:
         await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('dolby_vision_mode', ?)", (mode,))
@@ -87,11 +87,23 @@ async def test_the_setting(test_db, tmp_path, monkeypatch, mode, hdr_format, res
     assert ("dovi_rpu=strip=1" in command and "-dolbyvision 0" in command) == (outcome == "dropped"), command
 
 
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmpeg")
+@pytest.mark.asyncio
+async def test_before_ffmpeg_7_1_it_isnt_dropped(test_db, tmp_path, monkeypatch):
+    """Without the dovi_rpu filter the output would keep the source's Dolby
+    Vision configuration record: not dropped, and the job says why."""
+    result = await _command(test_db, tmp_path, "keep_or_hdr10", "dv8", "1080p", monkeypatch=monkeypatch, strip=False)
+    assert (result["success"], result["error_key"]) == (False, "errors.dolbyVisionKept.ffmpeg")
+    result = await _command(test_db, tmp_path, "hdr10", "dv8", "copy", monkeypatch=monkeypatch, strip=False)
+    assert result["success"] and "dovi_rpu" not in " ".join(result["command"])  # kept, as it can be
+
+
 @pytest.mark.skipif(not (dovi.tools_available() and shutil.which("ffmpeg")), reason="needs dovi_tool and mkvmerge")
 @pytest.mark.asyncio
 async def test_a_dropped_dolby_vision_leaves_hdr10(test_db, tmp_path):
     """The real thing: a profile 8.1 file converted with "Convert to HDR10"
-    comes out HDR10, with no Dolby Vision left in it."""
+    comes out HDR10, with no Dolby Vision left in it — with ffmpeg 7.1 or
+    later; before, it's kept (the output would carry its configuration)."""
     from backend.converter import convert_file
     from backend.scanner import probe_file
     from backend.tests.test_dovi import _dv_source
@@ -106,4 +118,7 @@ async def test_a_dropped_dolby_vision_leaves_hdr10(test_db, tmp_path):
     result = await convert_file(str(src), "libx265", 2.0, override_libx265_preset="ultrafast", override_crf=40)
     assert result["success"], result.get("error")
     out = result["output_path"]
-    assert (await probe_file(out))["hdr_format"] == "hdr10" and not await dovi.left_in(out)
+    if dovi.can_strip():
+        assert (await probe_file(out))["hdr_format"] == "hdr10" and not await dovi.left_in(out)
+    else:
+        assert (await probe_file(out))["hdr_format"] == "dv8"  # kept, as the tools allow

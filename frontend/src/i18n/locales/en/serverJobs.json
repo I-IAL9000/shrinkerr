@@ -47,7 +47,8 @@
       "tools": "The video was kept as it is: keeping Dolby Vision needs dovi_tool and mkvmerge, which aren't installed.",
       "encoder": "The video was kept as it is: Dolby Vision is kept with NVENC, libx265 or VideoToolbox, not {{encoder}}.",
       "codec": "The video was kept as it is: Dolby Vision is kept when converting to HEVC, not {{codec}}.",
-      "resize": "The video was kept as it is: Dolby Vision is kept only at the same resolution, and this job resizes it to {{resolution}}."
+      "resize": "The video was kept as it is: Dolby Vision is kept only at the same resolution, and this job resizes it to {{resolution}}.",
+      "ffmpeg": "The video was kept as it is: dropping Dolby Vision needs ffmpeg 7.1 or later, and it can't be kept for this job."
     },
     "hdrKept8Bit": "The video was kept as it is: HDR video needs a 10-bit encoder; {{encoder}} encodes 8-bit here. Use NVENC, libx265 or VideoToolbox.",
     "dolbyVisionNotDropped": "Dolby Vision was to be dropped, but the encode still carries it. Original kept.",
