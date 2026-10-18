@@ -290,7 +290,7 @@
     "perJob": "Haz clic en un trabajo para ver sus pistas y cambiar cuáles se eliminan."
   },
   "review": {
-    "intro": "Convertidos, pendientes de tu revisión: los originales no se tocan hasta que los apruebes. Los aprobados reemplazan a los originales enseguida, sin esperar a la cola, y pasan a Completados.",
+    "intro": "Convertidos, pendientes de tu revisión: los originales no se tocan hasta que los apruebes. Los aprobados reemplazan a los originales enseguida y pasan a Completados.",
     "approve": "Aprobar",
     "reject": "Rechazar",
     "approveAll": "Aprobar todo",

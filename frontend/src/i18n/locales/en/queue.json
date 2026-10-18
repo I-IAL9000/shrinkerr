@@ -260,7 +260,7 @@
     "perJob": "Click a job to see its tracks and change which ones go."
   },
   "review": {
-    "intro": "Converted, waiting for you: the originals are untouched until you approve. Approved files replace the originals straight away, without waiting for the queue, and move to Completed.",
+    "intro": "Converted, waiting for you: the originals are untouched until you approve. Approved files replace the originals straight away and move to Completed.",
     "approve": "Approve",
     "reject": "Reject",
     "approveAll": "Approve all",
