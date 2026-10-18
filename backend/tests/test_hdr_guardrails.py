@@ -76,10 +76,10 @@ async def _probe_says(monkeypatch, hdr_format):
 
 @pytest.mark.asyncio
 @needs_ffmpeg
-@pytest.mark.parametrize("hdr, encoder, key", [("dv5", "libx265", "errors.dolbyVisionSkipped"),
-                                               ("dv8", "nvenc", "errors.dolbyVisionSkipped"),
-                                               ("hdr10", "qsv", "errors.hdrNeeds10Bit"),
-                                               ("hlg", "vaapi", "errors.hdrNeeds10Bit")])
+@pytest.mark.parametrize("hdr, encoder, key", [("dv5", "libx265", "errors.dolbyVisionKept.profile"),
+                                               ("dv8", "nvenc", "errors.dolbyVisionKept.tools"),
+                                               ("hdr10", "qsv", "errors.hdrKept8Bit"),
+                                               ("hlg", "vaapi", "errors.hdrKept8Bit")])
 async def test_unsafe_hdr_encodes_are_refused_up_front(test_db, tmp_path, monkeypatch, hdr, encoder, key):
     from backend import dovi
     from backend.tests.test_same_name_conversion import _mkv

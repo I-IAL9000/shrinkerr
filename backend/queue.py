@@ -963,6 +963,14 @@ class JobQueue:
             await db.close()
 
 
+def is_video_kept(error_key: Optional[str]) -> bool:
+    """A conversion refused because the encode would lose Dolby Vision or HDR
+    (converter.convert_file): the video is kept as it is, and the job's other
+    work still runs — it failed the whole job, PGS to SRT and the stereo
+    track with it (v0.10.0)."""
+    return bool(error_key) and (error_key.startswith("errors.dolbyVisionKept.") or error_key == "errors.hdrKept8Bit")
+
+
 def local_node_outcome(job: dict, final_status: str) -> tuple[bool, bool]:
     """(counts, success) for the local node's stats once a job ends. Only
     "completed" counted as a success: in review mode every conversion held
@@ -2588,6 +2596,11 @@ class QueueWorker:
         # time the follow-up ran the source was gone ("source file no longer
         # exists") and the cleanup was silently lost.
         _inline_cleanup = False
+        video_kept = None  # the refusal, when the video was kept as it is (is_video_kept)
+        # Why a completed job didn't replace the original — (error_log,
+        # error_key, error_params) for the "completed" write, which cleared
+        # them: a VMAF rejection's reason never reached the Queue (v0.10.0).
+        completion_note: Optional[tuple] = None
 
         if job_type in ("convert", "combined"):
             # Decouple WS-broadcast frequency from DB-write frequency. ffmpeg
@@ -2699,6 +2712,14 @@ class QueueWorker:
             if frames:
                 from backend import frames as frames_mod
                 await frames_mod.store(job_id, frames)
+            # Dolby Vision / HDR this encode can't keep: the video stays as it
+            # is, and the rest of the job goes on as when an encode is larger.
+            if not result["success"] and is_video_kept(result.get("error_key")):
+                video_kept = result
+                result = {"success": True, "output_path": current_file_path, "space_saved": 0, "error": None,
+                          "video_kept": True,
+                          "had_track_removal": bool(audio_tracks_to_remove or subtitle_tracks_to_remove)}
+                print(f"[WORKER] Job {job_id}: {video_kept['error']}", flush=True)
             if not result["success"]:
                 if job_id in self._cancel_flags:
                     # Check if this cancel was triggered by a node pause — if so,
@@ -2783,7 +2804,7 @@ class QueueWorker:
             # wrong, or the only, audio track. Not when the encode was thrown
             # away (VMAF / larger): then the original is still there, unchanged.
             output_replaced_source = current_file_path != file_path or not (
-                result.get("vmaf_rejected") or result.get("skipped_larger")
+                result.get("vmaf_rejected") or result.get("skipped_larger") or result.get("video_kept")
             )
             if output_replaced_source:
                 await self._finalize(job_id)
@@ -2943,17 +2964,21 @@ class QueueWorker:
                 except Exception:
                     pass
 
-            if result.get("skipped_larger"):
-                # Mark file as ignored so future scans tag it
+            if result.get("skipped_larger") or video_kept:
+                # Mark file as ignored so future scans tag it; a kept video
+                # also says why on the job (the Queue's details show it).
+                if video_kept:
+                    completion_note = (video_kept["error"], video_kept["error_key"], video_kept.get("error_params"))
                 try:
                     db = await self._db()
                     try:
                         await db.execute(
                             "INSERT OR IGNORE INTO ignored_files (file_path, reason, ignored_at) VALUES (?, ?, ?)",
-                            (file_path, "conversion_larger", _utcnow()),
+                            (file_path, "video_kept" if video_kept else "conversion_larger", _utcnow()),
                         )
                         await db.commit()
-                        print(f"[WORKER] Marked as ignored (larger after conversion): {file_path}", flush=True)
+                        print(f"[WORKER] Marked as ignored ({'video kept' if video_kept else 'larger after conversion'}): "
+                              f"{file_path}", flush=True)
                     finally:
                         await db.close()
                 except Exception as exc:
@@ -3012,7 +3037,7 @@ class QueueWorker:
                     # cleanup entirely. Doing it now closes that window.
                     _inline_cleanup = True
                     print(
-                        f"[WORKER] Encode larger; running audio/sub cleanup inline for "
+                        f"[WORKER] {'Video kept' if video_kept else 'Encode larger'}; running audio/sub cleanup inline for "
                         f"{file_path} (was an audio-only follow-up pre-v0.9.119)",
                         flush=True,
                     )
@@ -3021,9 +3046,10 @@ class QueueWorker:
                         await log_event(
                             file_path,
                             EVENT_QUEUED,
-                            "Running audio/sub cleanup inline (encode was larger)",
+                            ("Running audio/sub cleanup inline (video kept)" if video_kept
+                             else "Running audio/sub cleanup inline (encode was larger)"),
                             {"job_id": job_id, "job_type": "audio", "inline": True},
-                            summary_key="inlineCleanupLarger",
+                            summary_key="inlineCleanupVideoKept" if video_kept else "inlineCleanupLarger",
                         )
                     except Exception:
                         pass
@@ -3043,6 +3069,7 @@ class QueueWorker:
                 else:
                     error_key = "errors.vmafBelowThreshold"
                     reject_params = None
+                completion_note = (reason, error_key, reject_params)
                 try:
                     db = await self._db()
                     try:
@@ -3533,7 +3560,7 @@ class QueueWorker:
             print(f"[WORKER] Failed to run inline health check: {exc}", flush=True)
 
         self._stamp(job_id, "health check")
-        await self.queue.update_status(job_id, "completed")
+        await self.queue.update_status(job_id, "completed", *(completion_note or ()))
 
         # Log the completed conversion to file_events. Three outcomes:
         #   1) Real conversion that saved space → "Converted: saved X GB"
@@ -3551,6 +3578,9 @@ class QueueWorker:
             elif result.get("skipped_larger"):
                 summary = "Kept original — encode was larger than source"
                 summary_key = "keptOriginalLarger"
+            elif video_kept:
+                summary = "Kept the original video — Dolby Vision or HDR the encode can't keep"
+                summary_key = "keptOriginalVideo"
             elif space_saved > 0:
                 gb = space_saved / (1024 ** 3)
                 pct = (space_saved / file_size * 100) if file_size else 0

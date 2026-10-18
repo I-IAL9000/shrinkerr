@@ -42,6 +42,11 @@ const iconBtnStyle: React.CSSProperties = {
   background: "none", border: "none", cursor: "pointer",
   fontSize: 18, lineHeight: 1, padding: "4px 6px", borderRadius: 4,
 };
+// A conversion that kept the video as it is: Dolby Vision or HDR the encode
+// couldn't keep (queue.is_video_kept); its other work was still done.
+const videoKept = (job: Job) =>
+  !!job.error_key && (job.error_key.startsWith("errors.dolbyVisionKept.") || job.error_key === "errors.hdrKept8Bit");
+
 // Icons on one row share a centre whatever their glyph.
 const centeredIcon: React.CSSProperties = { display: "inline-flex", alignItems: "center", justifyContent: "center" };
 
@@ -211,6 +216,11 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
                   style={{ fontSize: 11, color: "var(--caution)", background: "rgba(255,169,77,0.15)", padding: "1px 6px", borderRadius: 3, fontWeight: 600 }}
                 >
                   {t("queue:item.vmafRejected")}
+                </span>
+              ) : job.space_saved <= 0 && videoKept(job) ? (
+                <span title={jobErrorHeadline(job) ?? job.error_log ?? undefined}
+                  style={{ fontSize: 11, color: "var(--text-secondary)", background: "var(--bg-tertiary)", padding: "1px 6px", borderRadius: 3 }}>
+                  {t("queue:item.videoKept")}
                 </span>
               ) : job.space_saved <= 0 ? (
                 <span style={{ fontSize: 11, color: "var(--text-muted)", background: "var(--bg-tertiary)", padding: "1px 6px", borderRadius: 3 }}>{t("queue:item.ignored")}</span>
@@ -501,6 +511,15 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
                     )}
                   </span>
                 </>}
+              </div>
+            )}
+
+            {/* Video kept as it is (Dolby Vision / HDR the encode can't keep):
+                why, in the details. */}
+            {job.status === "completed" && videoKept(job) && (
+              <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 4, background: "var(--bg-tertiary)",
+                            fontSize: 11, color: "var(--text-secondary)" }}>
+                {jobErrorHeadline(job) ?? job.error_log}
               </div>
             )}
 

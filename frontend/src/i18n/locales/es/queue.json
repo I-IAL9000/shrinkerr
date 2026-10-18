@@ -148,6 +148,7 @@
     "saved": "ahorrado {{size}}",
     "vmafRejected": "Rechazado por VMAF",
     "ignored": "Ignorado",
+    "videoKept": "Vídeo conservado",
     "restoreOriginal": "Restaurar original",
     "ignoreFile": "Ignorar este archivo",
     "removeFromQueue": "Quitar de la cola",

@@ -383,7 +383,7 @@ Every frame's metadata goes back with its frame, and a job that ends up
 with a different number of frames, or loses Dolby Vision on the way, keeps
 the original instead.
 
-Dolby Vision files are left alone (as before) when they're:
+A Dolby Vision file's video is kept as it is when the file is:
 
 - profile 5 (streaming releases): its base layer isn't HDR10, so a
   re-encode turns it purple and green;
@@ -392,6 +392,10 @@ Dolby Vision files are left alone (as before) when they're:
 - Blu-ray / DVD discs;
 - on an install without dovi_tool and mkvmerge (both images include them;
   on a native install, install them yourself).
+
+The job still does its other work on the original (removing tracks, Fix
+for direct play: SRT copies, a stereo track), completes with **Video kept**
+and the reason, and the file is ignored so it isn't queued again.
 
 Dolby Vision files are HEVC, so they're only converted when HEVC is among
 the codecs you convert from (Settings → Video). Keeping Dolby Vision needs

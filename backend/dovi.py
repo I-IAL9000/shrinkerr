@@ -35,10 +35,31 @@ def convertible(hdr_format: str | None) -> bool:
     return hdr_format in KEEPABLE and tools_available()
 
 
+def why_not_kept(hdr_format: str | None, *, encoder: str, output_codec: str | None,
+                 target_resolution: str | None, disc_type: str | None) -> str | None:
+    """Why this Dolby Vision can't be kept through an encode — "disc",
+    "profile" (not 7 or 8), "tools", "encoder", "codec" (not HEVC) or
+    "resize" — or None when it can. The message said all of them at once,
+    so it didn't say what to change (v0.10.0)."""
+    if disc_type:
+        return "disc"
+    if hdr_format not in KEEPABLE:
+        return "profile"
+    if not tools_available():
+        return "tools"
+    if encoder in ("qsv", "vaapi"):
+        return "encoder"
+    if (output_codec or "hevc") != "hevc":
+        return "codec"
+    if (target_resolution or "copy") != "copy":
+        return "resize"
+    return None
+
+
 def can_keep(hdr_format: str | None, *, encoder: str, output_codec: str | None, target_resolution: str | None,
              disc_type: str | None) -> bool:
-    return (hdr_format in KEEPABLE and tools_available() and encoder not in ("qsv", "vaapi")
-            and (output_codec or "hevc") == "hevc" and (target_resolution or "copy") == "copy" and not disc_type)
+    return why_not_kept(hdr_format, encoder=encoder, output_codec=output_codec,
+                        target_resolution=target_resolution, disc_type=disc_type) is None
 
 
 async def _run(*args: str, stdin=None) -> tuple[int, str]:

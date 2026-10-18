@@ -112,7 +112,8 @@ async def test_a_profile_5_file_is_not_converted(tmp_path):
     probe = {"duration": 10.0, "file_size": 1000, "video_codec": "hevc", "hdr_format": "dv5",
              "audio_tracks": [], "subtitle_tracks": []}
     result = await convert_file(str(src), "libx265", 10.0, pre_probe=probe)
-    assert (result["success"], result["error_key"]) == (False, "errors.dolbyVisionSkipped")
+    assert (result["success"], result["error_key"]) == (False, "errors.dolbyVisionKept.profile")
+    assert "profile 5" in result["error"] and result["error_params"]["profile"] == "5"
     assert src.read_bytes() == b"x" * 1000
 
 
@@ -197,7 +198,7 @@ async def test_without_the_tools_it_is_not_converted(test_db, tmp_path, monkeypa
     _dv_source(src)
     monkeypatch.setattr(dovi, "tools_available", lambda: False)
     result = await convert_file(str(src), "libx265", 2.0, override_libx265_preset="ultrafast")
-    assert result["error_key"] == "errors.dolbyVisionSkipped"
+    assert result["error_key"] == "errors.dolbyVisionKept.tools"
 
 
 @pytest.mark.asyncio
@@ -222,3 +223,17 @@ async def test_scanned_files_follow_the_tools(test_db, monkeypatch):
     monkeypatch.setattr(dovi, "tools_available", lambda: False)  # dovi_tool gone
     await database.init_db()
     assert await needs() == {"/m/a.mkv": 0, "/m/b.mkv": 0, "/m/c.mkv": 0}
+
+
+def test_it_says_why_dolby_vision_isnt_kept(monkeypatch):
+    """One message listed every condition, so it didn't say what to change."""
+    monkeypatch.setattr(dovi, "tools_available", lambda: True)
+    ok = dict(encoder="nvenc", output_codec=None, target_resolution="copy", disc_type=None)
+    assert dovi.why_not_kept("dv8", **ok) is None and dovi.can_keep("dv7", **ok)
+    assert dovi.why_not_kept("dv5", **ok) == "profile"
+    assert dovi.why_not_kept("dv8", **{**ok, "target_resolution": "1080p"}) == "resize"
+    assert dovi.why_not_kept("dv8", **{**ok, "output_codec": "av1"}) == "codec"
+    assert dovi.why_not_kept("dv8", **{**ok, "encoder": "qsv"}) == "encoder"
+    assert dovi.why_not_kept("dv8", **{**ok, "disc_type": "bdmv"}) == "disc"
+    monkeypatch.setattr(dovi, "tools_available", lambda: False)
+    assert dovi.why_not_kept("dv8", **ok) == "tools" and not dovi.can_keep("dv8", **ok)

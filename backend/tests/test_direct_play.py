@@ -281,3 +281,76 @@ async def test_an_encode_discarded_as_larger_still_fixes_for_direct_play(test_db
     job_id = await queue.add_job(str(src), "convert", encoder="libx265")
     await QueueWorker(test_db)._process_job(next(j for j in await queue.get_all_jobs() if j["id"] == job_id))
     assert [(k["input_path"], k["compat_settings"]["compat_for_direct_play"]) for k in remuxed] == [(str(src), True)]
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmpeg")
+@pytest.mark.asyncio
+async def test_a_dolby_vision_video_that_cant_be_kept_is_kept_and_still_fixed(test_db, tmp_path, monkeypatch):
+    """A 4K Dolby Vision remux with a rule resizing it to 1080p: Dolby Vision
+    can't be kept, so the video isn't re-encoded — which failed the whole job,
+    and the PGS to SRT and the stereo track never happened. The video is kept
+    now, the rest of the job is done to the original, the job says why, and
+    the file is ignored so it isn't queued again (v0.10.0)."""
+    import backend.audio as audio
+    import backend.converter as converter
+    from backend.queue import JobQueue, QueueWorker
+    from backend.tests.test_same_name_conversion import _mkv
+    src = tmp_path / "Stolen Kisses (1968) 2160p Remux.mkv"
+    _mkv(src, ["eng"])
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO scan_results (file_path, file_size, scan_timestamp, audio_tracks_json) "
+                         "VALUES (?, 1, '2026-10-18', ?)",
+                         (str(src), json.dumps([{"stream_index": 1, "language": "eng", "codec": "dts"}])))
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('direct_play_on_convert', 'true')")
+        await db.commit()
+
+    async def refused(**kwargs):
+        return {"success": False, "output_path": None, "space_saved": 0,
+                "error": "The video was kept as it is: Dolby Vision is kept only at the same resolution, "
+                         "and this job resizes it to 1080p.",
+                "error_key": "errors.dolbyVisionKept.resize",
+                "error_params": {"profile": "8", "encoder": "nvenc", "codec": "HEVC", "resolution": "1080p"}}
+    monkeypatch.setattr(converter, "convert_file", refused)
+    remuxed, remux = [], audio.remux_audio
+
+    async def recorded(**kwargs):
+        remuxed.append(kwargs)
+        return await remux(**kwargs)
+    monkeypatch.setattr(audio, "remux_audio", recorded)
+    queue = JobQueue(test_db)
+    job_id = await queue.add_job(str(src), "convert", encoder="nvenc")
+    await QueueWorker(test_db)._process_job(next(j for j in await queue.get_all_jobs() if j["id"] == job_id))
+
+    assert [(k["input_path"], k["compat_settings"]["compat_for_direct_play"]) for k in remuxed] == [(str(src), True)]
+    async with aiosqlite.connect(test_db) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT status, error_key, error_params FROM jobs WHERE id = ?", (job_id,)) as cur:
+            job = dict(await cur.fetchone())
+        async with db.execute("SELECT reason FROM ignored_files WHERE file_path = ?", (str(src),)) as cur:
+            ignored = await cur.fetchone()
+    assert (job["status"], job["error_key"]) == ("completed", "errors.dolbyVisionKept.resize")
+    assert json.loads(job["error_params"])["resolution"] == "1080p"
+    assert ignored and ignored[0] == "video_kept"
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmpeg")
+@pytest.mark.asyncio
+async def test_a_vmaf_rejection_keeps_its_reason(test_db, tmp_path, monkeypatch):
+    """The job's "completed" write cleared the reason stored for it, so the
+    Queue never showed "VMAF rejected" for this server's jobs (v0.10.0)."""
+    import backend.converter as converter
+    from backend.queue import JobQueue, QueueWorker
+    from backend.tests.test_same_name_conversion import _mkv
+    src = tmp_path / "Film (2020).mkv"
+    _mkv(src, ["eng"])
+
+    async def rejected(**kwargs):
+        return {"success": True, "output_path": str(src), "space_saved": 0, "error": None,
+                "vmaf_rejected": True, "vmaf_score": 84.2, "vmaf_min_score": 88.0}
+    monkeypatch.setattr(converter, "convert_file", rejected)
+    queue = JobQueue(test_db)
+    job_id = await queue.add_job(str(src), "convert", encoder="libx265")
+    await QueueWorker(test_db)._process_job(next(j for j in await queue.get_all_jobs() if j["id"] == job_id))
+    async with aiosqlite.connect(test_db) as db:
+        async with db.execute("SELECT status, error_log, error_key FROM jobs WHERE id = ?", (job_id,)) as cur:
+            assert tuple(await cur.fetchone()) == ("completed", "VMAF below threshold", "errors.vmafBelowThreshold")

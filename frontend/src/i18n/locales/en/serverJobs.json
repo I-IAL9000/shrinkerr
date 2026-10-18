@@ -41,6 +41,15 @@
     "outputUnverifiable": "Couldn't read the output's length to check it's complete. Original kept; retry the job.",
     "dolbyVisionSkipped": "Dolby Vision is kept for profiles 7 and 8 encoded to HEVC at the same size, with dovi_tool and mkvmerge installed; this file isn't. Nothing was converted.",
     "hdrNeeds10Bit": "HDR video needs a 10-bit encoder; {{encoder}} encodes 8-bit here. Use NVENC, libx265 or VideoToolbox. Nothing was converted.",
+    "dolbyVisionKept": {
+      "disc": "The video was kept as it is: Dolby Vision on a disc isn't re-encoded.",
+      "profile": "The video was kept as it is: Dolby Vision profile {{profile}} isn't re-encoded (only profiles 7 and 8 keep their Dolby Vision).",
+      "tools": "The video was kept as it is: keeping Dolby Vision needs dovi_tool and mkvmerge, which aren't installed.",
+      "encoder": "The video was kept as it is: Dolby Vision is kept with NVENC, libx265 or VideoToolbox, not {{encoder}}.",
+      "codec": "The video was kept as it is: Dolby Vision is kept when converting to HEVC, not {{codec}}.",
+      "resize": "The video was kept as it is: Dolby Vision is kept only at the same resolution, and this job resizes it to {{resolution}}."
+    },
+    "hdrKept8Bit": "The video was kept as it is: HDR video needs a 10-bit encoder; {{encoder}} encodes 8-bit here. Use NVENC, libx265 or VideoToolbox.",
     "hdrLost": "The {{format}} source lost its HDR in the encode. Original kept.",
     "remuxOutputMissing": "Output file missing or empty after remux.",
     "sourceDamaged": "The source file looks damaged: ffmpeg found broken frames it couldn't decode. It's marked corrupt in the Scanner; request a replacement from Sonarr or Radarr.",

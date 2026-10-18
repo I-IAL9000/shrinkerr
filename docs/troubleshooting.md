@@ -262,15 +262,21 @@ you want to retry.
 
 ## HDR or Dolby Vision files aren't converted
 
-Shrinkerr won't replace an HDR or Dolby Vision file with one that lost it:
-the job fails and the original stays. The job's error says why:
+Shrinkerr won't replace an HDR or Dolby Vision file with one that lost it.
+When it can't keep it, the job keeps the video as it is, still does its
+other work on the original (removing tracks, Fix for direct play), and
+completes with **Video kept**; the file is ignored so it isn't queued again.
+The job's details say why:
 
-- **"Dolby Vision is kept for profiles 7 and 8 encoded to HEVC at the same
-  size…"** — the job would resize, encode to AV1 or use Quick Sync /
-  VAAPI, the file is a disc, or dovi_tool / mkvmerge are missing (a native
-  install).
-- **"HDR video needs a 10-bit encoder"** — Quick Sync and VAAPI encode
-  8-bit here. Use NVENC, libx265 or VideoToolbox.
+- **"The video was kept as it is: Dolby Vision …"** — it names the reason:
+  profile 5, the job resizes it (a rule's or the queue's target
+  resolution), it encodes to AV1, it uses Quick Sync / VAAPI, the file is a
+  disc, or dovi_tool / mkvmerge are missing (a native install). To convert
+  it, change what the reason names, then un-ignore the file (Scanner →
+  Ignored).
+- **"The video was kept as it is: HDR video needs a 10-bit encoder"** —
+  Quick Sync and VAAPI encode 8-bit here. Use NVENC, libx265 or
+  VideoToolbox.
 - **"… lost its HDR in the encode. Original kept."** — the output came out
   SDR or 8-bit. With NVENC, check Settings → Video → Bit Depth isn't
   8-bit.
@@ -283,7 +289,7 @@ See [Encoding guide § HDR and Dolby Vision](encoding-guide.md#hdr-and-dolby-vis
 
 - **Review before replace** is on (Settings → Automation → Originals &
   Backups): converted files wait in **Queue → Review** until you
-  **Approve** them (they're put in place when the queue runs) or
+  **Approve** them (they're put in place straight away) or
   **Reject** them (the new file is deleted, the original isn't queued
   again).
 - **The new file failed a check**: larger than the original, below your
