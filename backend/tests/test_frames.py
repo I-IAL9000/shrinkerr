@@ -41,7 +41,7 @@ async def test_grabbing_frames(tmp_path):
     before = base64.b64decode(got[1]["before"])
     assert before[:2] == b"\xff\xd8" and _size(before, tmp_path) == (852, 478)  # square pixels
     assert await frames.grab(str(dvd), str(tmp_path / "missing.mkv"), 4.0) == []
-    for size, shown in (("1920x1080", (1920, 1080)), ("3840x2160", (1920, 1080))):  # 1080p as it is (it was 960 wide)
+    for size, shown in (("1280x720", (1280, 720)), ("1920x1080", (1280, 720)), ("3840x2160", (1280, 720))):  # 720p (it was 960 wide)
         clip = tmp_path / f"{size}.mkv"
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"testsrc2=s={size}:r=24:d=1",
                         "-c:v", "mpeg4", str(clip)], check=True)

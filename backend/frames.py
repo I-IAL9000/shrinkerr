@@ -17,9 +17,9 @@ from collections.abc import Container
 from pathlib import Path
 
 POINTS = (0.2, 0.5, 0.8)
-# 1080p as it is, to judge an encode by (it was 960 wide, and soft); 4K is
-# shown at 1920 too, to keep the files a reasonable size (a few hundred KB).
-WIDTH = 1920
+# 720p: sharp enough to judge an encode by (it was 960 wide, and soft),
+# while a job's frames stay around a megabyte or two.
+WIDTH = 1280
 KEEP_JOBS = 100
 # Square pixels, at most WIDTH wide, even sizes; 10-bit / HDR sources to 8-bit JPEG.
 _SCALE = (f"scale=w='trunc(min({WIDTH},iw*sar)/2)*2':h='trunc(ow*ih/(iw*sar)/2)*2',setsar=1")

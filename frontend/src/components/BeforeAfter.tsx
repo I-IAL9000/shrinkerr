@@ -68,7 +68,7 @@ export default function BeforeAfter({ jobId, open = false }: {
     if (r && r.width) setSplit(Math.min(100, Math.max(0, ((clientX - r.left) / r.width) * 100)));
   };
   return (
-    <div onClick={(e) => e.stopPropagation()} style={{ marginBottom: 12, maxWidth: 1920 }}>
+    <div onClick={(e) => e.stopPropagation()} style={{ marginBottom: 12, maxWidth: 1280 }}>
       <div ref={box} style={{ position: "relative", lineHeight: 0, userSelect: "none", touchAction: "none", cursor: "ew-resize" }}
         onPointerDown={(e) => { e.currentTarget.setPointerCapture?.(e.pointerId); moveTo(e.clientX); }}
         onPointerMove={(e) => { if (e.buttons) moveTo(e.clientX); }}>
