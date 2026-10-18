@@ -144,3 +144,29 @@ async def test_time_estimates_use_each_encoders_recent_speed(env):
         await db.execute("UPDATE settings SET value = 'libx265' WHERE key = 'default_encoder'")
         await db.commit()
     assert await seconds("libx265") == 300  # at 0.5
+
+
+@pytest.mark.asyncio
+async def test_a_resize_is_in_the_estimate(env):
+    """A 4K file resized to 1080p — by the dialog, a rule or the setting —
+    is estimated resized: the dialog said 55 % where it saves 85 %+, and the
+    Scanner card agrees with it (v0.10.0)."""
+    from backend import savings_model
+    from backend.routes.jobs import EstimateRequest, estimate_jobs
+    from backend.routes.scan import get_scan_stats
+    async with aiosqlite.connect(env) as db:
+        await db.execute("UPDATE scan_results SET video_width = 3840, video_height = 2160")
+        await db.commit()
+    req = EstimateRequest(file_paths=["/m/Film (2020)/film.mkv"])
+    same = (await estimate_jobs(req))["estimated_savings"]
+    resized = int(GB * (1 - (1 - cq_to_savings_pct(20)) * 0.25 ** savings_model.RESIZE_ALPHA))
+    dialog = (await estimate_jobs(EstimateRequest(file_paths=req.file_paths, target_resolution_override="1080p")))
+    assert same == int(GB * cq_to_savings_pct(20)) and dialog["estimated_savings"] == resized
+    async with aiosqlite.connect(env) as db:
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('target_resolution', '1080p')")
+        await db.commit()
+    assert (await estimate_jobs(req))["estimated_savings"] == resized  # the setting
+    assert (await estimate_jobs(EstimateRequest(file_paths=req.file_paths, target_resolution_override="copy"))
+            )["estimated_savings"] == same  # the dialog keeps the size
+    await savings_model.tick()  # the app notices the setting changed
+    assert (await get_scan_stats())["summary"]["estimated_savings_bytes"] == resized

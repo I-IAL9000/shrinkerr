@@ -114,13 +114,35 @@ async def load_effective_cq(db) -> int:
     return effective_cq(await load_quality_settings(db))
 
 
+# Settings → Video → Target Resolution, for the estimates of files with no
+# job yet (savings_model.tick keeps it current, v0.10.0): a 4K file resized
+# to 1080p saves far more than one converted at its own size.
+_target_resolution: str | None = None
+
+
+def set_target_resolution(value: str | None) -> None:
+    global _target_resolution
+    _target_resolution = value if value and value != "copy" else None
+
+
+def target_resolution() -> str | None:
+    return _target_resolution
+
+
+async def load_target_resolution(db) -> str | None:
+    async with db.execute("SELECT value FROM settings WHERE key = 'target_resolution'") as cur:
+        row = await cur.fetchone()
+    return row[0] if row and row[0] and row[0] != "copy" else None
+
+
 def video_conv_savings_bytes(file_size: int, cq: int, **features) -> int:
     """Bytes saved from re-encoding the video stream at `cq`. Does NOT
     include audio/sub track-removal savings (those are tracked
     separately). v0.10.0: refined by what your conversions saved on files
     like this one (savings_model; `features`: duration, width, height,
-    codec, path)."""
+    codec, path, target_resolution — the setting's when not given)."""
     from backend.savings_model import current
+    features.setdefault("target_resolution", _target_resolution)
     return int(file_size * current().video_pct(cq, file_size=file_size, **features))
 
 

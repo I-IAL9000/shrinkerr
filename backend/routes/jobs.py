@@ -316,7 +316,7 @@ def _job_savings(job: dict, row: dict, audio: list[dict], quality: dict) -> int:
     conversion at the quality it encodes with: its own, else its encoder's
     setting (`quality`: the settings rows). The default encoder's was used,
     so an NVENC job beside a libx265 default was estimated at the CRF."""
-    from backend.encoding_estimates import _CRF_OFFSET, effective_cq
+    from backend.encoding_estimates import _CRF_OFFSET, effective_cq, target_resolution
     from backend.savings_model import current
     size = row.get("file_size") or job.get("original_size") or 0
     remove = set(json.loads(job.get("audio_tracks_to_remove") or "[]"))
@@ -331,11 +331,12 @@ def _job_savings(job: dict, row: dict, audio: list[dict], quality: dict) -> int:
             cq = effective_cq({**quality, "default_encoder": job.get("encoder") or quality.get("default_encoder")})
         saved += int((size - saved) * current().video_pct(
             cq, file_size=size, duration=row.get("duration") or 0, width=row.get("video_width") or 0,
-            height=row.get("video_height") or 0, codec=row.get("video_codec"), path=row.get("file_path")))
+            height=row.get("video_height") or 0, codec=row.get("video_codec"), path=row.get("file_path"),
+            target_resolution=job.get("target_resolution") or target_resolution()))
     return saved
 
 
-_JOB_PLAN_COLS = ("id, file_path, job_type, encoder, nvenc_cq, libx265_crf, original_size, "
+_JOB_PLAN_COLS = ("id, file_path, job_type, encoder, nvenc_cq, libx265_crf, target_resolution, original_size, "
                   "audio_tracks_to_remove, subtitle_tracks_to_remove")
 
 
@@ -1964,6 +1965,8 @@ class EstimateRequest(BaseModel):
     # v0.10.0: Fix for direct play, as BulkQueueFromScanRequest has it
     direct_play: bool = False
     direct_play_fixes: Optional[list[str]] = None
+    # v0.10.0: the dialog's resolution (else the rule's, else the setting's)
+    target_resolution_override: str | None = None
 
 
 # v0.10.0: the estimate learned from finished conversions, shared with the
@@ -2111,7 +2114,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         from backend.encoding_estimates import QUALITY_KEYS, effective_cq
         from backend.content_detect import SMART_CQ_KEYS
         est_keys = ('backup_original_days', 'trash_original_after_conversion', 'skip_hardlinked', 'maintainerr_skip',
-                    *SMART_CQ_KEYS, *QUALITY_KEYS)
+                    'target_resolution', *SMART_CQ_KEYS, *QUALITY_KEYS)
         est_settings = {}
         async with db.execute(
             f"SELECT key, value FROM settings WHERE key IN ({','.join('?' for _ in est_keys)})", est_keys
@@ -2333,10 +2336,13 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                                 content_profiles[ctype] = {"count": 0, "cq": file_cq}
                             content_profiles[ctype]["count"] += 1
 
+                # Resized: the dialog's resolution, else the rule's, else the setting's.
+                file_target = (payload.target_resolution_override if payload.target_resolution_override is not None
+                               else (rule or {}).get("target_resolution") or est_settings.get("target_resolution"))
                 pct = savings_model.current().video_pct(
                     savings_cq if savings_cq is not None else file_cq, file_size=row["file_size"] or 0,
                     duration=row["duration"], width=row["video_width"], height=row["video_height"],
-                    codec=row.get("video_codec"), path=fp)
+                    codec=row.get("video_codec"), path=fp, target_resolution=file_target)
                 estimated_savings += int(row["file_size"] * pct)
                 file_cqs.append(file_cq)
 

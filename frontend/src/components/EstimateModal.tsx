@@ -170,6 +170,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
     if (forceReencode) overrides.force_reencode = true;
     if (activeFilter && activeFilter !== "all") overrides.filter = activeFilter;
     if (encoder) overrides.encoder = encoder;
+    if (resolution !== null) overrides.target_resolution_override = resolution;  // the estimate resizes too
     if (directPlay) {
       overrides.direct_play = true;
       overrides.direct_play_fixes = dpFixes;
@@ -182,7 +183,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
       setEstimate({ total_files: 0, error: err?.message || t("scannerModals:estimate.unknownError") });
       setLoading(false);
     });
-  }, [settingsRead, overrideRules, cq, forceReencode, isCpu, encoder, directPlay, dpFixes]);
+  }, [settingsRead, overrideRules, cq, forceReencode, isCpu, encoder, directPlay, dpFixes, resolution]);
   const buildOverrides = (): EncodingOverrides | undefined => {
     const o: EncodingOverrides = {};
     if (encoder !== null) o.encoder = encoder;

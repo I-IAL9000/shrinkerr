@@ -96,7 +96,7 @@ def _row(**kw):
 
 def test_which_jobs_teach_it():
     ratio = 0.75 / cq_to_savings_pct(20)
-    assert sm.sample(_row()) == (pytest.approx(ratio), 20, (3, "bluray", "h264"))
+    assert sm.sample(_row()) == (pytest.approx(ratio), 20, (3, "bluray", "h264"), None)
     assert sm.sample(_row(encoder="libx265", cq=None, crf=24))[:2] == (pytest.approx(0.75 / cq_to_savings_pct(22)), 22)
     assert sm.sample(_row(out_size=9 * GB))[0] == 0  # a discarded larger output: no savings
     for skipped in (dict(output_codec="av1"), dict(vmaf_target='{"cq": 22}'), dict(audio_tracks_to_remove="[2]"),
@@ -115,6 +115,38 @@ def test_which_jobs_teach_it():
     resized = {**older, "target_resolution": "720p", "original_file_path": "/m/Film.2020.BluRay.x264.mkv"}
     assert sm.sample(resized)[2] == ("?", "bluray", "h264")
     assert sm.sample({**older, "original_file_path": None})[2] == (3, "other")  # no name: no codec, no source
+
+
+def test_a_resize_is_estimated():
+    """A 47 GB 4K remux resized to 1080p was estimated at 55 % — as if it
+    stayed 4K; it saves 85 % and more (v0.10.0). The output shrinks with its
+    pixels, to the power RESIZE_ALPHA (learned from your resized
+    conversions)."""
+    four_k = dict(file_size=47 * GB, duration=2 * HOUR, width=3840, height=2160, codec="hevc",
+                  path="/m/Stolen Kisses (1968) 2160p Remux HEVC.mkv")
+    assert sm.resize_ratio(3840, 2160, "1080p") == pytest.approx(0.25)
+    assert sm.resize_ratio(3840, 1600, "1080p") == pytest.approx(0.25)  # by width, as the encode scales
+    assert sm.resize_ratio(1920, 1080, "1080p") is None and sm.resize_ratio(3840, 2160, "copy") is None
+    assert sm.resize_ratio(1280, 720, "1080p") is None  # no upscale savings
+    assert sm.resize_ratio(None, None, "1080p", path="/m/Film 2160p.mkv") == pytest.approx(0.25)  # the name's 4K
+    model = sm.SavingsModel()
+    same = model.video_pct(23, **four_k)
+    resized = model.video_pct(23, target_resolution="1080p", **four_k)
+    assert resized == pytest.approx(1 - (1 - same) * 0.25 ** sm.RESIZE_ALPHA)
+    assert resized > 0.8 > same
+
+
+def test_resized_conversions_teach_the_resize_not_the_files():
+    film, r = (2, "remux", "hevc"), 0.25
+    plain = [(1.0, 23, film, None)] * 100  # the curve, exactly
+    out = 1 - cq_to_savings_pct(23)
+    resized = [((1 - out * r ** 0.6) / cq_to_savings_pct(23), 23, film, r)] * 100
+    model = sm.fit(plain + resized)
+    assert model.factor(film) == pytest.approx(1.0)  # the resized ones didn't inflate remuxes
+    assert model.resize_alpha == pytest.approx((100 * 0.6 + sm.K * sm.RESIZE_ALPHA) / (100 + sm.K), abs=1e-3)
+    assert sm.fit(plain).resize_alpha == sm.RESIZE_ALPHA  # none resized: the default
+    resized_row = _row(source_width=3840, source_height=2160, target_resolution="1080p")
+    assert sm.sample(resized_row)[3] == pytest.approx(0.25)
 
 
 async def _add_job(db, i, in_gb, out_gb, codec="h264", status="completed", job_type="convert", **stats):

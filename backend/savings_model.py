@@ -23,6 +23,11 @@ tracks are part of what converting it saves. A discarded larger output counts
 as no savings. A file's resolution: the job's, else (not resized) its
 output's scan row, else the tag in its name.
 
+A resize shrinks the output with its pixels, to the power resize_alpha
+(RESIZE_ALPHA until your resized conversions teach it, v0.10.0): a 4K remux
+resized to 1080p saves 85 % and more, and was estimated as if it stayed 4K.
+Resized conversions teach that power, not the files' factors.
+
 Stored per-file estimates (scan_results.video_conv_savings_bytes) are
 recomputed when the model learns or the default quality changes.
 """
@@ -31,13 +36,16 @@ from __future__ import annotations
 import asyncio
 import bisect
 import json
+import math
 import re
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 
 from backend.database import connect_db
-from backend.encoding_estimates import cq_to_savings_pct, effective_cq, load_effective_cq
+from backend.encoding_estimates import (
+    cq_to_savings_pct, effective_cq, load_effective_cq, load_target_resolution, set_target_resolution,
+)
 from backend.resolution import tag_height
 from backend.scan_filters import release_source
 
@@ -47,6 +55,11 @@ MAX_SAMPLES = 200_000                   # the most recent conversions
 REBUILD_SECONDS = 600
 MAX_PCT = 0.95
 ROUNDS = 3                              # fitting the CQ and the file factors in turn
+# A resized output's size ∝ its pixels ** RESIZE_ALPHA: fewer pixels need
+# fewer bits, though not in proportion (each keeps more detail).
+RESIZE_ALPHA = 0.75
+# The widths the encode scales to (converter.RESOLUTION_MAP: by width).
+_TARGET_WIDTHS = {"1080p": 1920, "720p": 1280, "480p": 854}
 
 _FAMILIES = (("h264", ("h264", "avc")), ("hevc", ("hevc", "h265")), ("mpeg2", ("mpeg2",)),
              ("vc1", ("vc1", "wmv3")), ("mpeg4", ("mpeg4", "msmpeg4", "xvid", "divx")))
@@ -76,6 +89,22 @@ def band(bpp: float | None) -> int | None:
     return next((i for i, edge in enumerate(BPP_BANDS) if bpp < edge), len(BPP_BANDS))
 
 
+def resize_ratio(width: int | None, height: int | None, target_resolution: str | None,
+                 path: str | None = None) -> float | None:
+    """The share of its pixels a file keeps when the encode resizes it to
+    `target_resolution` (by width, as the encode scales), or None when it
+    isn't made smaller. Without a height, its name's resolution tag."""
+    target = _TARGET_WIDTHS.get(target_resolution or "")
+    if not target:
+        return None
+    if not height:
+        width, height = None, tag_height(path or "")
+    if not height:
+        return None
+    width = width or round(height * 16 / 9)
+    return (target / width) ** 2 if width > target else None
+
+
 def file_groups(file_size: int | None, duration: float | None, width: int | None, height: int | None,
                 codec: str | None, path: str | None) -> tuple:
     """A file's groups, broadest first: its bitrate band ("?" not known), its
@@ -96,6 +125,8 @@ class SavingsModel:
     samples: int = 0
     # CQ → its own factor, at each CQ with enough conversions.
     by_cq: dict = field(default_factory=dict)
+    # A resize's power (RESIZE_ALPHA), as your resized conversions show it.
+    resize_alpha: float = RESIZE_ALPHA
 
     def factor(self, groups: tuple = ()) -> float:
         """The factor of the narrowest of `groups` the model learned."""
@@ -123,11 +154,16 @@ class SavingsModel:
         return self.by_cq[lo] + (self.by_cq[hi] - self.by_cq[lo]) * (cq - lo) / (hi - lo)
 
     def video_pct(self, cq: int, *, file_size: int = 0, duration: float = 0, width: int = 0, height: int = 0,
-                  codec: str | None = None, path: str | None = None) -> float:
+                  codec: str | None = None, path: str | None = None, target_resolution: str | None = None) -> float:
         """The share of the file a video conversion at `cq` (NVENC's scale)
-        saves; with no file (no size or path), any file's."""
+        saves, resized to `target_resolution` ("copy"/None: not); with no
+        file (no size or path), any file's."""
         groups = file_groups(file_size, duration, width, height, codec, path) if file_size or path else ()
-        return max(0.0, min(MAX_PCT, cq_to_savings_pct(cq) * self.cq_factor(cq) * self.factor(groups)))
+        pct = max(0.0, min(MAX_PCT, cq_to_savings_pct(cq) * self.cq_factor(cq) * self.factor(groups)))
+        ratio = resize_ratio(width, height, target_resolution, path)
+        if ratio:
+            pct = min(MAX_PCT, 1 - (1 - pct) * ratio ** self.resize_alpha)
+        return pct
 
 
 def _shrink(values: list[float], parent: float) -> float:
@@ -147,17 +183,28 @@ def _tree(samples: list[tuple[float, tuple]]) -> dict:
     return factors
 
 
-def fit(samples: list[tuple[float, int, tuple]]) -> SavingsModel:
-    """samples: (achieved savings ÷ the curve's, CQ, the file's groups)."""
-    model = SavingsModel(_tree([(r, g) for r, _, g in samples]), len(samples))
+def fit(samples: list[tuple]) -> SavingsModel:
+    """samples: (achieved savings ÷ the curve's, CQ, the file's groups[, the
+    share of its pixels a resize kept]). The files' factors from the ones
+    not resized; the resize's power from the resized, against what the
+    files' factors say they'd have saved at their own size."""
+    plain = [s[:3] for s in samples if len(s) < 4 or not s[3]]
+    resized = [s for s in samples if len(s) > 3 and s[3]]
+    model = SavingsModel(_tree([(r, g) for r, _, g in plain]), len(samples))
     for _ in range(ROUNDS):
         residuals: dict = defaultdict(list)
-        for ratio, cq, groups in samples:
+        for ratio, cq, groups in plain:
             residuals[cq].append(ratio / model.factor(groups))
         by_cq = {cq: _shrink(v, 1.0) for cq, v in residuals.items() if len(v) >= K}
         model = SavingsModel(model.factors, len(samples), by_cq)
-        model = SavingsModel(_tree([(r / model.cq_factor(cq), g) for r, cq, g in samples]), len(samples), by_cq)
-    return model
+        model = SavingsModel(_tree([(r / model.cq_factor(cq), g) for r, cq, g in plain]), len(samples), by_cq)
+    alphas = []
+    for ratio, cq, groups, kept in resized:
+        same = min(MAX_PCT, cq_to_savings_pct(cq) * model.cq_factor(cq) * model.factor(groups))
+        out = 1 - ratio * cq_to_savings_pct(cq)  # the output's share of the file
+        if 0 < out < 1 and 0 < same < 1 and 0 < kept < 1:
+            alphas.append(min(1.5, max(0.3, math.log(out / (1 - same)) / math.log(kept))))
+    return SavingsModel(model.factors, len(samples), model.by_cq, _shrink(alphas, RESIZE_ALPHA))
 
 
 _SAMPLE_SQL = f"""
@@ -184,7 +231,7 @@ WHERE j.status = 'completed' AND j.job_type IN ('convert', 'combined')
 ORDER BY j.id DESC LIMIT {MAX_SAMPLES}"""
 
 
-def sample(row: dict) -> tuple[float, int, tuple] | None:
+def sample(row: dict) -> tuple[float, int, tuple, float | None] | None:
     """A finished job as a sample, or None when it doesn't tell the savings."""
     in_size, out_size = row.get("in_size") or 0, row.get("out_size")
     if in_size <= 0 or out_size is None or out_size < 0:
@@ -208,11 +255,12 @@ def sample(row: dict) -> tuple[float, int, tuple] | None:
     if not codec:
         name = (original or "").rsplit("/", 1)[-1]
         codec = next((c for rx, c in _NAME_CODECS if rx.search(name)), None)
-    return ratio, cq, file_groups(in_size, row.get("duration"), width, height, codec, original)
+    kept = resize_ratio(row.get("source_width"), row.get("source_height"), row.get("target_resolution"), original)
+    return ratio, cq, file_groups(in_size, row.get("duration"), width, height, codec, original), kept
 
 
 _model = SavingsModel()
-_state: dict = {"counter": None, "built": 0.0, "cq": None}
+_state: dict = {"counter": None, "built": 0.0, "cq": None, "target": None}
 
 
 def current() -> SavingsModel:
@@ -243,6 +291,7 @@ async def reestimate_scan_rows() -> int:
     db = await connect_db()
     try:
         cq = await load_effective_cq(db)
+        target = await load_target_resolution(db)
         async with db.execute(
             "SELECT file_path, file_size, duration, video_width, video_height, video_codec, "
             "COALESCE(video_conv_savings_bytes, 0) AS old FROM scan_results "
@@ -257,7 +306,7 @@ async def reestimate_scan_rows() -> int:
             size = r["file_size"] or 0
             new = int(size * model.video_pct(cq, file_size=size, duration=r["duration"] or 0,
                                              width=r["video_width"] or 0, height=r["video_height"] or 0,
-                                             codec=r["video_codec"], path=r["file_path"]))
+                                             codec=r["video_codec"], path=r["file_path"], target_resolution=target))
             if abs(new - r["old"]) > max(1, r["old"] // 100):
                 out.append((new, r["file_path"]))
         return out
@@ -271,28 +320,31 @@ async def reestimate_scan_rows() -> int:
         finally:
             await db.close()
         await asyncio.sleep(0)
-    _state["cq"] = cq
+    _state["cq"], _state["target"] = cq, target
     return len(changes)
 
 
 async def tick(force: bool = False) -> None:
     """Relearn when conversions finished since (at most every
-    REBUILD_SECONDS), and recompute the stored estimates when the model or
-    the default quality changed."""
+    REBUILD_SECONDS), and recompute the stored estimates when the model,
+    the default quality or the target resolution changed."""
     db = await connect_db()
     try:
         async with db.execute("SELECT n FROM change_counters WHERE name = 'completed_jobs'") as cur:
             r = await cur.fetchone()
         cq = await load_effective_cq(db)
+        target = await load_target_resolution(db)
     finally:
         await db.close()
+    set_target_resolution(target)
     counter = r[0] if r else None
     learned = False
     if force or (counter != _state["counter"] and time.monotonic() - _state["built"] >= REBUILD_SECONDS):
         before = _model
         await rebuild()
-        learned = force or (_model.factors, _model.by_cq) != (before.factors, before.by_cq)
-    if learned or cq != _state["cq"]:
+        learned = force or (_model.factors, _model.by_cq, _model.resize_alpha) != (
+            before.factors, before.by_cq, before.resize_alpha)
+    if learned or cq != _state["cq"] or target != _state["target"]:
         changed = await reestimate_scan_rows()
         if changed:
             print(f"[ESTIMATES] Updated {changed} file estimates (learned from {_model.samples} conversions)",
