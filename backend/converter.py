@@ -2925,6 +2925,29 @@ async def _place_output(input_path: str, temp_path: str, final_path: str, disc_t
     return result_backup_path
 
 
+# How often a long step before the encode says its name again (_with_step).
+_STEP_REPEAT_S = 5
+
+
+async def _with_step(progress_callback: Optional[Callable], step: str, coro):
+    """Await `coro`, saying `step` now and every _STEP_REPEAT_S while it runs.
+    The Queue shows a job's step from its live progress: said once at the
+    start of a minutes-long step (reading image subtitles, the VMAF target
+    search), a page opened later showed a bare spinner meanwhile (v0.10.0)."""
+    if not progress_callback:
+        return await coro
+
+    async def repeat() -> None:
+        while True:
+            await progress_callback(progress=0, fps=0, eta_seconds=None, step=step)
+            await asyncio.sleep(_STEP_REPEAT_S)
+    ticker = asyncio.create_task(repeat())
+    try:
+        return await coro
+    finally:
+        ticker.cancel()
+
+
 async def finalize_review(state: dict, result: dict, on_output_placed: Optional[Callable] = None,
                           pre_settings: Optional[dict] = None) -> dict:
     """Place an output held for review once it's approved (v0.10.0): what
@@ -3287,21 +3310,33 @@ async def convert_file(
     source_hdr = probe_data.get("hdr_format")
     _target_res = (override_target_resolution if override_target_resolution is not None
                    else live_settings.get("target_resolution", "copy"))
-    # v0.10.0: profiles 7 and 8 keep Dolby Vision (dovi.py); the rest aren't re-encoded.
-    keep_dv = is_dolby_vision(source_hdr) and dovi.can_keep(
-        source_hdr, encoder=encoder, output_codec=output_codec, target_resolution=_target_res, disc_type=disc_type)
-    if is_dolby_vision(source_hdr) and not keep_dv:
+    # v0.10.0: profiles 7 and 8 keep Dolby Vision (dovi.py); the rest aren't
+    # re-encoded. The job keeps the video and still does its other work
+    # (QueueWorker: VIDEO_KEPT_KEYS), saying why the video wasn't converted.
+    dv_why = dovi.why_not_kept(source_hdr, encoder=encoder, output_codec=output_codec,
+                               target_resolution=_target_res, disc_type=disc_type) if is_dolby_vision(source_hdr) else None
+    keep_dv = is_dolby_vision(source_hdr) and dv_why is None
+    if dv_why:
+        params = {"profile": (source_hdr or "")[2:] or "?", "encoder": encoder,
+                  "codec": (output_codec or "hevc").upper(), "resolution": _target_res}
         return {
             "success": False, "output_path": None, "space_saved": 0,
-            "error": ("Dolby Vision is kept for profiles 7 and 8 encoded to HEVC at the same size, with dovi_tool "
-                      "and mkvmerge installed; this file isn't. Nothing was converted."),
-            "error_key": "errors.dolbyVisionSkipped",
+            "error": "The video was kept as it is: " + {
+                "disc": "Dolby Vision on a disc isn't re-encoded.",
+                "profile": f"Dolby Vision profile {params['profile']} isn't re-encoded (only profiles 7 and 8 keep their Dolby Vision).",
+                "tools": "keeping Dolby Vision needs dovi_tool and mkvmerge, which aren't installed.",
+                "encoder": f"Dolby Vision is kept with NVENC, libx265 or VideoToolbox, not {encoder}.",
+                "codec": f"Dolby Vision is kept when converting to HEVC, not {params['codec']}.",
+                "resize": f"Dolby Vision is kept only at the same resolution, and this job resizes it to {_target_res}.",
+            }[dv_why],
+            "error_key": f"errors.dolbyVisionKept.{dv_why}", "error_params": params,
         }
     if source_hdr and encoder in ("qsv", "vaapi"):
         return {
             "success": False, "output_path": None, "space_saved": 0,
-            "error": f"HDR video needs a 10-bit encoder; {encoder} encodes 8-bit here. Use NVENC, libx265 or VideoToolbox. Nothing was converted.",
-            "error_key": "errors.hdrNeeds10Bit", "error_params": {"encoder": encoder},
+            "error": (f"The video was kept as it is: HDR video needs a 10-bit encoder; {encoder} encodes 8-bit here. "
+                      "Use NVENC, libx265 or VideoToolbox."),
+            "error_key": "errors.hdrKept8Bit", "error_params": {"encoder": encoder},
         }
 
     # v0.6.0: compute original_size + free-disk-space check now that
@@ -3391,10 +3426,7 @@ async def convert_file(
     # v0.8.2: surface a status step while faster-whisper runs (it takes a
     # few seconds per und track), so the UI shows "Detecting language…"
     # instead of a silent pause before the encode starts.
-    if _pre_und_audio_idx and _auto_detect_enabled() and progress_callback:
-        await progress_callback(
-            progress=0, fps=0, eta_seconds=None, step="Detecting language…",
-        )
+    _detecting = bool(_pre_und_audio_idx and _auto_detect_enabled())
     # v0.9.35: reuse a language already detected for this file whose container
     # couldn't store it (AVI etc.) — apply it to the still-und tracks so the
     # mkv output gets stamped without re-running whisper. Anything without a
@@ -3408,9 +3440,9 @@ async def convert_file(
                     t["language"] = _persisted[si]
                     print(f"[CONVERT] Applying detected language {_persisted[si]} to audio stream {si}", flush=True)
     if probe_audio_tracks:
-        probe_audio_tracks = await _detect_und_track_languages(
-            input_path, probe_audio_tracks, [], duration=duration,
-        )
+        probe_audio_tracks = await _with_step(
+            progress_callback if _detecting else None, "Detecting language…",
+            _detect_und_track_languages(input_path, probe_audio_tracks, [], duration=duration))
     # True if detection upgraded any previously-und audio track
     _auto_detected_audio = any(
         t.get("stream_index") in _pre_und_audio_idx
@@ -3507,15 +3539,13 @@ async def convert_file(
     if live_settings.get("vmaf_target_enabled") and not command_only and not disc_type:
         from backend.encoding_estimates import _CRF_OFFSET, quality_settings
         from backend.vmaf_target import DEFAULT_TARGET, find_quality
-        if progress_callback:
-            await progress_callback(progress=0, fps=0, eta_seconds=None, step="Finding the quality for the VMAF target…")
-        vmaf_target = await find_quality(
+        vmaf_target = await _with_step(progress_callback, "Finding the quality for the VMAF target…", find_quality(
             input_path, encoder, float((probe_data or {}).get("duration") or duration or 0),
             float(live_settings.get("vmaf_target_score") or DEFAULT_TARGET),
             start=crf - _CRF_OFFSET if encoder == "libx265" else cq,
             convert_kwargs={"override_preset": override_preset, "override_libx265_preset": override_libx265_preset,
                             "override_target_resolution": override_target_resolution, "pre_settings": live_settings,
-                            "output_codec": output_codec})
+                            "output_codec": output_codec}))
         if vmaf_target:
             cq = vmaf_target["cq"]
             crf = quality_settings("libx265", cq)["libx265_crf"]
@@ -3689,10 +3719,9 @@ async def convert_file(
         _ocr_plan = srt_plan(_sub_tracks, {t.get("stream_index") for t in _sub_tracks} - sub_remove_set,
                              external_sub_files)
         if _ocr_plan:
-            if progress_callback:
-                await progress_callback(progress=0, fps=0, eta_seconds=None, step="Reading image subtitles (OCR)…")
             ocr_dir = await asyncio.to_thread(ocr_workdir, input_path)
-            ocr_subs = await image_subs_to_srt(input_path, _ocr_plan, ocr_dir)
+            ocr_subs = await _with_step(progress_callback, "Reading image subtitles (OCR)…",
+                                        image_subs_to_srt(input_path, _ocr_plan, ocr_dir))
             if ocr_subs and not live_settings.get("image_subs_keep_original", True):
                 sub_remove_set |= {s["stream_index"] for s in ocr_subs}
             print(f"[CONVERT] {len(ocr_subs)} of {len(_ocr_plan)} image subtitle(s) read into SRT", flush=True)
