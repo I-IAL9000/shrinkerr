@@ -471,8 +471,12 @@ class JobQueue:
                 "AND (assigned_node_id IS NULL OR assigned_node_id = '' OR assigned_node_id = 'local')",
                 (_utcnow(),),
             )
+            # An approved review being put in place goes back to Review, where
+            # the placement lane picks it up again (and, from before, one
+            # approved into Pending).
             async with db.execute(
-                "UPDATE jobs SET status = 'pending', progress = 0, fps = NULL, "
+                "UPDATE jobs SET status = CASE WHEN review_approved = 1 THEN 'review' ELSE 'pending' END, "
+                "progress = CASE WHEN review_approved = 1 THEN 100 ELSE 0 END, fps = NULL, "
                 "eta_seconds = NULL, started_at = NULL, error_log = NULL, "
                 "error_key = NULL, error_params = NULL, "
                 "assigned_node_id = NULL, assigned_at = NULL "
@@ -480,6 +484,8 @@ class JobQueue:
                 "AND (assigned_node_id IS NULL OR assigned_node_id = '' OR assigned_node_id = 'local')"
             ) as cur:
                 count = cur.rowcount
+            await db.execute("UPDATE jobs SET status = 'review', progress = 100 "
+                             "WHERE status = 'pending' AND review_approved = 1")
             await db.commit()
             if count:
                 print(f"[QUEUE] Reset {count} stale running job(s) back to pending", flush=True)
@@ -532,17 +538,6 @@ class JobQueue:
                     + ",".join(f"'{e}'" for e in native) + "))"
                 )
 
-            # An approved review only puts its output in place (v0.10.0): no
-            # encoder needed, so no affinity — and never on a remote node.
-            excluded = exclude_ids or []
-            async with db.execute(
-                "SELECT * FROM jobs WHERE status = 'pending' AND review_approved = 1"
-                + (f" AND id NOT IN ({','.join('?' * len(excluded))})" if excluded else "")
-                + " ORDER BY queue_order ASC LIMIT 1", excluded,
-            ) as cur:
-                approved = await cur.fetchone()
-            if approved:
-                return dict(approved)
             # Not before its time: an import waiting for Bazarr (v0.10.0).
             affinity_sql += " AND (not_before IS NULL OR not_before <= ?)"
             if exclude_ids:
@@ -870,21 +865,41 @@ class JobQueue:
         await self.delete_jobs_where("status = 'pending' AND review_approved = 0")
 
     async def approve_reviews(self, job_ids: list[int]) -> int:
-        """Review mode (v0.10.0): approved outputs go back to the queue, at the
-        front, to be put in place (finalize_review) — no encoding."""
+        """Review mode (v0.10.0): approved outputs stay in Review until the
+        worker's placement lane puts them in place (place_approved →
+        finalize_review). They used to go back to Pending and wait for a free
+        encode slot, or for the paused queue to start."""
         db = await self._connect()
         try:
-            async with db.execute("SELECT COALESCE(MIN(queue_order), 1) FROM jobs WHERE status = 'pending'") as cur:
-                first = (await cur.fetchone())[0] or 1
             approved = 0
             for job_id in job_ids:
                 cur = await db.execute(
-                    "UPDATE jobs SET status = 'pending', review_approved = 1, progress = 0, queue_order = ?, "
-                    "error_log = NULL, error_key = NULL, error_params = NULL WHERE id = ? AND status = 'review'",
-                    (first - 1 - approved, job_id))
+                    "UPDATE jobs SET review_approved = 1, error_log = NULL, error_key = NULL, error_params = NULL "
+                    "WHERE id = ? AND status = 'review' AND review_approved = 0", (job_id,))
                 approved += cur.rowcount
             await db.commit()
             return approved
+        finally:
+            await db.close()
+
+    async def claim_approved_review(self) -> Optional[dict]:
+        """The next approved review, marked running for the local worker to put
+        in place; None when there's none."""
+        db = await self._connect()
+        try:
+            while True:
+                async with db.execute("SELECT * FROM jobs WHERE status = 'review' AND review_approved = 1 "
+                                      "ORDER BY queue_order ASC, id ASC LIMIT 1") as cur:
+                    row = await cur.fetchone()
+                if row is None:
+                    return None
+                cur = await db.execute(
+                    "UPDATE jobs SET status = 'running', started_at = ?, assigned_node_id = 'local', "
+                    "error_log = NULL, error_key = NULL, error_params = NULL, finalized_at = NULL "
+                    "WHERE id = ? AND status = 'review' AND review_approved = 1", (_utcnow(), row["id"]))
+                await db.commit()
+                if cur.rowcount:  # else rejected meanwhile: the next one
+                    return {**dict(row), "status": "running"}
         finally:
             await db.close()
 
@@ -1306,6 +1321,9 @@ class QueueWorker:
         # on they must never return to pending — a re-run would re-encode the
         # already-converted file.
         self._finalized_jobs: set[int] = set()
+        # Approved reviews' placement lane (v0.10.0): place_approved.
+        self._placing: Optional[asyncio.Task] = None
+        self._place_again = False
 
     _MAX_LOCK_REQUEUES = 5
     # v0.9.108: how often the loop reaps orphaned 'running' rows (seconds).
@@ -1492,6 +1510,34 @@ class QueueWorker:
             if state == "paused":
                 self.pause()
 
+    def place_approved(self) -> None:
+        """Put approved reviews in place now, one at a time, in their own lane:
+        not the queue's encode slots, pause or run hours, which held them in
+        Pending behind encodes (v0.10.0). Placing is a move, no encoding."""
+        if self._placing and not self._placing.done():
+            self._place_again = True  # the lane may be past its last look
+            return
+        self._place_again = False
+        self._placing = asyncio.create_task(self._place_approved_loop())
+
+    async def _place_approved_loop(self) -> None:
+        while True:
+            try:
+                job = await self.queue.claim_approved_review()
+            except Exception as exc:
+                print(f"[WORKER] Couldn't pick an approved review ({exc}); trying again shortly", flush=True)
+                await asyncio.sleep(5)
+                continue
+            if job is None:
+                if self._place_again:
+                    self._place_again = False
+                    continue
+                return
+            print(f"[WORKER] Placing approved job {job['id']}: {job['file_path']}", flush=True)
+            task = asyncio.create_task(self._worker_task(job))
+            self._active_tasks[job["id"]] = task  # the reaper leaves it alone
+            await asyncio.wait({task})
+
     def start_if_idle(self) -> bool:
         """Start the queue for newly added work (webhooks, add-by-path, health
         checks) unless the user paused it. These used to call start(), which
@@ -1590,7 +1636,8 @@ class QueueWorker:
             # Only rows still running: one that finished since the SELECT
             # must not go back to pending (v0.10.0).
             await db.execute(
-                f"UPDATE jobs SET status = 'pending', progress = 0, fps = NULL, "
+                f"UPDATE jobs SET status = CASE WHEN review_approved = 1 THEN 'review' ELSE 'pending' END, "
+                f"progress = CASE WHEN review_approved = 1 THEN 100 ELSE 0 END, fps = NULL, "
                 f"eta_seconds = NULL, started_at = NULL, error_log = NULL, "
                 f"error_key = NULL, error_params = NULL, "
                 f"assigned_node_id = NULL, assigned_at = NULL "
@@ -2587,7 +2634,7 @@ class QueueWorker:
             frames = result.pop("frames", None)  # before / after (v0.10.0): kept with the job
             if frames:
                 from backend import frames as frames_mod
-                await asyncio.to_thread(frames_mod.save, job_id, frames)
+                await frames_mod.store(job_id, frames)
             if not result["success"]:
                 if job_id in self._cancel_flags:
                     # Check if this cancel was triggered by a node pause — if so,

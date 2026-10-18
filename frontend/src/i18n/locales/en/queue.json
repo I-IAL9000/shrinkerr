@@ -198,11 +198,12 @@
     "frames": {
       "show": "Compare before / after",
       "loading": "Loading frames…",
-      "none": "No frames for this job (converted before 0.10, from a disc, or with frames turned off).",
+      "none": "No frames for this job. They're kept for files in Review and your most recent conversions; there are none for jobs converted before 0.10, discs, or with frames turned off.",
       "before": "Before",
       "after": "After",
       "slider": "Before / after divider",
-      "moments": "Moment"
+      "moments": "Moment",
+      "settingsLink": "Before / after frames setting"
     }
   },
   "panel": {
@@ -255,18 +256,29 @@
     "perJob": "Click a job to see its tracks and change which ones go."
   },
   "review": {
-    "intro": "Converted, waiting for you: the originals are untouched until you approve. Approved files are put in place ahead of everything else in the queue.",
+    "intro": "Converted, waiting for you: the originals are untouched until you approve. Approved files replace the originals straight away, without waiting for the queue, and move to Completed.",
     "approve": "Approve",
     "reject": "Reject",
     "approveAll": "Approve all",
     "rejectAll": "Reject all",
+    "placing": "Putting in place…",
     "sizes": "{{before}} → {{after}} (−{{pct}}%)",
-    "approved_one": "{{count}} approved — it replaces the original when the queue runs",
-    "approved_other": "{{count}} approved — they replace the originals when the queue runs",
+    "approved_one": "{{count}} approved — it replaces the original now",
+    "approved_other": "{{count}} approved — they replace the originals now, one at a time",
     "rejected_one": "{{count}} rejected; the original is kept and won't be queued again",
     "rejected_other": "{{count}} rejected; the originals are kept and won't be queued again",
     "rejectConfirm_one": "Delete {{count}} converted file and keep the original? It won't be queued again (Scanner → Ignored to undo).",
     "rejectConfirm_other": "Delete {{count}} converted files and keep the originals? They won't be queued again (Scanner → Ignored to undo)."
+  },
+  "undo": {
+    "confirm": "Restore the original of {{name}}? The converted file is deleted.",
+    "done": "Original restored; the converted file is deleted.",
+    "blocked": {
+      "off": "Restoring needs the original, and originals aren't kept: choose “Kept for … days” to restore future conversions.",
+      "notKept": "This job's original wasn't kept: it was converted while originals weren't being kept.",
+      "expired": "This job's original was deleted: originals are kept for {{days}} days."
+    },
+    "settingsLink": "Originals & Backups settings"
   },
   "planner": {
     "open": "Free space…",

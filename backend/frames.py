@@ -3,8 +3,8 @@ moments from the original and the new file, while both exist, for the
 comparison slider in the job's details.
 
 Frames are JPEGs, at most WIDTH pixels wide (square pixels: anamorphic DVDs
-look right), in <data>/frames/<job id>/; the last KEEP_JOBS jobs keep
-theirs. They travel as base64 (remote workers send them with the job's
+look right), in <data>/frames/<job id>/; jobs in Review and the KEEP_JOBS
+most recently completed keep theirs (store). They travel as base64 (remote workers send them with the job's
 result) and reach the UI as data URLs, which need no separate request — or
 auth — per image.
 """
@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import shutil
+from collections.abc import Container
 from pathlib import Path
 
 POINTS = (0.2, 0.5, 0.8)
@@ -56,8 +57,9 @@ async def grab(original: str, converted: str, duration: float) -> list[dict]:
     return out
 
 
-def save(job_id: int, frames: list[dict]) -> int:
-    """Store a job's frames (and forget the oldest jobs'); how many."""
+def save(job_id: int, frames: list[dict], keep: Container[int] | None = None, prune: bool = True) -> int:
+    """Store a job's frames and, with `prune`, forget the other jobs' but
+    `keep`'s (None: the newest KEEP_JOBS by id); how many."""
     if not frames:
         return 0
     root = frames_dir()
@@ -74,10 +76,37 @@ def save(job_id: int, frames: list[dict]) -> int:
         (folder / f"{i}_{t:.3f}_before.jpg").write_bytes(before)
         (folder / f"{i}_{t:.3f}_after.jpg").write_bytes(after)
         saved += 1
+    if not prune:
+        return saved
     jobs = sorted((p for p in root.iterdir() if p.is_dir() and p.name.isdigit()), key=lambda p: int(p.name))
-    for old in jobs[:-KEEP_JOBS]:
-        shutil.rmtree(old, ignore_errors=True)
+    old = jobs[:-KEEP_JOBS] if keep is None else [p for p in jobs if int(p.name) not in keep and int(p.name) != job_id]
+    for folder in old:
+        shutil.rmtree(folder, ignore_errors=True)
     return saved
+
+
+async def store(job_id: int, frames: list[dict]) -> int:
+    """save(), keeping the frames people can still look at: every job in
+    Review, compared before it's approved however many conversions came
+    since, and the KEEP_JOBS most recently completed. Pruning by job id
+    deleted an approved review's frames: its id is as old as its conversion."""
+    if not frames:
+        return 0
+    from backend.database import connect_db
+    try:
+        db = await connect_db()
+        try:
+            async with db.execute(
+                "SELECT id FROM jobs WHERE status = 'review' OR review_approved = 1 UNION "
+                "SELECT id FROM (SELECT id FROM jobs WHERE status = 'completed' ORDER BY completed_at DESC LIMIT ?)",
+                (KEEP_JOBS,)) as cur:
+                keep = {r[0] for r in await cur.fetchall()}
+        finally:
+            await db.close()
+    except Exception as exc:  # keep everything rather than lose the conversion's frames
+        print(f"[FRAMES] Couldn't read which jobs keep their frames ({exc}); none deleted this time", flush=True)
+        return await asyncio.to_thread(save, job_id, frames, None, False)
+    return await asyncio.to_thread(save, job_id, frames, keep)
 
 
 def load(job_id: int) -> list[dict]:

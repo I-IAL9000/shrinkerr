@@ -132,6 +132,8 @@ export interface Job {
   vmaf_score?: number | null;
   // An import waiting for Bazarr until then (v0.10.0)
   not_before?: string | null;
+  // Review: approved, being put in place (v0.10.0)
+  review_approved?: number;
 }
 
 export interface WorkerNode {

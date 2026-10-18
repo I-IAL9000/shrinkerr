@@ -222,11 +222,12 @@
     "frames": {
       "show": "Comparar antes / después",
       "loading": "Cargando fotogramas…",
-      "none": "Este trabajo no tiene fotogramas (convertido antes de la 0.10, desde un disco o con los fotogramas desactivados).",
+      "none": "Este trabajo no tiene fotogramas. Se guardan para los archivos en Revisión y tus conversiones más recientes; no hay para trabajos convertidos antes de la 0.10, desde un disco o con los fotogramas desactivados.",
       "before": "Antes",
       "after": "Después",
       "slider": "Divisor antes / después",
-      "moments": "Momento"
+      "moments": "Momento",
+      "settingsLink": "Ajuste de fotogramas antes / después"
     }
   },
   "panel": {
@@ -285,21 +286,32 @@
     "perJob": "Haz clic en un trabajo para ver sus pistas y cambiar cuáles se eliminan."
   },
   "review": {
-    "intro": "Convertidos, pendientes de tu revisión: los originales no se tocan hasta que los apruebes. Los aprobados se colocan antes que todo lo demás de la cola.",
+    "intro": "Convertidos, pendientes de tu revisión: los originales no se tocan hasta que los apruebes. Los aprobados reemplazan a los originales enseguida, sin esperar a la cola, y pasan a Completados.",
     "approve": "Aprobar",
     "reject": "Rechazar",
     "approveAll": "Aprobar todo",
     "rejectAll": "Rechazar todo",
+    "placing": "Colocando…",
     "sizes": "{{before}} → {{after}} (−{{pct}} %)",
-    "approved_one": "{{count}} aprobado: reemplaza al original cuando se ejecute la cola",
-    "approved_many": "{{count}} aprobados: reemplazan a los originales cuando se ejecute la cola",
-    "approved_other": "{{count}} aprobados: reemplazan a los originales cuando se ejecute la cola",
+    "approved_one": "{{count}} aprobado: reemplaza al original ahora",
+    "approved_many": "{{count}} aprobados: reemplazan a los originales ahora, uno a uno",
+    "approved_other": "{{count}} aprobados: reemplazan a los originales ahora, uno a uno",
     "rejected_one": "{{count}} rechazado; se conserva el original y no se volverá a encolar",
     "rejected_many": "{{count}} rechazados; se conservan los originales y no se volverán a encolar",
     "rejected_other": "{{count}} rechazados; se conservan los originales y no se volverán a encolar",
     "rejectConfirm_one": "¿Borrar {{count}} archivo convertido y conservar el original? No se volverá a encolar (Escáner → Ignorados para deshacerlo).",
     "rejectConfirm_many": "¿Borrar {{count}} archivos convertidos y conservar los originales? No se volverán a encolar (Escáner → Ignorados para deshacerlo).",
     "rejectConfirm_other": "¿Borrar {{count}} archivos convertidos y conservar los originales? No se volverán a encolar (Escáner → Ignorados para deshacerlo)."
+  },
+  "undo": {
+    "confirm": "¿Restaurar el original de {{name}}? Se borra el archivo convertido.",
+    "done": "Original restaurado; se borró el archivo convertido.",
+    "blocked": {
+      "off": "Para restaurar hace falta el original, y no se conservan: elige «Se guarda durante… días» para poder restaurar las próximas conversiones.",
+      "notKept": "No se conservó el original de este trabajo: se convirtió cuando no se conservaban los originales.",
+      "expired": "Se borró el original de este trabajo: los originales se conservan {{days}} días."
+    },
+    "settingsLink": "Ajustes de originales y copias de seguridad"
   },
   "planner": {
     "open": "Liberar espacio…",

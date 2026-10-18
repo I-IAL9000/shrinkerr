@@ -1,4 +1,5 @@
 import { memo, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { displayNameForPath } from "../utils/displayName";
 import { useTranslation } from "react-i18next";
 import type { Job } from "../types";
@@ -20,6 +21,11 @@ interface JobListItemProps {
   onRemove: (id: number) => void;
   onIgnore?: (id: number, filePath: string) => void;
   onUndo?: (id: number) => void;
+  // Why Restore original can't run (shown disabled, with the reason): "off" =
+  // originals aren't kept, "notKept" = not for this job, "expired" = deleted
+  // after keepDays. null = it can.
+  undoBlocked?: "off" | "notKept" | "expired" | null;
+  keepDays?: number;
   checked?: boolean;
   onCheck?: (e: { shiftKey: boolean }) => void;
   encodingDefaults?: any;
@@ -37,7 +43,7 @@ const iconBtnStyle: React.CSSProperties = {
   fontSize: 18, lineHeight: 1, padding: "4px 6px", borderRadius: 4,
 };
 
-function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, checked, onCheck, encodingDefaults, expanded: expandedProp, onToggleExpand, onPlanChanged }: JobListItemProps) {
+function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, undoBlocked = null, keepDays = 0, checked, onCheck, encodingDefaults, expanded: expandedProp, onToggleExpand, onPlanChanged }: JobListItemProps) {
   const { t } = useTranslation(["queue", "common", "fileDetail"]);
   const { request: requestReplacement, requesting } = useRequestReplacement();
   // A damaged source (v0.10.0): its replacement is one click from the
@@ -209,11 +215,14 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
               ) : null}
             </>
           )}
-          {onUndo && (job as any).backup_path && (
+          {onUndo && (
             <button
+              disabled={!!undoBlocked}
+              aria-label={t("queue:item.restoreOriginal")}
               onClick={(e) => { e.stopPropagation(); onUndo(job.id); }}
-              style={{ ...iconBtnStyle, color: "var(--accent-text)", marginLeft: 4, fontSize: 14 }}
-              title={t("queue:item.restoreOriginal")}
+              style={{ ...iconBtnStyle, color: undoBlocked ? "var(--text-muted)" : "var(--accent-text)", marginLeft: 4, fontSize: 14,
+                       opacity: undoBlocked ? 0.45 : 1, cursor: undoBlocked ? "not-allowed" : "pointer" }}
+              title={undoBlocked ? t(`queue:undo.blocked.${undoBlocked}`, { days: keepDays }) : t("queue:item.restoreOriginal")}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
@@ -297,6 +306,21 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
           </div>
         ) : logData ? (
           <>
+            {onUndo && (
+              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                <button className="btn btn-xs btn-secondary" disabled={!!undoBlocked}
+                  onClick={(e) => { e.stopPropagation(); onUndo(job.id); }}>
+                  {t("queue:item.restoreOriginal")}
+                </button>
+                {undoBlocked && (
+                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    {t(`queue:undo.blocked.${undoBlocked}`, { days: keepDays })}{" "}
+                    <Link to="/settings/automation#originals" onClick={(e) => e.stopPropagation()}
+                      style={{ color: "var(--accent-text)" }}>{t("queue:undo.settingsLink")}</Link>
+                  </span>
+                )}
+              </div>
+            )}
             {job.job_type !== "audio" && <BeforeAfter jobId={job.id} />}
             {/* Comparison table: original vs encoded.
                 Audio-only jobs (job_type="audio") get a cleanup-flavoured
@@ -718,6 +742,7 @@ const JobListItem = memo(JobListItemImpl, (prev, next) => {
   if (prev.checked !== next.checked) return false;
   if (prev.encodingDefaults !== next.encodingDefaults) return false;
   if (prev.expanded !== next.expanded) return false;
+  if (prev.undoBlocked !== next.undoBlocked || prev.keepDays !== next.keepDays || !prev.onUndo !== !next.onUndo) return false;
   // We intentionally ignore callback identity — parent recreates them on every
   // render but their behavior is stable. If a callback changes semantics the
   // parent also re-renders; stale closures aren't a concern here because the

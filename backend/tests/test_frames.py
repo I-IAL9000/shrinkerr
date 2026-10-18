@@ -62,6 +62,29 @@ def test_keeping_them(test_db, monkeypatch):
     assert frames.save(12, [{"t": 1}]) == 0  # malformed: skipped
 
 
+@pytest.mark.asyncio
+async def test_the_frames_people_can_still_look_at_stay(test_db, monkeypatch):
+    """Every job in Review keeps its frames (approved or not), and so do the
+    most recently completed — by completion, not job id: an approved review
+    is completed today with an id as old as its conversion, and its frames
+    were deleted ("No frames for this job")."""
+    monkeypatch.setattr(frames, "KEEP_JOBS", 2)
+    one = [{"t": 1.0, "before": base64.b64encode(b"B").decode(), "after": base64.b64encode(b"A").decode()}]
+    async with aiosqlite.connect(test_db) as db:
+        for job_id, status, approved, done in ((1, "review", 0, None), (2, "running", 1, None),
+                                               (3, "completed", 0, "2026-10-18T12:00:00"),
+                                               (4, "completed", 0, "2026-10-10T12:00:00"),
+                                               (5, "completed", 0, "2026-10-11T12:00:00")):
+            await db.execute("INSERT INTO jobs (id, file_path, job_type, status, created_at, review_approved, completed_at) "
+                             "VALUES (?, ?, 'convert', ?, 'x', ?, ?)", (job_id, f"/m/{job_id}.mkv", status, approved, done))
+        await db.commit()
+    for job_id in (1, 2, 3, 4, 5):
+        frames.save(job_id, one, prune=False)
+    assert await frames.store(6, one) == 1  # a new conversion (still running)
+    kept = [j for j in range(1, 7) if frames.load(j)]
+    assert kept == [1, 2, 3, 5, 6]  # 4: the oldest completion
+
+
 def _x265() -> bool:
     return bool(shutil.which("ffmpeg")) and "libx265" in subprocess.run(
         ["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True).stdout

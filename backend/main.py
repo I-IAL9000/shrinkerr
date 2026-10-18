@@ -383,6 +383,7 @@ async def lifespan(app: FastAPI):
     await schedule_policies()
     if not demo.ENABLED:  # the demo's files don't exist, and nothing runs
         await worker.restore_run_state()
+        worker.place_approved()  # approved before a restart
         watcher.start()
     # Weekly database backup task (keeps last 4)
     import asyncio

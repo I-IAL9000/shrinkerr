@@ -792,7 +792,7 @@ async def report_complete(req: CompletionReport, request: Request):
         nm.clear_cancel(req.job_id)
         if req.success and req.frames:
             from backend import frames as frames_mod
-            await asyncio.to_thread(frames_mod.save, req.job_id, req.frames)
+            await frames_mod.store(req.job_id, req.frames)
         if req.success and req.review:
             return await _record_review(db, nm, req)
         if req.success:

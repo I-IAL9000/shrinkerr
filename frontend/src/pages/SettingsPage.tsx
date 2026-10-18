@@ -1599,8 +1599,8 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <div style={helpStyle}>
                       <Trans i18nKey="settingsMedia:video.smart.vmafHelp" components={{ b: <strong /> }} />
                     </div>
-                    {/* Before / after frames (v0.10.0) */}
-                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, cursor: "pointer" }}>
+                    {/* Before / after frames (v0.10.0; #before-after: the Queue's "No frames" links here) */}
+                    <label id="before-after" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, cursor: "pointer", scrollMarginTop: 20 }}>
                       <input type="checkbox" checked={encoding.compare_frames ?? true}
                         onChange={(e) => setEncoding({ ...encoding, compare_frames: e.target.checked })}
                         style={{ accentColor: "var(--accent)" }} />
@@ -3720,8 +3720,8 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   </div>
                 </div>
 
-                {/* Originals & Backups */}
-                <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8, marginBottom: 12 }}>
+                {/* Originals & Backups (#originals: Queue's Restore original links here) */}
+                <div id="originals" style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8, marginBottom: 12, scrollMarginTop: 20 }}>
                   <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>{t("settingsSystem:automation.originals.title")}</div>
                   {/* v0.10.0: conversions wait in Queue → Review until approved */}
                   <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>

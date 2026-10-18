@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { mergeHead } from "../utils/mergeHead";
 import { encoderSettingsLabel, jobEncoderSettings } from "../utils/encoderLabel";
 import VirtualJobList from "../components/VirtualJobList";
-import { getJobs, getJobIds, getJobStats, startQueue, pauseQueue, cancelJob, cancelCurrentJob, removeJob, retryJob, clearCompleted, clearPending, ignoreFile, bulkUpdateJobSettings, bulkMoveJobs, bulkIgnoreJobs, getEncodingSettings, getTracksByPath, reorderJobs, researchFilesBulk, getNodes } from "../api";
+import { getJobs, getJobIds, getJobStats, startQueue, pauseQueue, cancelJob, cancelCurrentJob, removeJob, retryJob, clearCompleted, clearPending, ignoreFile, bulkUpdateJobSettings, bulkMoveJobs, bulkIgnoreJobs, getEncodingSettings, getTracksByPath, reorderJobs, researchFilesBulk, getNodes, undoConversion } from "../api";
 import { fmtNum, fmtBytes } from "../fmt";
 import JobCard from "../components/JobCard";
 import JobListItem from "../components/JobListItem";
@@ -18,6 +18,9 @@ import { useVisibleInterval } from "../useVisibleInterval";
 import { useConfirm } from "../components/ConfirmModal";
 import type { Job } from "../types";
 import { useJobProgressMap } from "../jobProgressStore";
+
+// Tabs loaded in full and polled by their ids; the others page.
+const FULL_TABS: ReadonlySet<string> = new Set(["pending", "review"]);
 
 export default function QueuePage() {
   // Re-renders this page on every progress tick; other pages don't (FE#4).
@@ -94,9 +97,10 @@ export default function QueuePage() {
     const searchAtStart = appliedSearch;
     try {
       setTabLoading(true);
-      // Pending is the live queue (drag-reorderable) so it loads in full;
-      // completed/failed load a page at a time and grow via infinite scroll.
-      const pageLimit = tabAtStart === "pending" ? 0 : PAGE_SIZE;
+      // Pending is the live queue (drag-reorderable) and Review is acted on
+      // as a whole (Approve all), so they load in full; completed/failed load
+      // a page at a time and grow via infinite scroll.
+      const pageLimit = FULL_TABS.has(tabAtStart) ? 0 : PAGE_SIZE;
       const [s, runningData, tabData] = await Promise.all([
         getJobStats(),
         getJobs("running"),
@@ -120,7 +124,7 @@ export default function QueuePage() {
       tabCountRef.current = (s as any)[tabAtStart] ?? null;
       lastFullLoadRef.current = Date.now();
       setTabOffset(tabData.length);
-      setTabHasMore(tabAtStart !== "pending" && tabData.length === PAGE_SIZE);
+      setTabHasMore(!FULL_TABS.has(tabAtStart) && tabData.length === PAGE_SIZE);
       setInitialLoading(false);
       setTabLoading(false);
     } finally {
@@ -130,7 +134,7 @@ export default function QueuePage() {
 
   // Append the next page of completed/failed history (infinite scroll).
   const loadMore = async () => {
-    if (loadingMore || !tabHasMore || tab === "pending") return;
+    if (loadingMore || !tabHasMore || FULL_TABS.has(tab)) return;
     setLoadingMore(true);
     loadingMoreRef.current = true;
     const tabAtStart = tab;
@@ -160,27 +164,28 @@ export default function QueuePage() {
     const tabAtStart = tab;
     const searchAtStart = appliedSearch;
     const genAtStart = loadGen.current;
-    if (tabAtStart === "pending") {
+    if (FULL_TABS.has(tabAtStart)) {
       // The pending list can be thousands of jobs, so the poll fetches only
       // its ordered ids. Jobs that left the queue (started, finished,
       // removed) are dropped locally; the full list is re-downloaded only
       // when ids were added or reordered, plus a 60s safety refresh for
-      // per-job setting edits made elsewhere. v0.9.138/v0.9.139.
+      // per-job setting edits made elsewhere. v0.9.138/v0.9.139. Review
+      // the same way: approved files leave it as they're put in place.
       try {
         const [s, runningData, ids] = await Promise.all([
-          getJobStats(), getJobs("running"), getJobIds("pending", searchAtStart),
+          getJobStats(), getJobs("running"), getJobIds(tabAtStart, searchAtStart),
         ]);
         if (genAtStart !== loadGen.current) return;
         if (Date.now() - lastFullLoadRef.current > 60000) { load(); return; }
         const current = jobsRef.current;
         const idSet = new Set(ids);
-        const kept = current.filter(j => j.status === "pending" && idSet.has(j.id));
+        const kept = current.filter(j => j.status === tabAtStart && idSet.has(j.id));
         const sameOrder = kept.length === ids.length && kept.every((j, k) => j.id === ids[k]);
         if (!sameOrder) { load(); return; }
         setStats(s);
-        tabCountRef.current = s.pending;
+        tabCountRef.current = (s as any)[tabAtStart] ?? null;
         const running = parseJobs(runningData);
-        setJobs([...running, ...current.filter(j => j.status !== "running" && j.status !== "pending"), ...kept]);
+        setJobs([...running, ...current.filter(j => j.status !== "running" && j.status !== tabAtStart), ...kept]);
       } catch {}
       return;
     }
@@ -508,14 +513,45 @@ export default function QueuePage() {
     );
   };
 
-  const renderCompletedRow = (i: number) => (
-    <JobListItem job={tabJobs[i]}
-      expanded={expandedIds.has(tabJobs[i].id)}
-      onToggleExpand={toggleExpanded}
-      onCancel={() => {}}
-      onRemove={(id) => { removeJob(id).then(() => loadRef.current()); }}
-    />
-  );
+  // Undo (Restore original), on every completed job that replaced its
+  // original; it needs the kept original, within "keep originals for N days"
+  // (0: none kept, but ones kept before don't expire). Disabled with the
+  // reason otherwise. It was never offered here.
+  const keepDays = Number(encodingDefaults?.backup_original_days) || 0;
+  const undoState = (job: Job): "ok" | "off" | "notKept" | "expired" | null => {
+    const backup = !!(job as any).backup_path;
+    if (job.job_type === "health_check" || (!backup && job.space_saved <= 0)) return null;  // nothing replaced
+    if (!backup) return keepDays > 0 ? "notKept" : "off";
+    const age = job.completed_at ? Date.now() - new Date(job.completed_at).getTime() : 0;
+    return keepDays > 0 && age >= keepDays * 86400000 ? "expired" : "ok";
+  };
+  const handleUndo = async (id: number) => {
+    const job = jobs.find(j => j.id === id);
+    if (!job || !await confirm({ message: t("queue:undo.confirm", { name: displayNameForPath(job.file_path) }),
+                                 confirmLabel: t("queue:item.restoreOriginal"), danger: true })) return;
+    try {
+      await undoConversion(id);
+      toast(t("queue:undo.done"), "success");
+    } catch (e) {
+      toast((e as Error).message, "error");
+    }
+    loadRef.current();
+  };
+
+  const renderCompletedRow = (i: number) => {
+    const undo = undoState(tabJobs[i]);
+    return (
+      <JobListItem job={tabJobs[i]}
+        expanded={expandedIds.has(tabJobs[i].id)}
+        onToggleExpand={toggleExpanded}
+        onCancel={() => {}}
+        onRemove={(id) => { removeJob(id).then(() => loadRef.current()); }}
+        onUndo={undo ? handleUndo : undefined}
+        undoBlocked={undo === "ok" ? null : undo}
+        keepDays={keepDays}
+      />
+    );
+  };
 
   const renderFailedRow = (i: number) => (
     <JobListItem job={tabJobs[i]}

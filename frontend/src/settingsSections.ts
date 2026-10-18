@@ -3,9 +3,9 @@
 // links like /settings#connections still land on the right page.
 export const SETTINGS_SECTIONS = [
   { id: "media", labelKey: "nav:settingsSections.media", anchors: ["directories", "renaming"] },
-  { id: "video", labelKey: "nav:settingsSections.video", anchors: ["video"] },
+  { id: "video", labelKey: "nav:settingsSections.video", anchors: ["video", "before-after"] },
   { id: "audio", labelKey: "nav:settingsSections.audioSubtitles", anchors: ["audio", "subtitles"] },
-  { id: "automation", labelKey: "nav:settingsSections.automation", anchors: ["automation", "policies", "rules", "rule-form"] },
+  { id: "automation", labelKey: "nav:settingsSections.automation", anchors: ["automation", "originals", "policies", "rules", "rule-form"] },
   { id: "integrations", labelKey: "nav:settingsSections.integrations", anchors: ["connections"] },
   { id: "notifications", labelKey: "nav:settingsSections.notifications", anchors: ["notifications"] },
   { id: "system", labelKey: "nav:settingsSections.system", anchors: ["system", "updates", "support"] },

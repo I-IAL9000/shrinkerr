@@ -1520,13 +1520,13 @@ class ReviewRequest(BaseModel):
 
 @router.post("/review/approve")
 async def approve_reviews(req: ReviewRequest):
-    """Review mode (v0.10.0): put these outputs in place — back to the front
-    of the queue, where only the placement runs."""
+    """Review mode (v0.10.0): put these outputs in place now — the worker's
+    placement lane, not the queue."""
     if _queue is None:
         raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
     approved = await _queue.approve_reviews(req.job_ids)
     if approved and _worker is not None:
-        _worker.start_if_idle()  # never undoes a pause
+        _worker.place_approved()
     return {"approved": approved}
 
 

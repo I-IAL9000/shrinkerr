@@ -1,6 +1,6 @@
 """Review before replace (v0.10.0): a converted file waits in
 .shrinkerr-review/ beside its destination — the original untouched — until
-it's approved (the queue puts it in place: finalize_review) or rejected
+it's approved (the worker's placement lane puts it in place: finalize_review) or rejected
 (deleted). The original must not change meanwhile."""
 import json
 import shutil
@@ -84,9 +84,12 @@ async def test_held_then_approved(test_db, library):
     assert await queue.add_jobs_bulk([{"file_path": str(src), "job_type": "convert"}]) == [0]  # not queued twice
 
     assert await queue.approve_reviews([job_id]) == 1
-    nxt = await queue.get_next_job(affinity="nvenc_only")  # placement needs no encoder
-    assert nxt["id"] == job_id
-    await worker._process_job(nxt)
+    job = await _job(test_db, job_id)
+    assert (job["status"], job["review_approved"]) == ("review", 1)  # not back in Pending
+    assert await queue.get_next_job() is None  # nor in the encoders' queue
+    # The placement lane, though the queue was never started (or is paused).
+    worker.place_approved()
+    await worker._placing
 
     job = await _job(test_db, job_id)
     assert job["status"] == "completed" and job["review_json"] is None
@@ -112,7 +115,7 @@ async def test_the_original_changed_meanwhile(test_db, library):
     held = json.loads((await _job(test_db, job_id))["review_json"])["state"]["review_path"]
     src.write_bytes(b"a new release from Radarr")  # an upgrade replaced it
     await queue.approve_reviews([job_id])
-    await worker._process_job(await queue.get_next_job())
+    await worker._process_job(await queue.claim_approved_review())
     job = await _job(test_db, job_id)
     assert (job["status"], job["error_key"]) == ("failed", "errors.reviewOriginalChanged")
     assert job["review_json"] is None  # a retry converts it again
@@ -152,6 +155,30 @@ async def test_queue_rules_for_reviews(test_db, tmp_path):
     [job] = await queue.get_jobs_by_status("pending")
     await queue.remove_job(job["id"])  # removing it rejects it: the output goes
     assert not held.exists() and (await _job(test_db, job["id"]))["status"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_approved_reviews_survive_a_restart(test_db):
+    """One being put in place when Shrinkerr stopped, and one approved into
+    Pending by an older build, both wait in Review for the placement lane;
+    a rejected one is never claimed."""
+    queue = JobQueue(test_db)
+    review = json.dumps({"state": {}, "result": {}})
+    async with aiosqlite.connect(test_db) as db:
+        for path, status, approved in (("/m/a.mkv", "running", 1), ("/m/b.mkv", "pending", 1),
+                                       ("/m/c.mkv", "running", 0), ("/m/d.mkv", "review", 0)):
+            await db.execute("INSERT INTO jobs (file_path, job_type, status, created_at, review_json, review_approved, "
+                             "assigned_node_id) VALUES (?, 'convert', ?, 'x', ?, ?, 'local')",
+                             (path, status, review if approved or status == "review" else None, approved))
+        await db.commit()
+    await queue.reset_stale_running()
+    rows = {j["file_path"]: j["status"] for s in ("review", "pending") for j in await queue.get_jobs_by_status(s)}
+    assert rows == {"/m/a.mkv": "review", "/m/b.mkv": "review", "/m/c.mkv": "pending", "/m/d.mkv": "review"}
+    first = await queue.claim_approved_review()
+    assert first["file_path"] == "/m/a.mkv" and (await _job(test_db, first["id"]))["status"] == "running"
+    second = await queue.claim_approved_review()
+    assert second["file_path"] == "/m/b.mkv"
+    assert await queue.claim_approved_review() is None  # d isn't approved
 
 
 @pytest.mark.asyncio

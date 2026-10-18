@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { getJobFrames, type JobFrame } from "../api";
 
 const LABEL = {
@@ -19,7 +20,11 @@ function clock(seconds: number): string {
  * converted file, grabbed during the conversion, on a slider. Loaded when
  * asked for — the frames are a few hundred KB.
  */
-export default function BeforeAfter({ jobId }: { jobId: number }) {
+export default function BeforeAfter({ jobId, open = false }: {
+  jobId: number;
+  /** Load and show the frames straight away, without its own button (Review). */
+  open?: boolean;
+}) {
   const { t } = useTranslation("queue");
   const [frames, setFrames] = useState<JobFrame[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -27,21 +32,31 @@ export default function BeforeAfter({ jobId }: { jobId: number }) {
   const [split, setSplit] = useState(50);
   const box = useRef<HTMLDivElement>(null);
 
+  const load = async () => {
+    setLoading(true);
+    try { setFrames(await getJobFrames(jobId)); } catch { setFrames([]); }
+    setLoading(false);
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open) load(); }, []);
+
   if (frames === null) {
+    if (open) return <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>{t("item.frames.loading")}</div>;
     return (
       <button className="btn btn-xs btn-secondary" style={{ marginBottom: 12 }} disabled={loading}
-        onClick={async (e) => {
-          e.stopPropagation();
-          setLoading(true);
-          try { setFrames(await getJobFrames(jobId)); } catch { setFrames([]); }
-          setLoading(false);
-        }}>
+        onClick={(e) => { e.stopPropagation(); load(); }}>
         {loading ? t("item.frames.loading") : t("item.frames.show")}
       </button>
     );
   }
   if (!frames.length) {
-    return <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>{t("item.frames.none")}</div>;
+    return (
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>
+        {t("item.frames.none")}{" "}
+        <Link to="/settings/video#before-after" onClick={(e) => e.stopPropagation()}
+          style={{ color: "var(--accent-text)" }}>{t("item.frames.settingsLink")}</Link>
+      </div>
+    );
   }
   const frame = frames[Math.min(index, frames.length - 1)];
   const moveTo = (clientX: number) => {
