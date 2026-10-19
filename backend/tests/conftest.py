@@ -105,6 +105,16 @@ def pytest_runtest_logreport(report):
 
 _exit_status = 0
 
+if os.environ.get("GITHUB_ACTIONS") == "true":
+    # Which test opened a database connection, for "Thread left running".
+    import aiosqlite.core as _aiosqlite_core
+    _connection_init = _aiosqlite_core.Connection.__init__
+
+    def _remembered_init(self, *args, **kwargs):
+        _connection_init(self, *args, **kwargs)
+        self.opened_by = os.environ.get("PYTEST_CURRENT_TEST", "")
+    _aiosqlite_core.Connection.__init__ = _remembered_init
+
 
 def pytest_sessionfinish(session, exitstatus):
     """On GitHub Actions, how the run ended, as an annotation: when the job
@@ -135,7 +145,9 @@ def pytest_unconfigure(config):
         stack = "".join(traceback.format_stack(frame)[-6:]) if frame else ""
         if "concurrent/futures/thread.py" in stack and "work_queue.get" in stack:
             continue  # an idle executor thread: shut down at exit
-        text = f"{type(thread).__module__}.{type(thread).__name__} {thread.name}\n{stack}"[-1500:]
+        opened_by = getattr(thread, "opened_by", "")
+        text = (f"{type(thread).__module__}.{type(thread).__name__} {thread.name}"
+                f"{' opened by ' + opened_by if opened_by else ''}\n{stack}")[-1500:]
         text = text.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
         print(f"\n::warning title=Thread left running::{text}", flush=True)
     sys.stdout.flush()
