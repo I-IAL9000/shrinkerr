@@ -46,8 +46,6 @@ interface FileTreeProps {
   onFolderFilesLoaded?: (folderPath: string, files: ScannedFile[]) => void;
   externalFiles?: Map<string, ScannedFile[]>;
   mediaDirs?: string[];
-  // Media folder path → its label, for the tree's top-level rows.
-  mediaDirLabels?: Record<string, string>;
   sortBy?: SortBy;
   sortDir?: SortDirection;
 }
@@ -71,13 +69,13 @@ interface TreeNode {
   isLeaf: boolean; // true = directly contains files
 }
 
-// A media folder's row: its label, else as much of the end of its path as
-// tells it apart from the other media folders ("disk2/TV Shows" when several
-// end in "TV Shows") — by its folder name alone they all looked alike.
-function mediaRootNames(paths: string[], labels: Record<string, string> = {}): { path: string; name: string }[] {
+// A media folder's row: as much of the end of its path as tells it apart
+// from the other media folders ("disk2/TV Shows" when several end in "TV
+// Shows"). Not its label: that's its type (Movies / TV Shows / Other), which
+// named every folder of a type alike.
+function mediaRootNames(paths: string[]): { path: string; name: string }[] {
   const split = paths.map(p => p.split("/").filter(Boolean));
   return paths.map((path, i) => {
-    if (labels[path]) return { path, name: labels[path] };
     const parts = split[i];
     const end = (segments: string[], n: number) => segments.slice(-n).join("/");
     let n = 1;
@@ -87,7 +85,7 @@ function mediaRootNames(paths: string[], labels: Record<string, string> = {}): {
 }
 
 // U3 (v0.10.0): the tree starts at the media folders — one top-level row
-// each, named by its label — instead of the filesystem root, where every
+// each, named by its path (mediaRootNames) — instead of the filesystem root, where every
 // path segment above them (mnt/user/data/media/…) was a level to click
 // through and indent past. Node paths stay the real paths. Folders outside
 // every media folder keep their full-path tree.
@@ -682,7 +680,7 @@ export default function FileTree({
   folders, imdbIds, filter = "all",
   isSelected, onToggleSelect, onAudioTracksChange, onSubTracksChange, onRemoveFile,
   onIgnoreFile, onUnignoreFile, onRescanFolder, onDeleteFile,
-  onFolderFilesLoaded, externalFiles, mediaDirs, mediaDirLabels,
+  onFolderFilesLoaded, externalFiles, mediaDirs,
   sortBy = "name", sortDir = "asc", search = "",
 }: FileTreeProps) {
   const { t } = useTranslation(["library", "common"]);
@@ -702,8 +700,8 @@ export default function FileTree({
   const tree = useMemo(
     () => isFiltered
       ? buildFlatTitleTree(folders)
-      : buildTreeFromFolders(folders, mediaRootNames(mediaDirs || [], mediaDirLabels)),
-    [folders, isFiltered, mediaDirs, mediaDirLabels],
+      : buildTreeFromFolders(folders, mediaRootNames(mediaDirs || [])),
+    [folders, isFiltered, mediaDirs],
   );
 
   // FE#7 (v0.10.0): loads belong to a filter "generation". A filter switch

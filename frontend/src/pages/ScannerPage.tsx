@@ -66,10 +66,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   // A stable array, or the poster grid re-groups and re-sorts every title on
   // every render (FE#6).
   const mediaDirPaths = useMemo(() => dirs.map((d: any) => d.path as string), [dirs]);
-  const mediaDirLabels = useMemo(
-    () => Object.fromEntries(dirs.filter((d: any) => d.label).map((d: any) => [d.path as string, d.label as string])),
-    [dirs],
-  );
   const [selectedDir, setSelectedDir] = useState<string>("all");
   // Filter pills persist across navigations (and browser restarts) via
   // localStorage, since users typically come back to the same view they
@@ -2028,7 +2024,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               onFolderFilesLoaded={handleFolderFilesLoaded}
               externalFiles={loadedFiles}
               mediaDirs={mediaDirPaths}
-              mediaDirLabels={mediaDirLabels}
               sortBy={sortBy}
               sortDir={sortDir}
             />
