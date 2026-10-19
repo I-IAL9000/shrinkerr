@@ -27,6 +27,12 @@ async def test_db(tmp_path):
             await task
         except (asyncio.CancelledError, Exception):
             pass
+    # The whisper worker a conversion started: stopped on this loop too (the
+    # fixture below kills one left by a test without a database).
+    import sys
+    detection = sys.modules.get("backend.language_detection")
+    if detection is not None and detection._whisper_worker._proc is not None:
+        await detection._whisper_worker.shutdown()
 
 
 def pytest_configure(config):
@@ -54,8 +60,9 @@ def no_whisper_worker_left():
     """A conversion that detected a track's language started the persistent
     whisper worker, tied to the test's event loop: closed after the test, so
     the worker was never stopped and the test run never exited once it
-    passed (CI ran into its 20-minute limit). Stop it; the next test gets a
-    new one."""
+    passed (CI ran into its 20-minute limit). `test_db` stops it on the
+    test's loop; one left anyway is killed, and the next test gets a new
+    one."""
     yield
     import signal
     import sys
