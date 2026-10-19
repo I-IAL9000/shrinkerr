@@ -193,11 +193,13 @@ EXPECTED = {
     "needs_conversion": {"heat_br", "clip", "alien", "big", "ep2", "web_in_br"},  # not low-bitrate, not ignored
     "low_bitrate": {"heat_web"},
     "high_bitrate": {"big"},
-    # Bits per pixel over 0.15 (HEVC, AV1, VP9) or 0.25 (older codecs): the
-    # remux, the DVD, the Xvid and WMV clips, 35 Mbps H.264 at 1080p, 2.4 Mbps
-    # HEVC at 540p, 8.6 Mbps AV1 at 1080p. Heat's Blu-ray is 0.28 at 24 fps
-    # but 0.13 at its 50 fps; Heat's WEB-DL 0.05; untimed Broken: no.
-    "bloated": {"dune", "alien", "clip", "wmv", "big", "old", "corrupt"},
+    # Over what's usual at the resolution (d15): the 4K remux (57 Mbps, 27 at
+    # its 3840x1600), the DVD (8.6, 6) and 36 Mbps H.264 at 1080p (20). Not
+    # the 720p episodes (3-4, 11), the Xvid and WMV clips (3.3 / 2.4, 4.8),
+    # 2.4 Mbps HEVC at 540p (3.4), 8.6 Mbps AV1 at 1080p (12) or Heat's
+    # Blu-ray (10 at its 50 fps, 33) — bits per pixel flagged those; untimed
+    # Broken: no.
+    "bloated": {"dune", "alien", "big"},
     "ignored": {"ep1", "old"},
     "queued": {"ep2"},
     "converted": {"old"},
@@ -433,3 +435,27 @@ async def test_no_subtitles(lib):
                 and not row.get("has_external_subs_flag") and row.get("probe_status") in (None, "ok")}
     assert expected and "ep2" not in expected and "broken" not in expected  # sidecar subs; unreadable
     assert await names("no_subs") == expected
+
+
+@pytest.mark.parametrize("codec, width, height, mbps, big", [
+    ("mpeg4", 640, 360, 1.4, False),  # d15: an old DVD episode
+    ("hevc", 1920, 1080, 8.1, False),  # d15: a Blu-ray encode
+    ("hevc", 1280, 720, 3.4, False),  # d15: a 720p Blu-ray encode
+    ("h264", 1920, 1080, 30.0, True),  # a remux
+    ("hevc", 1920, 1080, 14.0, True),
+    ("hevc", 3840, 2160, 25.0, False),  # a 4K WEB-DL
+    ("hevc", 3840, 2160, 60.0, True),  # a 4K remux
+    ("mpeg2video", 720, 480, 7.0, True),  # a DVD, at 24 fps
+])
+@pytest.mark.asyncio
+async def test_big_for_its_resolution(test_db, codec, width, height, mbps, big):
+    """Over 12 Mbps (HEVC, AV1, VP9) or 20 (older) at 1080p and 24 fps, scaled
+    by pixels ** 0.75 (d15: bits per pixel flagged ordinary 360p, 720p and
+    1080p encodes)."""
+    from backend.scan_filters import FILTERS
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO scan_results (file_path, file_size, duration, video_codec, video_width, "
+                         "video_height, scan_timestamp) VALUES ('/m/f.mkv', ?, 1000, ?, ?, ?, ?)",
+                         (int(mbps * 1e6 * 1000 / 8), codec, width, height, NOW))
+        async with db.execute(f"SELECT COUNT(*) FROM scan_results WHERE {FILTERS['bloated'].sql}") as cur:
+            assert (await cur.fetchone())[0] == int(big)

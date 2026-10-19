@@ -58,9 +58,9 @@ export default function VideoDetails({ file: listed }: { file: ScannedFile }) {
   const codec = (file.video_codec || "").toLowerCase();
   const overall = file.duration > 0 ? (file.file_size * 8) / file.duration : 0;
   const fps = file.video_fps ? Number(file.video_fps.toFixed(3)) : 0;
-  // Bits per pixel per frame (v0.10.0), as the "Big for its resolution"
-  // filter reads it (scan_filters._BPP): the whole file's bitrate, the
-  // width or a 16:9 one, 24 fps when unknown, so the two agree.
+  // Bits per pixel per frame (v0.10.0), as Advanced Search reads it
+  // (scan_filters._BPP): the whole file's bitrate, the width or a 16:9 one,
+  // 24 fps when unknown, so the two agree.
   const pixels = file.video_height ? (file.video_width || file.video_height * 16 / 9) * file.video_height : 0;
   const bpp = overall && pixels ? overall / (pixels * (file.video_fps || 24)) : 0;
   // The picture, then the file.

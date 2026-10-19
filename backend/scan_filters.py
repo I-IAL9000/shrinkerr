@@ -383,14 +383,23 @@ _VC1 = f"({_CODEC} LIKE '%vc1%' OR {_CODEC} LIKE '%wmv%')"
 _MPEG4 = f"({_CODEC} LIKE '%mpeg4%' OR {_CODEC} LIKE '%xvid%' OR {_CODEC} LIKE '%divx%')"
 _VP9 = f"{_CODEC} LIKE '%vp9%'"
 _NAMED_CODECS = f"({_H264} OR {_HEVC} OR {_AV1} OR {_MPEG2} OR {_VC1} OR {_MPEG4} OR {_VP9})"
-# Bits per pixel per frame: the bitrate over width x height x frame rate (the
-# width from the height when unknown, 24 fps when unknown). Bloated: more
-# than an efficient codec (HEVC / AV1 / VP9) needs at 0.15, or an older one
-# at 0.25 — about 7.5 / 12.5 Mbps at 1080p, scaling with the resolution
-# where the high-bitrate pill's 15 Mbps doesn't.
+# Bits per pixel per frame (Advanced Search): the bitrate over width x height
+# x frame rate (the width from the height when unknown, 24 fps when unknown).
 _PIXELS = "((CASE WHEN COALESCE(video_width, 0) > 0 THEN video_width ELSE video_height * 16.0 / 9 END) * video_height)"
 _BPP = f"(file_size * 8.0 / duration / ({_PIXELS} * COALESCE(NULLIF(video_fps, 0), 24.0)))"
 _HAS_BPP = "duration > 0 AND COALESCE(video_height, 0) > 0"
+# Big for its resolution: a bitrate over what's usual at the file's
+# resolution — 12 Mbps (HEVC / AV1 / VP9) or 20 Mbps (older codecs) at 1080p
+# and 24 fps, scaled by pixels ** 0.75 as encodes scale (720p 6.5 / 11, a DVD
+# 3 / 5, 4K 34 / 57) and by the frame rate. v0.10.0 (d15): over a bits-per-
+# pixel cut it flagged ordinary 360p, 720p and 1080p encodes — smaller
+# pictures need more bits per pixel. SQLite has no POWER:
+# (bitrate / cut) ** 4 > (pixels / 1080p's) ** 3.
+_BIG_CUT = (f"((CASE WHEN {_HEVC} OR {_AV1} OR {_VP9} THEN 12000000.0 ELSE 20000000.0 END)"
+            " * COALESCE(NULLIF(video_fps, 0), 24.0) / 24.0)")
+_BIG_X = f"(file_size * 8.0 / duration / {_BIG_CUT})"
+_BIG_R = f"({_PIXELS} / 2073600.0)"
+_BIG = f"{_HAS_BPP} AND {_BIG_X} * {_BIG_X} * {_BIG_X} * {_BIG_X} > {_BIG_R} * {_BIG_R} * {_BIG_R}"
 _MKV = "file_path LIKE '%.mkv'"
 _MP4 = "(file_path LIKE '%.mp4' OR file_path LIKE '%.m4v' OR file_path LIKE '%.mov')"
 _AVI = "file_path LIKE '%.avi'"
@@ -490,7 +499,7 @@ _FILTER_LIST = [
            py=lambda r, c: row_low_bitrate(r) and not row_ignored(r, c)),
     Filter("high_bitrate", pre_sql=_NEEDS_TIMED, inputs=("ignored", "rules", "plex"),
            py=lambda r, c: bool(r.get("needs_conversion")) and not row_ignored(r, c) and row_bitrate(r) > HIGH_BITRATE),
-    Filter("bloated", "bitrate", sql=f"{_HAS_BPP} AND {_BPP} > (CASE WHEN {_HEVC} OR {_AV1} OR {_VP9} THEN 0.15 ELSE 0.25 END)"),
+    Filter("bloated", "bitrate", sql=_BIG),
     # Bitrate tiers (v0.10.0): the file's overall bitrate, whatever its codec.
     Filter("bitrate_low", "bitrate", sql=f"duration > 0 AND file_size * 8.0 / duration < {LOW_BITRATE}"),
     Filter("bitrate_medium", "bitrate",

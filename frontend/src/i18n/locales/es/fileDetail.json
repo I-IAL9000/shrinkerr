@@ -156,7 +156,7 @@
     "container": "Contenedor",
     "added": "Añadido",
     "bitsPerPixel": "Bits por píxel",
-    "bitsPerPixelHelp": "La tasa de bits del archivo por píxel y fotograma: cuánta información recibe. El filtro «Pesado para su resolución» marca los archivos por encima de 0,25 (H.264 y anteriores) o 0,15 (HEVC, AV1, VP9); un valor bajo deja poco que ganar.",
+    "bitsPerPixelHelp": "La tasa de bits del archivo por píxel y fotograma: cuánta información recibe. Las imágenes más pequeñas necesitan más bits por píxel; un valor bajo deja poco que ganar. El filtro «Pesado para su resolución» compara la tasa de bits con la habitual para la resolución: más de 12 Mbps (HEVC, AV1, VP9) o 20 Mbps (H.264 y anteriores) a 1080p, menos a resoluciones más bajas.",
     "bitDepth": "{{bits}} bits",
     "videoBitrate": "vídeo {{rate}}",
     "variable": "variable",
