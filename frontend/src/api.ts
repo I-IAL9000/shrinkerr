@@ -444,6 +444,8 @@ export interface RenamePlan {
   reason: string;
   changed: boolean;
   error?: string;
+  // The subtitle files that go with it; not free: another file has the new name, it stays (v0.10.0).
+  sidecars?: { old_path: string; new_path: string; free: boolean }[];
 }
 export const getRenameSettings = () =>
   apiFetch<RenameSettings>("/rename/settings");

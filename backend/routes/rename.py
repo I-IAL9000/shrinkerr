@@ -1,6 +1,7 @@
 """API endpoints for file renaming — settings, preview, apply."""
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import asdict
 from typing import Any
@@ -12,6 +13,7 @@ from pydantic import BaseModel
 
 from backend.database import DB_PATH, connect_db
 from backend.media_paths import _resolve, is_in_any, load_media_dirs
+from backend.scanner import sidecar_subtitle_moves
 from backend.rename import (
     RenamePlan,
     RenameSettings,
@@ -170,6 +172,9 @@ async def preview_rename(req: PreviewRequest):
     for fp in file_paths:
         try:
             plan = await build_plan(fp, probe_map.get(fp), settings)
+            # The subtitle files that go with it (v0.10.0: only the video was listed).
+            sidecars = (await asyncio.to_thread(sidecar_subtitle_moves, plan.old_path, plan.new_path)
+                        if plan.reason != "noop" else [])
             plans.append({
                 "old_path": plan.old_path,
                 "new_path": plan.new_path,
@@ -179,6 +184,7 @@ async def preview_rename(req: PreviewRequest):
                 "new_season_folder": plan.new_season_folder,
                 "reason": plan.reason,
                 "changed": plan.reason != "noop",
+                "sidecars": [{"old_path": o, "new_path": n, "free": free} for o, n, free in sidecars],
             })
         except Exception as exc:
             plans.append({

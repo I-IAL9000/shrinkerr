@@ -1332,29 +1332,50 @@ def move_sidecar_subtitles(old_video: str, new_video: str) -> list[tuple[str, st
     under the old name, so Plex lost them; the conversion's own codec-tag
     rename also took "Saw II.en.srt" along with "Saw.mkv" and could replace
     an existing file."""
+    moved: list[tuple[str, str]] = []
+    for src, target, free in sidecar_subtitle_moves(old_video, new_video):
+        name, target_name = Path(src).name, Path(target).name
+        try:
+            if not free or _taken(src, target):
+                print(f"[RENAME] Not moving subtitle {name}: {target_name} already exists", flush=True)
+                continue
+            os.rename(src, target)
+            moved.append((src, target))
+        except OSError as exc:
+            print(f"[RENAME] Could not move subtitle {name}: {exc}", flush=True)
+    return moved
+
+
+def _taken(src: str, target: str) -> bool:
+    """Another file has the name `target` (`src` itself, in another case, isn't)."""
+    return os.path.lexists(target) and not (os.path.exists(target) and os.path.samefile(src, target))
+
+
+def sidecar_subtitle_moves(old_video: str, new_video: str) -> list[tuple[str, str, bool]]:
+    """The subtitle files named after a video and where renaming it takes
+    them, as move_sidecar_subtitles moves them: (old, new, free), not free
+    when another file has the new name (it stays). The rename preview lists
+    them (v0.10.0: it showed the video alone)."""
     old, new = Path(old_video), Path(new_video)
     if old.stem == new.stem and old.parent == new.parent:
         return []
     prefix = old.stem.lower() + "."
-    moved: list[tuple[str, str]] = []
     try:
         siblings = list(old.parent.iterdir())
     except OSError:
-        return moved
+        return []
+    moves: list[tuple[str, str, bool]] = []
     for f in siblings:
         if (f.suffix.lower() not in SUBTITLE_EXTENSIONS or not f.name.lower().startswith(prefix)
                 or not f.is_file()):
             continue
         target = new.parent / (new.stem + f.name[len(old.stem):])
         try:
-            if os.path.lexists(target) and not (target.exists() and os.path.samefile(f, target)):
-                print(f"[RENAME] Not moving subtitle {f.name}: {target.name} already exists", flush=True)
-                continue
-            os.rename(f, target)
-            moved.append((str(f), str(target)))
-        except OSError as exc:
-            print(f"[RENAME] Could not move subtitle {f.name}: {exc}", flush=True)
-    return moved
+            free = not _taken(str(f), str(target))
+        except OSError:
+            free = False
+        moves.append((str(f), str(target), free))
+    return sorted(moves)
 
 
 def detect_external_subtitles(video_path: str, siblings: Optional[list] = None) -> list[dict]:

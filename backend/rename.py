@@ -306,12 +306,14 @@ async def resolve_metadata(file_path: str, probe_info: Optional[dict] = None) ->
 
 
 def _normalize_video_codec(codec: str) -> str:
-    """Normalize parsed codec to a consistent form."""
+    """Normalize parsed codec to a consistent form: x265 / x264 when the name
+    says that encoder, else h265 / h264 (as conversions name their output,
+    converter._hevc_tag_for_encoder; v0.10.0 — "h265" became "x265")."""
     c = codec.lower().replace(".", "").replace(" ", "")
     if "265" in c or "hevc" in c:
-        return "x265"
+        return "x265" if c.startswith("x") else "h265"
     if "264" in c or "avc" in c:
-        return "x264"
+        return "x264" if c.startswith("x") else "h264"
     if "av1" in c:
         return "AV1"
     return codec
@@ -325,8 +327,8 @@ def _normalize_source(source: str) -> str:
     s = source.lower().replace(".", "").replace("-", "").replace(" ", "")
     if s == "www":
         return "WEB"
-    if s == "webdl":
-        return "WEB-DL"
+    if s == "webdl":  # as the name spells it (v0.10.0: "WEBDL" became "WEB-DL")
+        return "WEBDL" if source.isalpha() else "WEB-DL"
     if s == "webrip":
         return "WEBRip"
     if s == "bluray" or s == "blueray":
@@ -545,14 +547,16 @@ def _apply_formatting(name: str, settings: RenameSettings) -> str:
         name = _ILLEGAL_RE.sub("", name)
         name = name.replace("/", "-").replace("\\", "-")
 
-    # Before separator normalization, clean up orphan separators from empty tokens.
-    # E.g. "x264- " or "x264-" (nothing after the dash) comes from {VideoCodec}-{ReleaseGroup}
-    # when ReleaseGroup is empty. Same for parentheses/brackets with only whitespace.
-    # Strip punctuation followed by whitespace-only or end-of-string.
-    name = re.sub(r"([\-\_])\s+", r" ", name)        # "x264- DTS" → "x264 DTS"
-    name = re.sub(r"[\-\_]+\s*$", "", name)          # trailing "x264-" → "x264"
+    # Before separator normalization, clean up the separators empty tokens
+    # leave — only those (v0.10.0: "- " anywhere went, so "{SeriesTitle} -
+    # S{season:00}E{episode:00} - {EpisodeTitle}" lost its " - ").
     name = re.sub(r"\(\s*\)|\[\s*\]|\{\s*\}", "", name)  # empty () / [] / {}
-    name = re.sub(r"\s+[\-\_]\s+", " ", name)        # " - " with empty around
+    name = re.sub(r"(?<=\S)[\-\_]+(?=\s|$)", "", name)  # "x264- DTS", "x264-" ({ReleaseGroup} empty)
+    name = re.sub(r"(?:^|(?<=\s))[\-\_]+(?=\S)", "", name)  # " -GRP" ({VideoCodec} empty)
+    name = re.sub(r"(?:\s+[\-\_])+(?=\s)", lambda m: " " + m.group(0)[-1], name)  # " -  - " → " - "
+    name = re.sub(r"^\s*[\-\_](?=\s)|\s+[\-\_]\s*$", "", name)  # leading "- ", trailing " -"
+    if settings.separator != "space":
+        name = re.sub(r"\s+[\-\_]\s+", " ", name)  # no " - " in a dotted / dashed name (as before)
 
     # Separator replacement
     # Replace all existing whitespace runs first, then apply the desired separator

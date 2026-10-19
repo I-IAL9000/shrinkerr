@@ -136,3 +136,31 @@ async def test_the_rename_after_a_conversion_moves_them_too(media, test_db, tmp_
     import os
     assert os.path.exists(new_srt) and not srt.exists()
     assert all(t["external_path"] == new_srt for t in json.loads(subs_json or "[]") if t.get("external"))
+
+
+@pytest.mark.asyncio
+async def test_the_preview_lists_them(media, test_db, monkeypatch):  # noqa: F811
+    """d13: the preview listed the video alone ("1 file will change") and
+    the subtitle went with it anyway. It lists each one and where it goes,
+    and one whose new name is taken stays."""
+    season = media / "tv" / "show" / "season 1"
+    ep = _touch(season / "Show.S01E01.mkv")
+    _touch(season / "Show.S01E01.en.srt")
+    _touch(season / "Show.S01E01.forced.en.srt")
+
+    async def fake_resolve(fp, probe=None):
+        return _meta("tv", "Show", "2019", 1, 1)
+
+    async def folders_off():
+        return rename_mod.RenameSettings()
+
+    monkeypatch.setattr(rename_mod, "resolve_metadata", fake_resolve)
+    monkeypatch.setattr(rename_route, "get_settings", folders_off)
+    plan, = (await rename_route.preview_rename(rename_route.PreviewRequest(file_paths=[str(ep)])))["plans"]
+    stem = plan["new_path"][:-len(".mkv")]
+    _touch(season / (stem.rsplit("/", 1)[1] + ".forced.en.srt"))  # taken meanwhile
+    plan, = (await rename_route.preview_rename(rename_route.PreviewRequest(file_paths=[str(ep)])))["plans"]
+    assert plan["changed"] and plan["sidecars"] == [
+        {"old_path": str(season / "Show.S01E01.en.srt"), "new_path": stem + ".en.srt", "free": True},
+        {"old_path": str(season / "Show.S01E01.forced.en.srt"), "new_path": stem + ".forced.en.srt", "free": False},
+    ]

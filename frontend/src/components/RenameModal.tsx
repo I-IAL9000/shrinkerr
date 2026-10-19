@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { Fragment, useState, useEffect, useRef } from "react";
 import { useDialog } from "../useDialog";
 import { useTranslation } from "react-i18next";
 import { previewRename, applyRename } from "../api";
@@ -30,6 +30,7 @@ export default function RenameModal({ filePaths, onClose, onApplied }: Props) {
 
   const changedPlans = plans.filter(p => p.changed);
   const noopCount = plans.length - changedPlans.length;
+  const subtitleCount = changedPlans.reduce((n, p) => n + (p.sidecars || []).filter(s => s.free).length, 0);
 
   const apply = async () => {
     setApplying(true);
@@ -74,7 +75,7 @@ export default function RenameModal({ filePaths, onClose, onApplied }: Props) {
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{t("scannerModals:rename.title")}</div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-              {loading ? t("scannerModals:rename.resolvingMetadata") : `${t("scannerModals:rename.willChange", { count: changedPlans.length })} · ${t("scannerModals:rename.alreadyMatch", { count: noopCount })}`}
+              {loading ? t("scannerModals:rename.resolvingMetadata") : `${t("scannerModals:rename.willChange", { count: changedPlans.length })}${subtitleCount ? `, ${t("scannerModals:rename.withSubtitles", { count: subtitleCount })}` : ""} · ${t("scannerModals:rename.alreadyMatch", { count: noopCount })}`}
             </div>
           </div>
           <button onClick={onClose} aria-label={t("common:actions.close")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 20 }}>×</button>
@@ -97,8 +98,8 @@ export default function RenameModal({ filePaths, onClose, onApplied }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {plans.map((p, i) => (
-                  <tr key={i} style={{ borderBottom: "1px solid var(--border)", opacity: p.changed ? 1 : 0.5 }}>
+                {plans.map((p, i) => (<Fragment key={i}>
+                  <tr style={{ borderBottom: "1px solid var(--border)", opacity: p.changed ? 1 : 0.5 }}>
                     <td style={{ padding: "6px 8px", fontFamily: "var(--font-mono)", wordBreak: "break-all" }} title={p.old_path}>
                       {basename(p.old_path)}
                     </td>
@@ -115,7 +116,25 @@ export default function RenameModal({ filePaths, onClose, onApplied }: Props) {
                       )}
                     </td>
                   </tr>
-                ))}
+                  {/* The subtitle files that go with it (v0.10.0). */}
+                  {p.changed && (p.sidecars || []).map(sc => (
+                    <tr key={sc.old_path} style={{ borderBottom: "1px solid var(--border)" }}>
+                      <td style={{ padding: "4px 8px 4px 20px", fontFamily: "var(--font-mono)", wordBreak: "break-all", color: "var(--text-muted)" }} title={sc.old_path}>
+                        ↳ {basename(sc.old_path)}
+                      </td>
+                      <td style={{ padding: "4px 8px", fontFamily: "var(--font-mono)", wordBreak: "break-all", color: sc.free ? "var(--accent-text)" : "var(--text-muted)" }} title={sc.new_path}>
+                        {sc.free ? basename(sc.new_path) : basename(sc.old_path)}
+                      </td>
+                      <td style={{ padding: "4px 8px", fontSize: 10 }}>
+                        {sc.free ? (
+                          <span style={{ color: "var(--success)" }}>{t("scannerModals:rename.statusSubtitle")}</span>
+                        ) : (
+                          <span style={{ color: "var(--text-muted)" }} title={t("scannerModals:rename.nameTakenHint", { name: basename(sc.new_path) })}>{t("scannerModals:rename.statusNameTaken")}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </Fragment>))}
               </tbody>
             </table>
           )}
