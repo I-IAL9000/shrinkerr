@@ -547,12 +547,14 @@ body {
 /* Phones: a panel spans the row of buttons (its positioned parent; not the
    whole bar, where the chips appearing below the row pushed an open panel
    down under the finger), and the small × and ⊘ buttons get a finger-sized
-   target. */
+   target — a chip's × reaches into the chip's padding, so the chip stays
+   the pills' height. */
 @media (max-width: 600px) {
   .filter-category { position: static; }
   .filter-bar-row { position: relative; }
   .filter-panel { left: 0; right: 0; width: auto; }
   .filter-option-exclude, .filter-chip-remove { min-width: 28px; min-height: 28px; }
+  .filter-chip-remove { margin: -6px -6px -6px 0; }
 }
 
 /* Filter bar (v0.10.0) */
