@@ -71,6 +71,21 @@ interface TreeNode {
   isLeaf: boolean; // true = directly contains files
 }
 
+// A media folder's row: its label, else as much of the end of its path as
+// tells it apart from the other media folders ("disk2/TV Shows" when several
+// end in "TV Shows") — by its folder name alone they all looked alike.
+function mediaRootNames(paths: string[], labels: Record<string, string> = {}): { path: string; name: string }[] {
+  const split = paths.map(p => p.split("/").filter(Boolean));
+  return paths.map((path, i) => {
+    if (labels[path]) return { path, name: labels[path] };
+    const parts = split[i];
+    const end = (segments: string[], n: number) => segments.slice(-n).join("/");
+    let n = 1;
+    while (n < parts.length && split.some((other, j) => j !== i && end(other, n) === end(parts, n))) n++;
+    return { path, name: end(parts, n) || path };
+  });
+}
+
 // U3 (v0.10.0): the tree starts at the media folders — one top-level row
 // each, named by its label — instead of the filesystem root, where every
 // path segment above them (mnt/user/data/media/…) was a level to click
@@ -687,10 +702,7 @@ export default function FileTree({
   const tree = useMemo(
     () => isFiltered
       ? buildFlatTitleTree(folders)
-      : buildTreeFromFolders(folders, (mediaDirs || []).map(path => ({
-          path,
-          name: mediaDirLabels?.[path] || path.replace(/\/+$/, "").split("/").pop() || path,
-        }))),
+      : buildTreeFromFolders(folders, mediaRootNames(mediaDirs || [], mediaDirLabels)),
     [folders, isFiltered, mediaDirs, mediaDirLabels],
   );
 
