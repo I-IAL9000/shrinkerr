@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { nothingToSaveLast, type FolderInfo } from "./FileTree";
+import { fileSavings, nothingToSaveLast, type FolderInfo } from "./FileTree";
 import type { ScannedFile, AudioTrack, SubtitleTrack } from "../types";
 import { resolvePosterMetadata, getFilesByTitle } from "../api";
 import { getCodecLabel } from "../codecLabels";
@@ -137,7 +137,7 @@ function parseFile(row: any): ScannedFile {
     file_size_gb: +(row.file_size / (1024 ** 3)).toFixed(2),
     audio_tracks: row.audio_tracks || [], subtitle_tracks: row.subtitle_tracks || [],
     has_removable_tracks: row.has_removable_tracks || false, has_removable_subs: row.has_removable_subs || false,
-    estimated_savings_bytes: 0, estimated_savings_gb: 0,
+    ...fileSavings(row),
     language_source: row.language_source || "heuristic",
     ignored: row.ignored || false, is_new: row.is_new || false,
     queued: row.queued || false, converted: row.converted || false,

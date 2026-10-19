@@ -634,6 +634,21 @@ const FileRow = memo(function FileRow({
 
 // ─── Main component ───
 
+// A file's estimated savings: its video conversion's plus the audio tracks
+// it removes. The poster view's file panels use it too (v0.10.0: they said
+// "Total est. savings: ~0 GB").
+export function fileSavings(row: any): { estimated_savings_bytes: number; estimated_savings_gb: number } {
+  // v0.6.7: prefer backend-supplied CQ-calibrated value; fall back
+  // to 0.65 (CQ-25 midpoint) for legacy rows not yet backfilled —
+  // still wrong but much closer than the old 0.30 flat default.
+  let s = row.video_conv_savings_bytes
+    ?? (row.needs_conversion ? (row.file_size || 0) * 0.65 : 0);
+  for (const t of (row.audio_tracks || [])) {
+    if (!t.keep && !t.locked && t.size_estimate_bytes) s += t.size_estimate_bytes;
+  }
+  return { estimated_savings_bytes: Math.round(s), estimated_savings_gb: +(s / (1024 ** 3)).toFixed(1) };
+}
+
 // A /scan/files or /scan/files-by-paths row as a ScannedFile.
 function toScannedFile(row: any): ScannedFile {
   return {
@@ -648,21 +663,7 @@ function toScannedFile(row: any): ScannedFile {
     subtitle_tracks: row.subtitle_tracks || [],
     has_removable_tracks: row.has_removable_tracks || false,
     has_removable_subs: row.has_removable_subs || false,
-    estimated_savings_bytes: (() => {
-      // v0.6.7: prefer backend-supplied CQ-calibrated value; fall back
-      // to 0.65 (CQ-25 midpoint) for legacy rows not yet backfilled —
-      // still wrong but much closer than the old 0.30 flat default.
-      let s = row.video_conv_savings_bytes
-        ?? (row.needs_conversion ? (row.file_size || 0) * 0.65 : 0);
-      for (const t of (row.audio_tracks || [])) {
-        if (!t.keep && !t.locked && t.size_estimate_bytes) s += t.size_estimate_bytes;
-      }
-      return Math.round(s);
-    })(),
-    estimated_savings_gb: +(((row.video_conv_savings_bytes
-        ?? (row.needs_conversion ? (row.file_size || 0) * 0.65 : 0)) +
-      (row.audio_tracks || []).filter((t: any) => !t.keep && !t.locked && t.size_estimate_bytes).reduce((s: number, t: any) => s + t.size_estimate_bytes, 0)
-    ) / (1024**3)).toFixed(1),
+    ...fileSavings(row),
     video_conv_savings_bytes: row.video_conv_savings_bytes,
     language_source: row.language_source || "heuristic",
     ignored: row.ignored || false,
