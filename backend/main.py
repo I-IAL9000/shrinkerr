@@ -446,6 +446,13 @@ async def lifespan(app: FastAPI):
     yield
     worker.stop()
     watcher.stop()
+    # The persistent whisper worker: left running, the process can wait for
+    # it on exit, as the test run did.
+    from backend import language_detection
+    try:
+        await language_detection._whisper_worker.shutdown()
+    except Exception as exc:
+        print(f"[LANG-DETECT] Stopping the whisper worker failed: {exc}", flush=True)
     backup_task.cancel()
     stale_task.cancel()
     if expiry_task:

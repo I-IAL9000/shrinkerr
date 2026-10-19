@@ -49,6 +49,28 @@ def original_languages(request, monkeypatch):
     return found
 
 
+@pytest.fixture(autouse=True)
+def no_whisper_worker_left():
+    """A conversion that detected a track's language started the persistent
+    whisper worker, tied to the test's event loop: closed after the test, so
+    the worker was never stopped and the test run never exited once it
+    passed (CI ran into its 20-minute limit). Stop it; the next test gets a
+    new one."""
+    yield
+    import signal
+    import sys
+    detection = sys.modules.get("backend.language_detection")
+    proc = getattr(getattr(detection, "_whisper_worker", None), "_proc", None)
+    if proc is None:
+        return
+    if proc.returncode is None:
+        try:
+            os.kill(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    detection._whisper_worker = detection._WhisperWorker()
+
+
 def pytest_runtest_logreport(report):
     """On GitHub Actions, a failing test is also an annotation ("::error"):
     the API lists annotations to anyone, the job's log only to a signed-in
