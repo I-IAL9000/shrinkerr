@@ -88,9 +88,41 @@ def pytest_runtest_logreport(report):
         print(f"\n::error title={report.nodeid}::{text}", flush=True)
 
 
+_exit_status = 0
+
+
 def pytest_sessionfinish(session, exitstatus):
     """On GitHub Actions, how the run ended, as an annotation: when the job
     then runs into its time limit, the hang was after the tests."""
+    global _exit_status
+    _exit_status = int(exitstatus)
     if os.environ.get("GITHUB_ACTIONS") == "true":
         print(f"\n::notice title=pytest::finished, exit status {int(exitstatus)}, "
               f"{session.testsfailed} failed of {session.testscollected}", flush=True)
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_unconfigure(config):
+    """On GitHub Actions: a thread a test left running (a database connection
+    never closed, a worker) kept the interpreter from exiting after the run
+    passed, and the job ran into its 20-minute limit — now and then, with
+    nothing to show. Name each one, with where it waits, then exit anyway."""
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    import sys
+    import threading
+    import traceback
+    frames = sys._current_frames()
+    for thread in threading.enumerate():
+        if thread is threading.main_thread() or thread.daemon or not thread.is_alive():
+            continue
+        frame = frames.get(thread.ident)
+        stack = "".join(traceback.format_stack(frame)[-6:]) if frame else ""
+        if "concurrent/futures/thread.py" in stack and "work_queue.get" in stack:
+            continue  # an idle executor thread: shut down at exit
+        text = f"{type(thread).__module__}.{type(thread).__name__} {thread.name}\n{stack}"[-1500:]
+        text = text.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+        print(f"\n::warning title=Thread left running::{text}", flush=True)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(_exit_status)
