@@ -45,6 +45,10 @@ jobs:
         # OCR); install the binaries so they run rather than skip/error.
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg mkvtoolnix tesseract-ocr tesseract-ocr-eng tesseract-ocr-fra tesseract-ocr-rus fonts-dejavu-core
 
+      - name: Versions
+        # As annotations, which the API shows to anyone (the log needs an admin).
+        run: echo "::notice title=Runner::$(. /etc/os-release && echo $PRETTY_NAME), $(ffmpeg -version | head -1)"
+
       - name: dovi_tool
         # The Dolby Vision tests (backend/dovi.py) run against it. The release
         # binary, checked against the digest GitHub publishes for it.
@@ -59,6 +63,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pytest-timeout==2.3.1
 
       - name: Run pytest
-        run: python -m pytest backend/tests -q
+        # A test that hangs fails after 5 minutes with where it hung, instead of
+        # the whole job running into its limit with nothing to show.
+        run: python -m pytest backend/tests -q --timeout=300

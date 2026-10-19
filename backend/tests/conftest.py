@@ -57,3 +57,11 @@ def pytest_runtest_logreport(report):
         text = str(report.longrepr)[-1500:]
         text = text.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
         print(f"\n::error title={report.nodeid}::{text}", flush=True)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """On GitHub Actions, how the run ended, as an annotation: when the job
+    then runs into its time limit, the hang was after the tests."""
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print(f"\n::notice title=pytest::finished, exit status {int(exitstatus)}, "
+              f"{session.testsfailed} failed of {session.testscollected}", flush=True)
