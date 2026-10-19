@@ -11,7 +11,7 @@ import aiosqlite
 from backend.config import settings
 from backend.database import DB_PATH
 from backend.scan_filters import NEW_WINDOW_S
-from backend.scanner import _classify_disc, _disc_marker_path, already_converted, api_original_language, clamp_future_mtime, folder_candidates, removable_audio_flag, SUBTITLE_EXTENSIONS, walk_media_dir
+from backend.scanner import _classify_disc, _disc_marker_path, already_converted, api_original_language, clamp_future_mtime, folder_candidates, removable_audio_flag, SUBTITLE_EXTENSIONS, und_flag, walk_media_dir
 
 # v0.9.100: a probe failure is retried after this many seconds instead of
 # blocklisting the file until the process restarts. A transient timeout / lock
@@ -717,7 +717,8 @@ class FileWatcher:
                     "UPDATE scan_results SET "
                     "audio_tracks_json = ?, subtitle_tracks_json = ?, "
                     "native_language = ?, "
-                    "has_removable_tracks_flag = ?, has_removable_subs_flag = ? "
+                    "has_removable_tracks_flag = ?, has_removable_subs_flag = ?, "
+                    "has_und_tracks_flag = ? "
                     "WHERE file_path = ?",
                     (
                         audio_json,
@@ -725,6 +726,7 @@ class FileWatcher:
                         native_lang,
                         has_removable,
                         has_removable_subs,
+                        und_flag(audio_tracks, subtitle_tracks),
                         fp,
                     ),
                 )
@@ -931,7 +933,8 @@ class FileWatcher:
                     "UPDATE scan_results SET "
                     "audio_tracks_json = ?, subtitle_tracks_json = ?, "
                     "native_language = ?, "
-                    "has_removable_tracks_flag = ?, has_removable_subs_flag = ? "
+                    "has_removable_tracks_flag = ?, has_removable_subs_flag = ?, "
+                    "has_und_tracks_flag = ? "
                     "WHERE file_path = ?",
                     (
                         audio_json,
@@ -939,6 +942,7 @@ class FileWatcher:
                         native_lang,
                         has_removable,
                         has_removable_subs,
+                        und_flag(audio_tracks, subtitle_tracks),
                         fp,
                     ),
                 )
@@ -1057,7 +1061,8 @@ class FileWatcher:
                     "UPDATE scan_results SET "
                     "audio_tracks_json = ?, subtitle_tracks_json = ?, "
                     "native_language = ?, "
-                    "has_removable_tracks_flag = ?, has_removable_subs_flag = ? "
+                    "has_removable_tracks_flag = ?, has_removable_subs_flag = ?, "
+                    "has_und_tracks_flag = ? "
                     "WHERE file_path = ?",
                     (
                         audio_json,
@@ -1065,6 +1070,7 @@ class FileWatcher:
                         native_lang,
                         has_removable,
                         has_removable_subs,
+                        und_flag(audio_tracks, subtitle_tracks),
                         fp,
                     ),
                 )
@@ -1130,12 +1136,13 @@ class FileWatcher:
                 chunk = all_videos[i:i + 500]
                 ph = ",".join("?" for _ in chunk)
                 async with db.execute(
-                    f"SELECT file_path, native_language, subtitle_tracks_json "
+                    f"SELECT file_path, native_language, subtitle_tracks_json, audio_tracks_json "
                     f"FROM scan_results WHERE file_path IN ({ph})",
                     chunk,
                 ) as cur:
                     for r in await cur.fetchall():
-                        stored[r["file_path"]] = (r["native_language"], r["subtitle_tracks_json"])
+                        stored[r["file_path"]] = (r["native_language"], r["subtitle_tracks_json"],
+                                                  r["audio_tracks_json"])
         finally:
             await db.close()
 
@@ -1146,15 +1153,16 @@ class FileWatcher:
         # v0.10.0 (SC-26): pure CPU — about 1.8 s per cycle for 30k subbed
         # videos — so it runs in a thread instead of on the event loop.
         def _compute() -> list[tuple]:
-            changes: list[tuple] = []  # (file_path, subtitle_tracks_json, has_ext, has_rem)
+            changes: list[tuple] = []  # (file_path, subtitle_tracks_json, has_ext, has_rem, has_und)
             for folder, videos in by_folder.items():
                 sibs = sub_folder_files.get(folder) or []
                 for vp in videos:
                     if vp not in stored:
                         continue
-                    native, subs_json = stored[vp]
+                    native, subs_json, audio_json = stored[vp]
                     try:
                         cur_subs = _json.loads(subs_json or "[]")
+                        audio = _json.loads(audio_json or "[]")
                     except (ValueError, TypeError):
                         continue
                     try:
@@ -1165,7 +1173,7 @@ class FileWatcher:
                         cur_subs, native or "und", cur_ext)
                     if changed:
                         changes.append((vp, _json.dumps(new_subs),
-                                        1 if has_ext else 0, 1 if has_rem else 0))
+                                        1 if has_ext else 0, 1 if has_rem else 0, und_flag(audio, new_subs)))
 
             return changes
 
@@ -1180,11 +1188,11 @@ class FileWatcher:
         db = await aiosqlite.connect(self.db_path)
         try:
             await db.execute("PRAGMA busy_timeout=60000")
-            for vp, sj, he, hr in changes:
+            for vp, sj, he, hr, hu in changes:
                 await db.execute(
                     "UPDATE scan_results SET subtitle_tracks_json = ?, "
-                    "has_external_subs_flag = ?, has_removable_subs_flag = ? "
-                    "WHERE file_path = ?", (sj, he, hr, vp))
+                    "has_external_subs_flag = ?, has_removable_subs_flag = ?, has_und_tracks_flag = ? "
+                    "WHERE file_path = ?", (sj, he, hr, hu, vp))
             await db.commit()
         finally:
             await db.close()

@@ -1508,12 +1508,14 @@ async def resync_und_tracks_flag() -> int:
     without recomputing this flag, so a converted title whose output still had
     und tracks kept a stale flag=0 and vanished from the Unknown-language
     filter (while its stored tracks — and the file — were still und). One-time,
-    sentinel-guarded."""
+    sentinel-guarded. v0.10.0: once more ('_v2') — the watcher's subtitle sync
+    and re-probes wrote tracks without it, so titles whose languages were found
+    later stayed under Unknown language."""
     import json as _json
     db = await connect_db()
     try:
         async with db.execute(
-            "SELECT value FROM settings WHERE key = 'und_flag_resynced'"
+            "SELECT value FROM settings WHERE key = 'und_flag_resynced_v2'"
         ) as cur:
             if await cur.fetchone():
                 return 0
@@ -1546,7 +1548,7 @@ async def resync_und_tracks_flag() -> int:
                 await db.commit()
 
         await db.execute(
-            "INSERT INTO settings (key, value) VALUES ('und_flag_resynced', '1') "
+            "INSERT INTO settings (key, value) VALUES ('und_flag_resynced_v2', '1') "
             "ON CONFLICT(key) DO UPDATE SET value = '1'"
         )
         await db.commit()

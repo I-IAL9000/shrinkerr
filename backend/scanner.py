@@ -1234,6 +1234,19 @@ async def _extract_embedded_sub_text(file_path: str, stream_index: int, max_char
     return _clean_srt_bytes(out, max_chars)
 
 
+def und_flag(*track_lists) -> int:
+    """has_und_tracks_flag (the Unknown language filter): 1 when an audio or
+    subtitle track — external ones too — has no language. Tracks as dicts
+    or models. Every write of a row's tracks sets it (v0.10.0: the
+    watcher's didn't, so a language found later left titles flagged)."""
+    for tracks in track_lists:
+        for t in tracks or []:
+            language = t.get("language") if isinstance(t, dict) else getattr(t, "language", None)
+            if (language or "und").lower() == "und":
+                return 1
+    return 0
+
+
 def merge_external_subs(
     stored_subs: list[dict], native_language: str, external_subs_raw: list[dict]
 ) -> tuple[bool, list[dict], bool, bool]:
