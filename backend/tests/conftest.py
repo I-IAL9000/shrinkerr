@@ -27,12 +27,27 @@ async def test_db(tmp_path):
             await task
         except (asyncio.CancelledError, Exception):
             pass
-    # The whisper worker a conversion started: stopped on this loop too (the
-    # fixture below kills one left by a test without a database).
+    # The whisper worker a conversion started, and its idle timer: stopped on
+    # this loop too (the fixture below kills one left by a test without a
+    # database).
     import sys
     detection = sys.modules.get("backend.language_detection")
-    if detection is not None and detection._whisper_worker._proc is not None:
-        await detection._whisper_worker.shutdown()
+    worker = getattr(detection, "_whisper_worker", None)
+    if worker is not None and (worker._proc is not None or worker._idle_task is not None):
+        await worker.shutdown()
+    # Other background tasks the test left (fire-and-forget: telling Sonarr /
+    # Radarr after a remote worker's completion...) get a moment to finish on
+    # this loop. pytest-asyncio cancels them when it closes the loop, and one
+    # cancelled while opening a database connection leaves the connection's
+    # thread waiting: the test run then never exited (CI ran into its time
+    # limit). Those still running are cancelled here, once connected.
+    leftover = [t for t in asyncio.all_tasks() if t is not asyncio.current_task() and not t.done()]
+    if leftover:
+        _, leftover = await asyncio.wait(leftover, timeout=1)
+        for task in leftover:
+            task.cancel()
+        if leftover:
+            await asyncio.wait(leftover, timeout=5)
 
 
 def pytest_configure(config):
