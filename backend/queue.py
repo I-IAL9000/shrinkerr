@@ -3379,7 +3379,8 @@ class QueueWorker:
                                     "DELETE FROM scan_results WHERE file_path = ? AND file_path != ?",
                                     (_new_out, _old_path),
                                 )
-                                _cols += ["file_path = ?", "converted = 1", "is_new = 0", "new_detected_at = NULL"]
+                                _cols += ["file_path = ?", *([] if job_type == "audio" else ["converted = 1"]),
+                                          "is_new = 0", "new_detected_at = NULL"]
                                 _params += [_new_out]
                             if _rp:
                                 # A TMDB / manual native wins over the new track
@@ -3521,7 +3522,8 @@ class QueueWorker:
                             )
                             await db_ac.execute(
                                 "UPDATE scan_results SET file_path = ?, "
-                                "converted = 1, is_new = 0, new_detected_at = NULL "
+                                + ("" if job_type == "audio" else "converted = 1, ")  # a clean-up's isn't (v0.10.0)
+                                + "is_new = 0, new_detected_at = NULL "
                                 "WHERE file_path = ?",
                                 (current_file_path, old_path),
                             )
@@ -3759,15 +3761,18 @@ class QueueWorker:
                         # conversion the row's file_path now points at an
                         # ordinary MKV, and leaving disc_type='dvd'/'bdmv'
                         # would make the row perpetually render as a disc.
+                        # A clean-up's video isn't converted (v0.10.0).
+                        converted_cols = "" if job_type == "audio" else \
+                            "needs_conversion = 0, video_conv_savings_bytes = 0, converted = 1, "
                         if new_size:
                             await db.execute(
-                                "UPDATE scan_results SET file_path = ?, file_size = ?, video_codec = COALESCE(?, video_codec), needs_conversion = 0, video_conv_savings_bytes = 0, converted = 1, is_new = 0, new_detected_at = NULL, disc_type = NULL "
+                                f"UPDATE scan_results SET file_path = ?, file_size = ?, video_codec = COALESCE(?, video_codec), {converted_cols}is_new = 0, new_detected_at = NULL, disc_type = NULL "
                                 "WHERE file_path = ?",
                                 (current_file_path, new_size, new_codec, file_path),
                             )
                         else:
                             await db.execute(
-                                "UPDATE scan_results SET file_path = ?, video_codec = COALESCE(?, video_codec), needs_conversion = 0, video_conv_savings_bytes = 0, converted = 1, is_new = 0, new_detected_at = NULL, disc_type = NULL "
+                                f"UPDATE scan_results SET file_path = ?, video_codec = COALESCE(?, video_codec), {converted_cols}is_new = 0, new_detected_at = NULL, disc_type = NULL "
                                 "WHERE file_path = ?",
                                 (current_file_path, new_codec, file_path),
                             )
@@ -3778,19 +3783,24 @@ class QueueWorker:
             except Exception as exc:
                 print(f"[WORKER] Failed to update scan_results (non-fatal): {exc}", flush=True)
         else:
-            # Same path but might have had audio cleanup — update size and mark converted
+            # Same path but might have had audio cleanup — update size and mark converted.
+            # A clean-up only copies the video: it isn't converted, and still
+            # needs converting if it did (v0.10.0 — an XviD's Add to Queue
+            # became a clean-up after one).
+            converted_cols = "" if job_type == "audio" else \
+                "needs_conversion = 0, video_conv_savings_bytes = 0, converted = 1, "
             try:
                 db = await self._db()
                 try:
                     new_size = await _async_getsize(file_path)
                     if new_size is not None:
                         await db.execute(
-                            "UPDATE scan_results SET file_size = ?, needs_conversion = 0, video_conv_savings_bytes = 0, converted = 1, is_new = 0, new_detected_at = NULL WHERE file_path = ?",
+                            f"UPDATE scan_results SET file_size = ?, {converted_cols}is_new = 0, new_detected_at = NULL WHERE file_path = ?",
                             (new_size, file_path),
                         )
                     else:
                         await db.execute(
-                            "UPDATE scan_results SET needs_conversion = 0, video_conv_savings_bytes = 0, converted = 1, is_new = 0, new_detected_at = NULL WHERE file_path = ?",
+                            f"UPDATE scan_results SET {converted_cols}is_new = 0, new_detected_at = NULL WHERE file_path = ?",
                             (file_path,),
                         )
                     await db.commit()

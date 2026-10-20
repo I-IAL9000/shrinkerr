@@ -170,3 +170,17 @@ async def test_a_resize_is_in_the_estimate(env):
             )["estimated_savings"] == same  # the dialog keeps the size
     await savings_model.tick()  # the app notices the setting changed
     assert (await get_scan_stats())["summary"]["estimated_savings_bytes"] == resized
+
+
+
+@pytest.mark.asyncio
+async def test_the_dialog_knows_whether_srt_copies_replace_image_subtitles(env):
+    """"No audio or subtitle tracks are removed" beside SRT copies that
+    replace the image subtitles (v0.10.0)."""
+    from backend.routes.jobs import EstimateRequest, estimate_jobs
+    req = EstimateRequest(file_paths=["/m/Film (2020)/film.mkv"])
+    assert (await estimate_jobs(req))["image_subs_keep_original"] is True
+    async with aiosqlite.connect(env) as db:
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('image_subs_keep_original', 'false')")
+        await db.commit()
+    assert (await estimate_jobs(req))["image_subs_keep_original"] is False

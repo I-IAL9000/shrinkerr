@@ -61,6 +61,8 @@
         "video_other": "{{num}} Hi10P files are converted",
         "subs_one": "{{num}} file gets SRT copies of its image subtitles",
         "subs_other": "{{num}} files get SRT copies of their image subtitles",
+        "subsReplace_one": "{{num}} file gets SRT copies of its image subtitles, in place of them",
+        "subsReplace_other": "{{num}} files get SRT copies of their image subtitles, in place of them",
         "audio_one": "{{num}} file gets a stereo compatibility track",
         "audio_other": "{{num}} files get a stereo compatibility track"
       }

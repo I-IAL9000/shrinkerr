@@ -383,9 +383,14 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                     ? t("scannerModals:estimate.whatHappens.originalsTrash")
                     : t("scannerModals:estimate.whatHappens.originalsDelete"),
               ];
+              // SRT copies take the place of the image subtitles they're read
+              // from, unless those are kept (v0.10.0: "no tracks are removed"
+              // read beside them).
+              const srtReplaces = directPlay && dpFixes.includes("subs") && (estimate.direct_play?.subs || 0) > 0
+                && estimate.image_subs_keep_original === false;
               if (Object.keys(audio).length) rows.push(t("scannerModals:estimate.whatHappens.audioRemoved", { list: trackLanguageList(audio) }));
               if (Object.keys(subs).length) rows.push(t("scannerModals:estimate.whatHappens.subsRemoved", { list: trackLanguageList(subs) }));
-              if (!Object.keys(audio).length && !Object.keys(subs).length) rows.push(t("scannerModals:estimate.whatHappens.nothingRemoved"));
+              if (!Object.keys(audio).length && !Object.keys(subs).length && !srtReplaces) rows.push(t("scannerModals:estimate.whatHappens.nothingRemoved"));
               let fixing = false;
               if (directPlay) {
                 // An old container is remuxed, or becomes an MKV by converting
@@ -400,7 +405,8 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                   const n = counts[fix] || 0;
                   const ticked = dpFixes.includes(fix === "containerConverted" ? "container" : fix);
                   if (n > 0 && ticked && !(fix === "video" && cleanupOnly)) {
-                    rows.push(t(`scannerModals:estimate.whatHappens.directPlay.${fix}`, { count: n, num: fmtNum(n) }));
+                    rows.push(t(`scannerModals:estimate.whatHappens.directPlay.${fix === "subs" && srtReplaces ? "subsReplace" : fix}`,
+                      { count: n, num: fmtNum(n) }));
                     fixing = true;
                   }
                 }

@@ -1179,6 +1179,25 @@ async def init_db():
         except Exception as exc:
             print(f"[DB] v0.5.4 heal skipped: {exc}", flush=True)
 
+        # v0.10.0 backfill: a clean-up (audio / subtitles, the video copied)
+        # marked its file converted and not needing conversion, so an XviD's
+        # Add to Queue was a clean-up after one. The flag above has undone
+        # "converted" (no conversion did); realign needs_conversion with the
+        # codec — once.
+        try:
+            flag = "_v0_10_0_recompute_after_cleanups"
+            async with db.execute("SELECT 1 FROM settings WHERE key = ?", (flag,)) as cur:
+                already_run = await cur.fetchone() is not None
+            if not already_run:
+                from backend.scanner import recompute_needs_conversion
+                flipped = await recompute_needs_conversion(db, await _source_codecs(db))
+                await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", (flag,))
+                if flipped:
+                    print(f"[DB] v0.10.0 backfill: {flipped} file(s) a clean-up had marked converted "
+                          "need converting again", flush=True)
+        except Exception as exc:
+            print(f"[DB] v0.10.0 clean-up realign skipped: {exc}", flush=True)
+
         # v0.10.0: Dolby Vision profiles 7 / 8 convert where dovi_tool and
         # mkvmerge are installed (backend/dovi.py) — realign the scanned
         # files whenever that changes (and once on upgrade).

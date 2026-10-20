@@ -69,6 +69,9 @@
         "subs_one": "{{num}} archivo recibe copias SRT de sus subtítulos de imagen",
         "subs_many": "{{num}} archivos reciben copias SRT de sus subtítulos de imagen",
         "subs_other": "{{num}} archivos reciben copias SRT de sus subtítulos de imagen",
+        "subsReplace_one": "{{num}} archivo recibe copias SRT de sus subtítulos de imagen, en lugar de ellos",
+        "subsReplace_many": "{{num}} archivos reciben copias SRT de sus subtítulos de imagen, en lugar de ellos",
+        "subsReplace_other": "{{num}} archivos reciben copias SRT de sus subtítulos de imagen, en lugar de ellos",
         "audio_one": "{{num}} archivo recibe una pista estéreo de compatibilidad",
         "audio_many": "{{num}} archivos reciben una pista estéreo de compatibilidad",
         "audio_other": "{{num}} archivos reciben una pista estéreo de compatibilidad"

@@ -62,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Demo mode never hands out the API key, backups or download scripts; links in the in-app changelog only open http(s) addresses; scan progress and cancel files live in the data folder instead of fixed names in `/tmp`.
 
 ### Fixed
+- **A clean-up doesn't mark the file converted**: it copies the video, but marked the file converted and not needing conversion, so the next Add to Queue for an XviD was a clean-up again. Files marked that way need converting again (once, at start-up). Add to Queue says when SRT copies replace the image subtitles instead of "no tracks are removed".
 - **A clean-up that adds to the file isn't ignored**: merging a sidecar subtitle (or adding an SRT copy or a stereo track) can make the file larger, and the clean-up then marked it ignored as "no savings" — so it was never converted — and showed the kept output as "discarded". Files ignored that way are converted after all (once, at start-up). A sidecar DVD subtitle being merged gets its SRT copy too, read from its own stream.
 - **Select all, then untick one title** with filters on or in the poster view left every title unticked (the rest were still selected, a level below the rows the view shows); every other title, season and file now stays ticked.
 - **The NZBGet and SABnzbd script downloads work in Docker** (Settings → Integrations): the images never held the scripts, so the download failed.

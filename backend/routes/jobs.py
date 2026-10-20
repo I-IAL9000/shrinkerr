@@ -2114,7 +2114,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         from backend.encoding_estimates import QUALITY_KEYS, effective_cq
         from backend.content_detect import SMART_CQ_KEYS
         est_keys = ('backup_original_days', 'trash_original_after_conversion', 'skip_hardlinked', 'maintainerr_skip',
-                    'target_resolution', *SMART_CQ_KEYS, *QUALITY_KEYS)
+                    'target_resolution', 'image_subs_keep_original', *SMART_CQ_KEYS, *QUALITY_KEYS)
         est_settings = {}
         async with db.execute(
             f"SELECT key, value FROM settings WHERE key IN ({','.join('?' for _ in est_keys)})", est_keys
@@ -2417,6 +2417,9 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             "hardlinked": hardlinked,
             "leaving_soon": leaving_soon,
             "direct_play": direct_play,
+            # SRT copies replace the image subtitles they're read from, unless
+            # these are kept (v0.10.0: "no tracks removed" read beside them).
+            "image_subs_keep_original": (est_settings.get("image_subs_keep_original") or "true").lower() != "false",
             "direct_play_files": direct_play_files,
             "direct_play_container": direct_play_container,
             "cq": representative_cq,

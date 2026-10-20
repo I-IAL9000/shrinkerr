@@ -57,6 +57,8 @@ async def test_a_cleanup_that_grew_the_file_doesnt_ignore_it(test_db, tmp_path, 
             assert (await cur.fetchone())[0] == "completed"
         async with db.execute("SELECT reason FROM ignored_files") as cur:
             assert await cur.fetchall() == []  # still to be converted
+        async with db.execute("SELECT needs_conversion, converted FROM scan_results") as cur:
+            assert tuple(await cur.fetchone()) == (1, 0)  # a clean-up doesn't convert the video
 
 
 def test_a_merged_dvd_subtitle_gets_an_srt_copy(monkeypatch):
@@ -120,3 +122,24 @@ async def test_files_a_cleanup_ignored_are_converted_after_all(test_db):
     async with aiosqlite.connect(test_db) as db:
         async with db.execute("SELECT file_path FROM ignored_files") as cur:
             assert [r[0] for r in await cur.fetchall()] == ["/m/Larger.mkv"]
+
+
+@pytest.mark.asyncio
+async def test_files_a_cleanup_marked_converted_need_converting_again(test_db):
+    """A clean-up marked the file converted and not needing conversion (the
+    video's only copied): its Add to Queue was a clean-up. Once at start-up,
+    rows no conversion converted are realigned with their codec."""
+    import backend.database as database
+    async with aiosqlite.connect(test_db) as db:
+        await db.executemany("INSERT INTO scan_results (file_path, file_size, video_codec, needs_conversion, converted, "
+                             "scan_timestamp) VALUES (?, 1, 'h264', 0, ?, 't')", [("/m/Love.mkv", 1), ("/m/Done.mkv", 1)])
+        await db.executemany("INSERT INTO jobs (file_path, job_type, status, space_saved, created_at) "
+                             "VALUES (?, ?, 'completed', ?, 't')",
+                             [("/m/Love.mkv", "audio", -2_000_000), ("/m/Done.mkv", "convert", 9_000_000)])
+        await db.execute("DELETE FROM settings WHERE key IN ('_v0_10_0_recompute_after_cleanups', "
+                         "'converted_backfill_version')")
+        await db.commit()
+    await database.init_db()
+    async with aiosqlite.connect(test_db) as db:
+        async with db.execute("SELECT file_path, needs_conversion, converted FROM scan_results ORDER BY file_path") as cur:
+            assert [tuple(r) for r in await cur.fetchall()] == [("/m/Done.mkv", 0, 1), ("/m/Love.mkv", 1, 0)]
