@@ -70,8 +70,26 @@ async def test_emby_connection_success():
 @pytest.mark.asyncio
 async def test_get_user_id_stored():
     """Stored user_id short-circuits the lookup."""
-    result = await emby._get_user_id("http://x", "key", stored_user_id="user-123")
-    assert result == "user-123"
+    result = await emby._get_user_id("http://x", "key", stored_user_id="0f8e2c6a9b1d4e7f8a3c5b2d1e0f9a8b")
+    assert result == "0f8e2c6a9b1d4e7f8a3c5b2d1e0f9a8b"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("module", ["emby", "jellyfin"])
+async def test_a_user_name_finds_its_id(module):
+    """The field asks for a user ID; given "emby", the watched sync asked for
+    /Users/emby/Items and Emby answered 500 (v0.10.0). A name is looked up."""
+    import importlib
+    server = importlib.import_module(f"backend.{module}")
+    users = [{"Id": "aa11", "Name": "Admin", "Policy": {"IsAdministrator": True}},
+             {"Id": "bb22", "Name": "emby", "Policy": {"IsAdministrator": False}}]
+
+    async def fake_get(self, url, **kwargs):
+        return httpx.Response(200, json=users)
+
+    with patch("httpx.AsyncClient.get", new=fake_get):
+        assert await server._get_user_id("http://x", "key", "Emby") == "bb22"
+        assert await server._get_user_id("http://x", "key", "nobody") == "aa11"  # the admin, as when empty
 
 
 @pytest.mark.asyncio

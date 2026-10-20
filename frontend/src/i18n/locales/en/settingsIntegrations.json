@@ -5,9 +5,9 @@
   "shared": {
     "url": "URL",
     "apiKey": "API Key",
-    "userIdOptional": "User ID (optional)",
+    "userIdOptional": "User (optional)",
     "autoDetected": "Auto-detected if empty",
-    "userIdHelp": "Used for watched status. Leave empty to auto-detect the admin user.",
+    "userIdHelp": "A user name or ID, used for watched status. Leave empty to use the admin user.",
     "pathMapping": "Path mapping",
     "testConnection": "Test Connection",
     "connected": "Connected",

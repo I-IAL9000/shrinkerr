@@ -5,9 +5,9 @@
   "shared": {
     "url": "URL",
     "apiKey": "Clave de API",
-    "userIdOptional": "ID de usuario (opcional)",
+    "userIdOptional": "Usuario (opcional)",
     "autoDetected": "Se detecta automáticamente si está vacío",
-    "userIdHelp": "Se usa para el estado de visto. Déjalo vacío para detectar automáticamente el usuario administrador.",
+    "userIdHelp": "Un nombre o ID de usuario, para el estado de visto. Déjalo vacío para usar el usuario administrador.",
     "pathMapping": "Mapeo de rutas",
     "testConnection": "Probar conexión",
     "connected": "Conectado",

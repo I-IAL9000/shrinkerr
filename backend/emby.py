@@ -1,6 +1,7 @@
 """Emby API integration — library sync, watched status, metadata, stream detection."""
 
 import json
+import re
 from typing import Optional
 
 import aiosqlite
@@ -132,15 +133,27 @@ async def get_emby_libraries(url: str = None, api_key: str = None) -> list:
         return []
 
 
+_USER_ID_RE = re.compile(r"^[0-9a-fA-F]{32}$|^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
+
+
 async def _get_user_id(url: str, api_key: str, stored_user_id: str = "") -> str:
-    """Get the Emby user ID. Uses stored value or fetches first admin user."""
-    if stored_user_id:
-        return stored_user_id
+    """Get the Emby user ID. Uses stored value or fetches first admin user.
+    A stored user name finds its user's ID (v0.10.0: "emby" in the "User ID"
+    field made /Users/emby/Items, which Emby answered with 500); a name no
+    user has, the admin's."""
+    stored = (stored_user_id or "").strip()
+    if stored and _USER_ID_RE.match(stored):
+        return stored
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(f"{url}/Users", headers=_headers(api_key))
             if resp.status_code == 200:
                 users = resp.json()
+                if stored:
+                    for u in users:
+                        if stored.lower() in (str(u.get("Name", "")).lower(), str(u.get("Id", "")).lower()):
+                            return u["Id"]
+                    print(f"[EMBY] No Emby user named {stored!r}: using the admin user", flush=True)
                 # Prefer admin user, fall back to first user
                 for u in users:
                     if u.get("Policy", {}).get("IsAdministrator"):
@@ -149,7 +162,7 @@ async def _get_user_id(url: str, api_key: str, stored_user_id: str = "") -> str:
                     return users[0]["Id"]
     except Exception:
         pass
-    return ""
+    return stored  # the server can't be asked: as it was
 
 
 # ── Library Scan Trigger ──
