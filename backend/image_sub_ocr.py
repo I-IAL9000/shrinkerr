@@ -500,29 +500,44 @@ _IDX_TIMESTAMP_RE = re.compile(r"^\s*timestamp:\s*(\d+):(\d+):(\d+):\d+")
 _SAMPLE_ENOUGH_TEXT = 500  # chars: a sample this long that names no language, the track won't either
 
 
-def _sample_idx(idx_path: str, seconds: int) -> str | None:
-    """A VobSub .idx listing only the subtitles in the first `seconds`, in a
-    `sample` folder beside it with its .sub (subtile-ocr reads the .sub named
-    after the .idx): OCR then reads those images, not the whole
-    film's — what sampling does for PGS (v0.9.13), and VobSub lacked
-    (v0.10.0). None when every subtitle or none falls in the window, or the
+_IDX_STREAM_RE = re.compile(r"^\s*id:", re.IGNORECASE)
+
+
+def _sample_idx(idx_path: str, seconds: int | None, stream: int | None = None) -> str | None:
+    """A VobSub .idx listing only the subtitles in the first `seconds` (None:
+    all of them) of its stream `stream` (None: every stream; the n-th "id:"
+    block), in a folder beside it with its .sub (subtile-ocr reads the .sub
+    named after the .idx): OCR then reads those images, not the whole
+    film's — what sampling does for PGS (v0.9.13), and VobSub lacked — nor
+    the other languages' (v0.10.0: Italian, English and French read as one
+    text named none). None when that's the whole .idx or nothing, or the
     .idx can't be read."""
     kept = total = 0
+    current = -1
     lines: list[str] = []
     try:
         with open(idx_path, encoding="utf-8", errors="replace") as fh:
             for line in fh:
+                if _IDX_STREAM_RE.match(line):
+                    current += 1
+                    if stream is None or current == stream:
+                        lines.append(line)
+                    continue
                 found = _IDX_TIMESTAMP_RE.match(line)
                 if found:
                     total += 1
+                if stream is not None and current >= 0 and current != stream:
+                    continue  # another stream's
+                if found:
                     h, m, s = (int(g) for g in found.groups())
-                    if h * 3600 + m * 60 + s >= seconds:
+                    if seconds is not None and h * 3600 + m * 60 + s >= seconds:
                         continue
                     kept += 1
                 lines.append(line)
         if not kept or kept == total:
             return None
-        folder = os.path.join(os.path.dirname(idx_path), "sample")
+        folder = os.path.join(os.path.dirname(idx_path), "-".join(
+            ([f"stream{stream}"] if stream is not None else []) + (["sample"] if seconds is not None else [])))
         os.makedirs(folder, exist_ok=True)
         stem = os.path.splitext(os.path.basename(idx_path))[0]
         sample = os.path.join(folder, stem + ".idx")
@@ -540,15 +555,19 @@ def _sample_idx(idx_path: str, seconds: int) -> str | None:
         return None
 
 
-async def _vobsub_language(idx_path: str, report=None) -> tuple[str | None, float]:
+async def _vobsub_language(idx_path: str, report=None, stream: int | None = None,
+                           outcome: dict | None = None) -> tuple[str | None, float]:
     """OCR a VobSub pair (Latin, then CJK/Cyrillic/Arabic) and detect its
-    language: a leading sample first, then — when the sample had too little
-    text — the whole track."""
+    language: of its stream `stream` alone (None: all), a leading sample
+    first, then — when the sample had too little text — the whole track.
+    `outcome["chars"]`: the most text a pass read (a note says whether OCR
+    read nothing or read text in no language it could tell)."""
     from backend.language_detection import detect_subtitle_language
     loop = asyncio.get_event_loop()
+    chars = 0
 
-    async def passes(idx: str) -> tuple[tuple[str | None, float] | None, int]:
-        read = 0
+    async def passes(idx: str) -> tuple[str | None, float] | None:
+        nonlocal chars
         for tess_lang, stage, stage_key in (
                 (_VOBSUB_LATIN_LANG, "OCR (Latin)", "detect.ocrLatin"),
                 (_VOBSUB_NON_LATIN_LANG, "OCR (CJK/Cyrillic/Arabic)", "detect.ocrNonLatin")):
@@ -556,28 +575,31 @@ async def _vobsub_language(idx_path: str, report=None) -> tuple[str | None, floa
                 await report(stage, stage_key)
             text = await loop.run_in_executor(None, _subtile_ocr_to_text, idx, tess_lang)
             if text:
-                read = max(read, len(text))
+                chars = max(chars, len(text))
+                if outcome is not None:
+                    outcome["chars"] = chars
                 lang, conf = detect_subtitle_language(text)
                 if lang:
-                    return (lang, conf), read
-        return None, read
+                    return (lang, conf)
+        return None
 
+    if stream is not None:
+        idx_path = await asyncio.to_thread(_sample_idx, idx_path, None, stream) or idx_path
     sample_seconds = _pgs_sample_seconds()
     sample = await asyncio.to_thread(_sample_idx, idx_path, sample_seconds) if sample_seconds else None
     if sample:
-        found, read = await passes(sample)
+        found = await passes(sample)
         if found:
             return found
-        if read >= _SAMPLE_ENOUGH_TEXT:
-            print(f"[IMG-OCR] VobSub: {read} chars OCR'd from the first {sample_seconds}s and no "
+        if chars >= _SAMPLE_ENOUGH_TEXT:
+            print(f"[IMG-OCR] VobSub: {chars} chars OCR'd from the first {sample_seconds}s and no "
                   f"language in them — not reading the rest of the track", flush=True)
             return (None, 0.0)
-    found, _ = await passes(idx_path)
-    return found or (None, 0.0)
+    return await passes(idx_path) or (None, 0.0)
 
 
 async def detect_image_sub_language(
-    file_path: str, stream_index: int, codec: str, progress_cb=None,
+    file_path: str, stream_index: int, codec: str, progress_cb=None, outcome: dict | None = None,
 ) -> tuple[str | None, float]:
     """OCR a PGS/VobSub track and detect its language. Returns
     (ISO 639-2 B-form, confidence) or (None, 0.0). Fail-open.
@@ -614,13 +636,16 @@ async def detect_image_sub_language(
             if not idx:
                 return (None, 0.0)
             return await _vobsub_language(
-                idx, lambda stage, key: _report(f"{stage} on subtitle track {stream_index}…", stage_key=key))
+                idx, lambda stage, key: _report(f"{stage} on subtitle track {stream_index}…", stage_key=key),
+                outcome=outcome)
 
         # PGS (Blu-ray) → pgsrip. Two OCR passes (Latin, then non-Latin) over
         # a given .sup.
         async def _ocr_pgs(sup_path):
             await _report(f"OCR (Latin) on subtitle track {stream_index}…", stage_key="detect.ocrLatin")
             text = await loop.run_in_executor(None, _pgsrip_to_text, sup_path, _LATIN_LANGS)
+            if text and outcome is not None:
+                outcome["chars"] = max(outcome.get("chars", 0), len(text))
             if text:
                 lang, conf = detect_subtitle_language(text)
                 print(f"[IMG-OCR] {name} s{stream_index}: Latin OCR → {lang or 'no language'} ({conf:.2f})", flush=True)
@@ -628,6 +653,8 @@ async def detect_image_sub_language(
                     return (lang, conf)
             await _report(f"OCR (CJK/Cyrillic/Arabic) on subtitle track {stream_index}…", stage_key="detect.ocrNonLatin")
             text = await loop.run_in_executor(None, _pgsrip_to_text, sup_path, _NON_LATIN_LANGS)
+            if text and outcome is not None:
+                outcome["chars"] = max(outcome.get("chars", 0), len(text))
             if text:
                 lang, conf = detect_subtitle_language(text)
                 print(f"[IMG-OCR] {name} s{stream_index}: non-Latin OCR → {lang or 'no language'} ({conf:.2f})",
@@ -673,7 +700,8 @@ async def detect_image_sub_language(
         shutil.rmtree(workdir, ignore_errors=True)
 
 
-async def detect_external_vobsub_language(idx_path: str) -> tuple[str | None, float]:
+async def detect_external_vobsub_language(idx_path: str, stream: int | None = None,
+                                          outcome: dict | None = None) -> tuple[str | None, float]:
     """OCR an on-disk external VobSub `.idx`/`.sub` pair (subtile-ocr) and
     detect its language. Same Latin-first → non-Latin fallback as embedded
     VobSub. Returns (ISO 639-2 B-form, confidence) or (None, 0.0). Fail-open.
@@ -693,7 +721,7 @@ async def detect_external_vobsub_language(idx_path: str) -> tuple[str | None, fl
             shutil.copyfile(idx_path, tmp_idx)
             shutil.copyfile(sub_path, os.path.join(workdir, "sub.sub"))
         await asyncio.to_thread(_copy_pair)
-        return await _vobsub_language(tmp_idx)
+        return await _vobsub_language(tmp_idx, stream=stream, outcome=outcome)
     except Exception as exc:
         print(f"[IMG-OCR] external VobSub detection failed for {idx_path}: {exc}", flush=True)
         return (None, 0.0)

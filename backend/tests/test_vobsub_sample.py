@@ -92,3 +92,59 @@ async def test_an_external_pair_is_sampled_too(tmp_path, monkeypatch):
     monkeypatch.setattr(io, "_subtile_ocr_to_text", fake_ocr)
     lang, _ = await io.detect_external_vobsub_language(str(idx))
     assert lang == "eng" and read == ["sample"]
+
+
+TWO = """# VobSub index file, v7 (do not modify this line!)
+size: 720x576
+palette: 000000, f0f0f0, cccccc, 999999
+id: it, index: 0
+timestamp: 00:00:10:000, filepos: 000000000
+timestamp: 00:30:00:000, filepos: 000000800
+id: en, index: 1
+timestamp: 00:00:12:000, filepos: 000001000
+timestamp: 00:30:02:000, filepos: 000001800
+"""
+ITALIAN = "Buongiorno, come stai oggi? Io sto bene, grazie mille. Andiamo a mangiare insieme stasera. " * 10
+
+
+def test_a_stream_alone(tmp_path):
+    """A .idx with several streams: OCR read them all as one text — Italian
+    and English mixed, no language in it (The Consequences of Love)."""
+    idx = _pair(tmp_path, TWO)
+    text = open(io._sample_idx(idx, None, stream=1)).read()
+    assert "id: en" in text and "id: it" not in text and "00:00:10" not in text and "00:30:02:000" in text
+    text = open(io._sample_idx(idx, 1200, stream=1)).read()
+    assert "00:00:12:000" in text and "00:30:02" not in text and "id: it" not in text
+
+
+@pytest.mark.asyncio
+async def test_each_stream_is_read_alone(tmp_path, monkeypatch):
+    folder = tmp_path / "Film (2004)"
+    folder.mkdir()
+    idx = folder / "Film.idx"
+    idx.write_text(TWO)
+    (folder / "Film.sub").write_bytes(b"\x00" * 64)
+
+    def fake_ocr(path, lang):
+        body = open(path).read()
+        return ENGLISH if "id: en" in body and "id: it" not in body else (
+            ITALIAN if "id: it" in body and "id: en" not in body else ITALIAN + ENGLISH)
+    monkeypatch.setattr(io, "_subtile_ocr_to_text", fake_ocr)
+    assert (await io.detect_external_vobsub_language(str(idx), stream=0))[0] == "ita"
+    assert (await io.detect_external_vobsub_language(str(idx), stream=1))[0] == "eng"
+
+
+@pytest.mark.asyncio
+async def test_it_says_when_it_read_text(tmp_path, monkeypatch):
+    """"OCR found no usable text" when it had read 8000 characters: the
+    language was what it couldn't tell."""
+    folder = tmp_path / "Film (2004)"
+    folder.mkdir()
+    idx = folder / "Film.idx"
+    idx.write_text(IDX)
+    (folder / "Film.sub").write_bytes(b"\x00" * 64)
+    monkeypatch.setattr(io, "_subtile_ocr_to_text", lambda path, lang: ENGLISH)
+    monkeypatch.setattr("backend.language_detection.detect_subtitle_language", lambda text: (None, 0.0))
+    outcome: dict = {}
+    assert await io.detect_external_vobsub_language(str(idx), outcome=outcome) == (None, 0.0)
+    assert outcome["chars"] == len(ENGLISH)

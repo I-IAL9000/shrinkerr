@@ -1372,6 +1372,7 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                     _sub_note = (KeyedNote("no text in subtitle", "subNoText") if not (txt and txt.strip())
                                  else KeyedNote("subtitle text not confidently identified", "subNotConfident"))
             elif codec_l in _IMAGE_SUB_CODECS:
+                _read: dict = {}  # how much text OCR read
                 try:
                     from backend.image_sub_ocr import detect_image_sub_language
                     # v0.9.1: stream coarse OCR stages to the UI (image-sub
@@ -1380,7 +1381,7 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                         await ws_manager.send_detect_progress(_fp, stage, stage_key=stage_key, stage_params=stage_params)
                     ocr_lang, _c = await detect_image_sub_language(
                         req.file_path, t["stream_index"], codec_l,
-                        progress_cb=_ocr_progress)
+                        progress_cb=_ocr_progress, outcome=_read)
                 except Exception as exc:
                     # v0.9.78: surface the reason. A raise here (setup failure
                     # before the OCR helpers' own [IMG-OCR] logging kicks in —
@@ -1396,7 +1397,10 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                     sub_write[j] = ocr_lang
                     changed = True
                 else:
-                    _sub_note = KeyedNote("image subtitle OCR found no usable text", "ocrNoText")
+                    # Text read in no language it could tell isn't "no text" (v0.10.0).
+                    _sub_note = (KeyedNote("subtitle text not confidently identified", "subNotConfident")
+                                 if _read.get("chars")
+                                 else KeyedNote("image subtitle OCR found no usable text", "ocrNoText"))
             else:
                 _sub_note = KeyedNote("unsupported subtitle format for detection", "subUnsupported")
             # Per-track outcome (title path returned earlier via `continue`).
@@ -1428,10 +1432,15 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                 # v0.9.11: external VobSub (.idx/.sub) is image data, not text —
                 # OCR it directly with subtile-ocr (it reads an on-disk .idx).
                 from backend.image_sub_ocr import detect_external_vobsub_language
-                _ocr_lang, _c = await detect_external_vobsub_language(es_path)
+                _ext_read: dict = {}
+                # Its own stream of a .idx holding several (v0.10.0).
+                _ocr_lang, _c = await detect_external_vobsub_language(
+                    es_path, stream=es.get("idx_stream"), outcome=_ext_read)
                 new_lang = _ocr_lang or "und"
                 if new_lang == "und":
-                    _ext_note = KeyedNote("image subtitle OCR found no usable text", "ocrNoText")
+                    _ext_note = (KeyedNote("subtitle text not confidently identified", "subNotConfident")
+                                 if _ext_read.get("chars")
+                                 else KeyedNote("image subtitle OCR found no usable text", "ocrNoText"))
             else:
                 from backend.scanner import _clean_srt_bytes
                 with open(es_path, "rb") as _fh:
