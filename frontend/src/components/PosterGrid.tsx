@@ -321,7 +321,8 @@ export default function PosterGrid({
   }, [expandedKey, expandedFiles.length, expandedFileDetails.size]);
 
   // One outline around the open poster and its row (v0.10.0), from where
-  // they are once laid out.
+  // they are once laid out — again when the poster moves (a re-sort after a
+  // language detection left it around the poster's old place).
   const [outline, setOutline] = useState<string | null>(null);
   useLayoutEffect(() => {
     const box = containerRef.current;
@@ -335,7 +336,7 @@ export default function PosterGrid({
     };
     const radius = parseFloat(getComputedStyle(card).borderTopLeftRadius) || 6;
     setOutline(posterOutline(at(card), at(row), radius, 1));
-  }, [expandedKey, accordionHeight, containerWidth, colCount]);
+  }, [expandedKey, expandedIdx, accordionHeight, containerWidth, colCount]);
 
   // Compute total height accounting for accordion
   const totalHeight = rowCount * rowH + (expandedRow >= 0 ? accordionHeight : 0);
