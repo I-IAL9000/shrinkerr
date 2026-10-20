@@ -15,6 +15,7 @@ import asyncio
 import httpx
 
 from backend.database import connect_db
+from backend.error_text import describe_error
 
 # Sonarr / Radarr rescan the file first (Shrinkerr asks them right after a
 # job); Bazarr's sync reads what they found, so give them a moment.
@@ -69,18 +70,23 @@ async def rescan_for_file(file_path: str) -> dict | None:
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             owner = await _owner(client, file_path)
-            if owner is None:
-                return None
-            kind, item_id = owner
-            id_param = "seriesid" if kind == "series" else "radarrid"
-            ok = True
+        if owner is None:
+            return None
+        kind, item_id = owner
+        id_param = "seriesid" if kind == "series" else "radarrid"
+        ok = True
+        # Bazarr answers once it has scanned the series — longer than 30 s
+        # for one with many seasons — so no read timeout (v0.10.0); this
+        # runs in the background (schedule_rescan).
+        async with httpx.AsyncClient(timeout=httpx.Timeout(None, connect=10)) as client:
             for action in _ACTIONS:
                 resp = await client.patch(f"{url}/api/{kind}", params={id_param: item_id, "action": action},
                                           headers={"X-API-KEY": api_key})
                 ok = ok and resp.status_code < 300
     except Exception as exc:
-        print(f"[BAZARR] Rescan failed for {file_path}: {exc}", flush=True)
-        return {"ok": False, "error": str(exc)}
+        error = describe_error(exc)
+        print(f"[BAZARR] Rescan failed for {file_path}: {error}", flush=True)
+        return {"ok": False, "error": error}
     print(f"[BAZARR] Rescan of {kind} {item_id} {'requested' if ok else 'failed'}", flush=True)
     return {"ok": ok, "kind": kind, "id": item_id}
 

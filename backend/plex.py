@@ -10,6 +10,7 @@ import aiosqlite
 import httpx
 
 from backend.database import DB_PATH
+from backend.error_text import describe_error
 
 
 async def _get_plex_settings() -> tuple[str, str, str]:
@@ -118,7 +119,7 @@ async def trigger_plex_scan(file_path: str) -> str | None:
     try:
         libraries = await get_plex_libraries(url, token)
     except Exception as exc:
-        print(f"[PLEX] Failed to fetch libraries: {exc}", flush=True)
+        print(f"[PLEX] Failed to fetch libraries: {describe_error(exc)}", flush=True)
         return None
 
     match = find_section_for_path(file_path, libraries)
@@ -140,7 +141,7 @@ async def trigger_plex_scan(file_path: str) -> str | None:
         print(f"[PLEX] Triggered scan for section {section_id}, folder: {folder_path}", flush=True)
         return section_id
     except Exception as exc:
-        print(f"[PLEX] Scan trigger failed: {exc}", flush=True)
+        print(f"[PLEX] Scan trigger failed: {describe_error(exc)}", flush=True)
         return None
 
 
@@ -157,7 +158,7 @@ async def refresh_plex_sections_for_files(file_paths: list[str]) -> int:
     try:
         libraries = await get_plex_libraries(url, token)
     except Exception as exc:
-        print(f"[PLEX] Failed to fetch libraries: {exc}", flush=True)
+        print(f"[PLEX] Failed to fetch libraries: {describe_error(exc)}", flush=True)
         return 0
     sections: set[str] = set()
     for fp in file_paths:
@@ -176,7 +177,7 @@ async def refresh_plex_sections_for_files(file_paths: list[str]) -> int:
             print(f"[PLEX] Triggered full refresh for section {section_id}", flush=True)
             refreshed += 1
         except Exception as exc:
-            print(f"[PLEX] Section refresh failed for {section_id}: {exc}", flush=True)
+            print(f"[PLEX] Section refresh failed for {section_id}: {describe_error(exc)}", flush=True)
     return refreshed
 
 
@@ -213,7 +214,7 @@ async def empty_plex_trash(section_id: str, *, delay_seconds: int = 0) -> bool:
         print(f"[PLEX] Emptied trash for section {section_id}", flush=True)
         return True
     except Exception as exc:
-        print(f"[PLEX] Empty trash failed for section {section_id}: {exc}", flush=True)
+        print(f"[PLEX] Empty trash failed for section {section_id}: {describe_error(exc)}", flush=True)
         return False
 
 
@@ -290,7 +291,7 @@ async def _extract_folder_paths(
                             items_found += 1
                             break
             except Exception as exc:
-                print(f"[PLEX]   Failed to fetch metadata for {rk}: {exc}", flush=True)
+                print(f"[PLEX]   Failed to fetch metadata for {rk}: {describe_error(exc)}", flush=True)
 
     return folders
 
@@ -312,7 +313,7 @@ async def get_folders_by_label(label: str) -> list[str]:
     try:
         libraries = await get_plex_libraries(url, token)
     except Exception as exc:
-        print(f"[PLEX] Failed to fetch libraries for label '{label}': {exc}", flush=True)
+        print(f"[PLEX] Failed to fetch libraries for label '{label}': {describe_error(exc)}", flush=True)
         return []
 
     folders: list[str] = []
@@ -330,7 +331,7 @@ async def get_folders_by_label(label: str) -> list[str]:
                 )
                 resp.raise_for_status()
             except Exception as exc:
-                print(f"[PLEX] Failed to query label '{label}' in {lib['title']}: {exc}", flush=True)
+                print(f"[PLEX] Failed to query label '{label}' in {lib['title']}: {describe_error(exc)}", flush=True)
                 continue
             root = ET.fromstring(resp.text)
             folders.extend(await _extract_folder_paths(client, url, token, path_mapping, lib, root, f"label={label}"))
@@ -363,7 +364,7 @@ async def get_folders_by_collection(collection_name: str) -> list[str]:
     try:
         libraries = await get_plex_libraries(url, token)
     except Exception as exc:
-        print(f"[PLEX] Failed to fetch libraries for collection '{collection_name}': {exc}", flush=True)
+        print(f"[PLEX] Failed to fetch libraries for collection '{collection_name}': {describe_error(exc)}", flush=True)
         return []
 
     folders: list[str] = []
@@ -381,7 +382,7 @@ async def get_folders_by_collection(collection_name: str) -> list[str]:
                 )
                 resp.raise_for_status()
             except Exception as exc:
-                print(f"[PLEX] Failed to query collection '{collection_name}' in {lib['title']}: {exc}", flush=True)
+                print(f"[PLEX] Failed to query collection '{collection_name}' in {lib['title']}: {describe_error(exc)}", flush=True)
                 continue
             root = ET.fromstring(resp.text)
             folders.extend(await _extract_folder_paths(client, url, token, path_mapping, lib, root, f"collection={collection_name}"))
@@ -398,7 +399,7 @@ async def get_folders_by_genre(genre_name: str) -> list[str]:
     try:
         libraries = await get_plex_libraries(url, token)
     except Exception as exc:
-        print(f"[PLEX] Failed to fetch libraries for genre '{genre_name}': {exc}", flush=True)
+        print(f"[PLEX] Failed to fetch libraries for genre '{genre_name}': {describe_error(exc)}", flush=True)
         return []
 
     folders: list[str] = []
@@ -416,7 +417,7 @@ async def get_folders_by_genre(genre_name: str) -> list[str]:
                 )
                 resp.raise_for_status()
             except Exception as exc:
-                print(f"[PLEX] Failed to query genre '{genre_name}' in {lib['title']}: {exc}", flush=True)
+                print(f"[PLEX] Failed to query genre '{genre_name}' in {lib['title']}: {describe_error(exc)}", flush=True)
                 continue
             root = ET.fromstring(resp.text)
             folders.extend(await _extract_folder_paths(client, url, token, path_mapping, lib, root, f"genre={genre_name}"))
@@ -560,7 +561,7 @@ async def sync_watch_activity() -> None:
         if count:
             print(f"[PLEX SYNC] Last watched: {count} titles", flush=True)
     except Exception as exc:
-        print(f"[PLEX SYNC] Last-watched sync failed: {exc}", flush=True)
+        print(f"[PLEX SYNC] Last-watched sync failed: {describe_error(exc)}", flush=True)
 
 
 async def get_available_plex_options() -> dict:
@@ -696,7 +697,7 @@ async def sync_plex_metadata_cache() -> dict:
     try:
         needed_labels |= set((await get_available_plex_options()).get("labels") or [])
     except Exception as exc:
-        print(f"[PLEX] Failed to list the labels: {exc}", flush=True)
+        print(f"[PLEX] Failed to list the labels: {describe_error(exc)}", flush=True)
 
     # Step 2: Fetch all data from Plex APIs (no DB held)
     now = datetime.now(timezone.utc).isoformat()
@@ -734,7 +735,7 @@ async def sync_plex_metadata_cache() -> dict:
                         cache_rows.append((container_path.rstrip("/") + "/", "library", lib["title"], now))
                         libraries_count += 1
         except Exception as exc:
-            print(f"[PLEX] Failed to sync library paths: {exc}", flush=True)
+            print(f"[PLEX] Failed to sync library paths: {describe_error(exc)}", flush=True)
 
     # Fetch watch status (can be slow — separate from DB)
     watch_count = 0
@@ -747,7 +748,7 @@ async def sync_plex_metadata_cache() -> dict:
             cache_rows.append((folder.rstrip("/") + "/", "watch_status", "unwatched", now))
             watch_count += 1
     except Exception as exc:
-        print(f"[PLEX SYNC] Watch status sync failed: {exc}", flush=True)
+        print(f"[PLEX SYNC] Watch status sync failed: {describe_error(exc)}", flush=True)
 
     # Step 3: Write all collected data to DB in one short transaction
     db = await connect_db()
@@ -824,7 +825,7 @@ async def get_active_streams() -> dict:
         total = len(sessions)
         return {"total": total, "transcoding": transcoding, "direct": direct, "sessions": sessions}
     except Exception as exc:
-        print(f"[PLEX] Failed to check sessions: {exc}", flush=True)
+        print(f"[PLEX] Failed to check sessions: {describe_error(exc)}", flush=True)
         return {"total": 0, "transcoding": 0, "direct": 0, "sessions": []}
 
 

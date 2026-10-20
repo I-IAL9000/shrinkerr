@@ -200,3 +200,32 @@ async def test_a_workers_job_tells_sonarr_and_bazarr(test_db, monkeypatch):
     for _ in range(3):
         await asyncio.sleep(0)
     assert told == [("arr", "/media/TV/Show/e1 x265.mkv"), ("bazarr", "/media/TV/Show/e1 x265.mkv")]
+
+
+@pytest.mark.asyncio
+async def test_a_long_scan_is_waited_for_and_an_error_named(test_db, monkeypatch, capsys):
+    """48 Hours (37 seasons): Bazarr answers a scan once it has scanned the
+    series, past the 30 s Shrinkerr waited — "[BAZARR] Rescan failed for …:"
+    and nothing after it, a timeout's message being empty (v0.10.0)."""
+    monkeypatch.setattr(arr, "_sonarr_cache", {})
+    monkeypatch.setattr(arr, "_refreshing", {})
+    timeouts = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "sonarr":
+            return httpx.Response(200, json=[{"id": 7, "path": "/tv/Show"}])
+        raise httpx.ReadTimeout("", request=request)
+    real = httpx.AsyncClient
+
+    def client(**kw):
+        timeouts.append(kw.get("timeout"))
+        return real(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(httpx, "AsyncClient", client)
+    await _set(test_db, sonarr_url="http://sonarr", sonarr_api_key="s", sonarr_path_mapping="/m/TV=/tv",
+               bazarr_url="http://bazarr:6767", bazarr_api_key="bz")
+
+    result = await bazarr.rescan_for_file("/m/TV/Show/Season 37/Show - S37E18.mkv")
+
+    assert result == {"ok": False, "error": "ReadTimeout"}
+    assert "Rescan failed for /m/TV/Show/Season 37/Show - S37E18.mkv: ReadTimeout" in capsys.readouterr().out
+    assert any(isinstance(t, httpx.Timeout) and t.read is None for t in timeouts)  # Bazarr's scan is waited for

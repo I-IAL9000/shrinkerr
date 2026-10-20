@@ -8,6 +8,7 @@ import aiosqlite
 import httpx
 
 from backend.database import DB_PATH
+from backend.error_text import describe_error
 
 
 # ── Settings ──
@@ -189,7 +190,7 @@ async def trigger_emby_scan(file_path: str) -> bool:
             print(f"[EMBY] Library refresh triggered (status {resp.status_code})", flush=True)
             return resp.status_code in (200, 204)
     except Exception as exc:
-        print(f"[EMBY] Library refresh failed: {exc}", flush=True)
+        print(f"[EMBY] Library refresh failed: {describe_error(exc)}", flush=True)
         return False
 
 
@@ -255,7 +256,7 @@ async def get_watch_status_folders() -> dict:
                             unwatched_paths.append(folder)
 
     except Exception as exc:
-        print(f"[EMBY] Watch status fetch failed: {exc}", flush=True)
+        print(f"[EMBY] Watch status fetch failed: {describe_error(exc)}", flush=True)
 
     return {"watched": watched_paths, "unwatched": unwatched_paths}
 
@@ -300,7 +301,7 @@ async def sync_watch_activity() -> None:
         if count:
             print(f"[EMBY] Last watched: {count} folders", flush=True)
     except Exception as exc:
-        print(f"[EMBY] Last-watched sync failed: {exc}", flush=True)
+        print(f"[EMBY] Last-watched sync failed: {describe_error(exc)}", flush=True)
 
 
 # ── Metadata (Labels/Collections/Genres) ──
@@ -340,7 +341,7 @@ async def get_available_emby_options() -> dict:
                     tags.add(item.get("Name", ""))
 
     except Exception as exc:
-        print(f"[EMBY] Options fetch failed: {exc}", flush=True)
+        print(f"[EMBY] Options fetch failed: {describe_error(exc)}", flush=True)
 
     return {
         "genres": sorted(g for g in genres if g),
@@ -413,7 +414,7 @@ async def _get_folders_by_filter(filter_type: str, filter_value: str) -> list:
                         if folder not in folders:
                             folders.append(folder)
     except Exception as exc:
-        print(f"[EMBY] Filter fetch ({filter_type}={filter_value}) failed: {exc}", flush=True)
+        print(f"[EMBY] Filter fetch ({filter_type}={filter_value}) failed: {describe_error(exc)}", flush=True)
 
     return folders
 
@@ -583,5 +584,5 @@ async def get_active_streams() -> dict:
                 "sessions": active,
             }
     except Exception as exc:
-        print(f"[EMBY] Stream check failed: {exc}", flush=True)
+        print(f"[EMBY] Stream check failed: {describe_error(exc)}", flush=True)
         return {"total": 0, "transcoding": 0, "direct": 0, "sessions": []}

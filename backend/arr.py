@@ -9,6 +9,7 @@ from pathlib import Path
 import httpx
 
 from backend.database import connect_db
+from backend.error_text import describe_error
 
 # Deduplication cache: path -> timestamp of last rescan trigger
 _recent_rescans: dict[str, float] = {}
@@ -271,14 +272,6 @@ _tag_cache: dict = {}  # {"sonarr"|"radarr": {data: {id: label}, fetched_at: flo
 
 # Lists being fetched in the background, by service (v0.10.0).
 _refreshing: dict[str, asyncio.Task] = {}
-
-
-def describe_error(exc: BaseException) -> str:
-    """An error for a log line: its type, and its message when it has one —
-    a timeout's is empty, which left "Couldn't read radarr tags for rules:"
-    (v0.10.0)."""
-    text = str(exc).strip()
-    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
 
 
 async def _arr_items(client: httpx.AsyncClient, service: str, url: str, api_key: str,
@@ -649,7 +642,7 @@ async def research_sonarr_file(file_path: str, delete_file: bool = True, dry_run
                             break
                 except Exception as exc:
                     blocklist_error = str(exc)
-                    print(f"[SONARR-RESEARCH] Blocklist step failed: {exc}", flush=True)
+                    print(f"[SONARR-RESEARCH] Blocklist step failed: {describe_error(exc)}", flush=True)
 
             if dry_run:
                 return {
@@ -691,7 +684,7 @@ async def research_sonarr_file(file_path: str, delete_file: bool = True, dry_run
                         blocklist_error = f"HTTP {resp2.status_code}: {resp2.text[:200]}"
                 except Exception as exc:
                     blocklist_error = str(exc)
-                    print(f"[SONARR-RESEARCH] Blocklist step failed: {exc}", flush=True)
+                    print(f"[SONARR-RESEARCH] Blocklist step failed: {describe_error(exc)}", flush=True)
 
             # 6. Trigger a fresh search. markAsFailed usually does this implicitly,
             #    but call it explicitly to be safe across versions.
@@ -717,7 +710,7 @@ async def research_sonarr_file(file_path: str, delete_file: bool = True, dry_run
                 "searched": searched,
             }
     except Exception as exc:
-        print(f"[SONARR-RESEARCH] Failed: {exc}", flush=True)
+        print(f"[SONARR-RESEARCH] Failed: {describe_error(exc)}", flush=True)
         return {"success": False, "error": str(exc)}
 
 
@@ -775,7 +768,7 @@ async def research_radarr_file(file_path: str, delete_file: bool = True, dry_run
                         release = grab_rec.get("sourceTitle") or ""
             except Exception as exc:
                 blocklist_error = str(exc)
-                print(f"[RADARR-RESEARCH] Blocklist step failed: {exc}", flush=True)
+                print(f"[RADARR-RESEARCH] Blocklist step failed: {describe_error(exc)}", flush=True)
 
             if dry_run:
                 return {
@@ -812,7 +805,7 @@ async def research_radarr_file(file_path: str, delete_file: bool = True, dry_run
                         blocklist_error = f"HTTP {resp2.status_code}: {resp2.text[:200]}"
                 except Exception as exc:
                     blocklist_error = str(exc)
-                    print(f"[RADARR-RESEARCH] Blocklist step failed: {exc}", flush=True)
+                    print(f"[RADARR-RESEARCH] Blocklist step failed: {describe_error(exc)}", flush=True)
 
             # 5. Trigger search
             resp = await client.post(
@@ -835,7 +828,7 @@ async def research_radarr_file(file_path: str, delete_file: bool = True, dry_run
                 "searched": searched,
             }
     except Exception as exc:
-        print(f"[RADARR-RESEARCH] Failed: {exc}", flush=True)
+        print(f"[RADARR-RESEARCH] Failed: {describe_error(exc)}", flush=True)
         return {"success": False, "error": str(exc)}
 
 
@@ -944,7 +937,7 @@ async def upgrade_sonarr_file(file_path: str) -> dict:
                 "series": series.get("title"), "episode_ids": episode_ids,
             }
     except Exception as exc:
-        print(f"[SONARR-UPGRADE] Failed: {exc}", flush=True)
+        print(f"[SONARR-UPGRADE] Failed: {describe_error(exc)}", flush=True)
         return {"success": False, "error": str(exc)}
 
 
@@ -980,7 +973,7 @@ async def upgrade_radarr_file(file_path: str) -> dict:
                 "movie": movie.get("title"), "movie_id": movie_id,
             }
     except Exception as exc:
-        print(f"[RADARR-UPGRADE] Failed: {exc}", flush=True)
+        print(f"[RADARR-UPGRADE] Failed: {describe_error(exc)}", flush=True)
         return {"success": False, "error": str(exc)}
 
 
@@ -1146,7 +1139,7 @@ async def search_missing_episodes(file_paths: list[str]) -> dict:
                 "details": details,
             }
     except Exception as exc:
-        print(f"[SONARR-MISSING] Failed: {exc}", flush=True)
+        print(f"[SONARR-MISSING] Failed: {describe_error(exc)}", flush=True)
         return {"success": False, "error": str(exc)}
 
 
