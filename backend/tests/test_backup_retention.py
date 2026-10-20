@@ -116,10 +116,18 @@ async def test_expiry_runs_hourly_in_the_background(monkeypatch):
         runs.append(1)
         if len(runs) == 1:
             raise OSError("share not mounted")
+    async def nothing_held():
+        return 0
     monkeypatch.setattr(queue_mod, "_cleanup_expired_backups", sweep)
+    # Not the real one: it opened a database connection (whichever database an
+    # earlier test left), and cancelled while opening it, the connection was
+    # never closed — the test run then couldn't exit.
+    monkeypatch.setattr(queue_mod, "expire_held_larger", nothing_held)
     task = asyncio.create_task(queue_mod.backup_expiry_loop(first_delay=0, every=0.01))
     await asyncio.sleep(0.1)
     task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
     assert len(runs) >= 3
 
 
