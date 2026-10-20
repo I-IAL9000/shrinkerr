@@ -1962,6 +1962,9 @@ class EstimateRequest(BaseModel):
     nvenc_cq_override: int | None = None
     libx265_crf_override: int | None = None
     force_reencode: bool = False
+    # v0.10.0: Add to Queue's Cleanup only — no file is converted (the
+    # estimate showed the conversion's savings beside a clean-up summary)
+    cleanup_only: bool = False
     # v0.10.0: Fix for direct play, as BulkQueueFromScanRequest has it
     direct_play: bool = False
     direct_play_fixes: Optional[list[str]] = None
@@ -2255,6 +2258,8 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             needs_conv = bool(row["needs_conversion"]) or bool(row.get("disc_type")) or force
             if skip_conv and not force:
                 needs_conv = False
+            if payload.cleanup_only:  # as add-from-scan (_classify_job_type)
+                needs_conv = False
 
             if needs_conv and has_work:
                 jt = "combined"
@@ -2262,7 +2267,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                 jt = "convert"
             elif has_work:
                 jt = "audio"
-            elif skip_conv and not fixes:
+            elif (skip_conv or payload.cleanup_only) and not fixes:
                 continue
             else:
                 jt = "audio"

@@ -184,3 +184,14 @@ async def test_the_dialog_knows_whether_srt_copies_replace_image_subtitles(env):
         await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('image_subs_keep_original', 'false')")
         await db.commit()
     assert (await estimate_jobs(req))["image_subs_keep_original"] is False
+
+
+@pytest.mark.asyncio
+async def test_cleanup_only_estimates_no_conversion(env):
+    """Add to Queue's Cleanup only changed the summary, not the estimate:
+    ~193 MB saved and "conversions 1" for a clean-up (v0.10.0)."""
+    from backend.routes.jobs import EstimateRequest, estimate_jobs
+    paths = ["/m/Film (2020)/film.mkv"]
+    assert (await estimate_jobs(EstimateRequest(file_paths=paths)))["estimated_savings"] > 0
+    cleanup = await estimate_jobs(EstimateRequest(file_paths=paths, cleanup_only=True))
+    assert cleanup["estimated_savings"] == 0 and not cleanup["by_type"].get("convert")

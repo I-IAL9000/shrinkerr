@@ -72,3 +72,26 @@ async def test_start_up_fetches_them_only_for_a_rule_that_needs_them(test_db, so
     await _rule(test_db, "arr_tag", "keep-original")
     await arr.warm_rule_tags()
     assert fetches == ["sonarr"]
+
+
+@pytest.mark.asyncio
+async def test_the_first_list_is_fetched_once_for_everyone(sonarr):
+    """Start-up's warm-up and an estimate opened meanwhile each fetched the
+    whole library with a 10 s limit; a large Radarr ran past it ("Couldn't
+    read radarr tags for rules:" — a timeout says nothing). One fetch, with
+    the background refresh's limit, everyone waiting for it."""
+    arr, listed, fetches = sonarr
+    first = asyncio.create_task(arr.arr_tags_for_paths([FILE]))
+    second = asyncio.create_task(arr.arr_tags_for_paths([FILE]))
+    await asyncio.sleep(0.05)
+    assert fetches == ["sonarr"]
+    listed.set()
+    assert await first == await second == {FILE: {"new-tag"}} and fetches == ["sonarr"]
+
+
+def test_an_error_says_what_it_was():
+    import httpx
+
+    from backend.arr import describe_error
+    assert describe_error(httpx.ReadTimeout("")) == "ReadTimeout"
+    assert describe_error(ValueError("bad JSON")) == "ValueError: bad JSON"

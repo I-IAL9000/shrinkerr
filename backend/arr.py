@@ -273,6 +273,14 @@ _tag_cache: dict = {}  # {"sonarr"|"radarr": {data: {id: label}, fetched_at: flo
 _refreshing: dict[str, asyncio.Task] = {}
 
 
+def describe_error(exc: BaseException) -> str:
+    """An error for a log line: its type, and its message when it has one —
+    a timeout's is empty, which left "Couldn't read radarr tags for rules:"
+    (v0.10.0)."""
+    text = str(exc).strip()
+    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
+
 async def _arr_items(client: httpx.AsyncClient, service: str, url: str, api_key: str,
                      stale_ok: bool = False) -> list[dict]:
     """All series (Sonarr) or movies (Radarr), through the shared list cache.
@@ -286,6 +294,17 @@ async def _arr_items(client: httpx.AsyncClient, service: str, url: str, api_key:
         if service not in _refreshing:
             _refreshing[service] = asyncio.create_task(_refresh_items(service, url, api_key))
         return cache["data"]
+    if not cache.get("data"):
+        # The first list: one fetch with the background refresh's limit,
+        # everyone waiting for it — start-up's warm-up and an estimate opened
+        # meanwhile each listed the whole library with a 10 s limit, which a
+        # large Radarr ran past (v0.10.0).
+        if service not in _refreshing:
+            _refreshing[service] = asyncio.create_task(_refresh_items(service, url, api_key))
+        await asyncio.shield(_refreshing[service])
+        if cache.get("data"):
+            return cache["data"]
+        raise RuntimeError(f"couldn't list the {service} library")
     return await _fetch_items(client, service, url, api_key)
 
 
@@ -303,7 +322,7 @@ async def _refresh_items(service: str, url: str, api_key: str) -> None:
         async with httpx.AsyncClient(timeout=60) as client:
             await _fetch_items(client, service, url, api_key)
     except Exception as exc:
-        print(f"[ARR] Couldn't refresh the {service} list: {exc}", flush=True)
+        print(f"[ARR] Couldn't refresh the {service} list: {describe_error(exc)}", flush=True)
     finally:
         _refreshing.pop(service, None)
 
@@ -338,7 +357,7 @@ async def arr_tags_for_paths(file_paths: list[str]) -> dict[str, set[str]]:
                 labels = await _arr_tag_labels(client, service, url, api_key)
                 items = await _arr_items(client, service, url, api_key, stale_ok=True)
         except Exception as exc:
-            print(f"[ARR] Couldn't read {service} tags for rules: {exc}", flush=True)
+            print(f"[ARR] Couldn't read {service} tags for rules: {describe_error(exc)}", flush=True)
             continue
         by_folder = {str(it.get("path", "")).rstrip("/"): it for it in items if it.get("path")}
         for fp in file_paths:
@@ -1265,7 +1284,7 @@ async def sync_arr_file_status() -> dict:
             async with httpx.AsyncClient(timeout=httpx.Timeout(10, read=120)) as client:
                 files = await fetch(client, url, api_key)
         except Exception as exc:
-            print(f"[ARR] Couldn't read cutoff / monitoring from {service}: {exc}", flush=True)
+            print(f"[ARR] Couldn't read cutoff / monitoring from {service}: {describe_error(exc)}", flush=True)
             continue
         mapping = settings.get(f"{service}_path_mapping", "")
         now = datetime.now(timezone.utc).isoformat()
