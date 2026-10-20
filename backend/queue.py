@@ -3910,7 +3910,10 @@ class QueueWorker:
 
         # Mark file as ignored if no space was saved (so future scans tag it)
         # Store both original and current path (file may have been renamed x264→x265)
-        if space_saved <= 0:
+        # A conversion's: a clean-up that grew the file — a sidecar subtitle
+        # merged in, an SRT copy, a stereo track — was asked to add it, and
+        # ignoring the file meant it was never converted (v0.10.0).
+        if space_saved <= 0 and job_type in ("convert", "combined"):
             try:
                 db = await self._db()
                 try:

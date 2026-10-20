@@ -315,13 +315,14 @@ async def remux_audio(
             ocr_subs = await read_into_srt(input_path, plan, ocr_dir)
             print(f"[REMUX] {len(ocr_subs)} of {len(plan)} image subtitle(s) read into SRT", flush=True)
             if ocr_subs and not keep_image_subs:
-                replaced = {s["stream_index"] for s in ocr_subs}
+                replaced = {s["stream_index"] for s in ocr_subs if s.get("stream_index") is not None}
                 every = keep_subtitle_indices if keep_subtitle_indices is not None else [t["stream_index"] for t in tracks]
                 keep_subtitle_indices = [i for i in every if i not in replaced]
     try:
         return await _remux_audio(input_path, keep_audio_indices, duration, progress_callback,
                                   keep_subtitle_indices, audio_languages, proc_callback, on_output_placed,
-                                  ocr_subs=ocr_subs, compat_track=compat_track, originals=originals)
+                                  ocr_subs=ocr_subs, compat_track=compat_track, originals=originals,
+                                  drop_replaced=bool(ocr_subs) and not keep_image_subs)
     finally:
         if ocr_dir:
             shutil.rmtree(ocr_dir, ignore_errors=True)
@@ -337,6 +338,7 @@ async def _remux_audio(
     proc_callback: Optional[Callable] = None,
     on_output_placed: Optional[Callable] = None,
     ocr_subs: list[dict] | None = None,
+    drop_replaced: bool = False,
     compat_track: dict | None = None,
     originals: dict | None = None,
 ) -> dict:
@@ -402,6 +404,9 @@ async def _remux_audio(
     # subtitles" is on — only conversions merged them (v0.10.0).
     from backend.converter import delete_merged_external_subs, external_subs_to_merge
     ext_subs = await external_subs_to_merge(input_path)
+    if drop_replaced:  # a sidecar image subtitle read into SRT, not merged beside it (v0.10.0)
+        from backend.image_sub_ocr import without_replaced
+        ext_subs = without_replaced(ext_subs, ocr_subs or []) or None
 
     cmd = build_remux_cmd(
         input_path, temp_path, keep_audio_indices,

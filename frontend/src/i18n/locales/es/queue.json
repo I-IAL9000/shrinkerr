@@ -163,6 +163,7 @@
       "encoded": "Codificado",
       "size": "Tamaño",
       "largerDiscarded": "({{pct}}% más grande — descartado)",
+      "largerKept": "({{pct}}% más grande: lo que añadió la limpieza, como subtítulos fusionados)",
       "savedPct": "({{pct}}% ahorrado)",
       "bitrate": "Tasa de bits",
       "codec": "Códec",

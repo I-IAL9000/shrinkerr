@@ -143,6 +143,7 @@
       "encoded": "Encoded",
       "size": "Size",
       "largerDiscarded": "({{pct}}% larger — discarded)",
+      "largerKept": "({{pct}}% larger: what the clean-up added, such as merged subtitles)",
       "savedPct": "({{pct}}% saved)",
       "bitrate": "Bitrate",
       "codec": "Codec",

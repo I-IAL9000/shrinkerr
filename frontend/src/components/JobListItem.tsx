@@ -229,7 +229,9 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
                   style={{ fontSize: 11, color: "var(--text-secondary)", background: "var(--bg-tertiary)", padding: "1px 6px", borderRadius: 3 }}>
                   {t("queue:item.videoKept")}
                 </span>
-              ) : job.space_saved <= 0 ? (
+              ) : job.space_saved <= 0 && job.job_type !== "audio" ? (
+                // A clean-up that grew the file added what it was asked to
+                // (a merged subtitle…); it's kept and not ignored (v0.10.0).
                 <span style={{ fontSize: 11, color: "var(--text-muted)", background: "var(--bg-tertiary)", padding: "1px 6px", borderRadius: 3 }}>{t("queue:item.ignored")}</span>
               ) : null}
             </>
@@ -384,7 +386,14 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
                       and the original was kept). Render in a warning
                       colour with an explicit "discarded" hint so the row
                       doesn't read like a successful saving. v0.3.55+. */}
-                  {logData.encoding_stats.ratio < 0 ? (
+                  {logData.encoding_stats.ratio < 0 && job.job_type === "audio" ? (
+                    <span style={{ color: "var(--text-secondary)" }}>
+                      {fmtBytes(logData.encoding_stats.output_size)}{" "}
+                      <span style={{ color: "var(--text-muted)" }}>
+                        {t("queue:item.stats.largerKept", { pct: Math.abs(logData.encoding_stats.ratio) })}
+                      </span>
+                    </span>
+                  ) : logData.encoding_stats.ratio < 0 ? (
                     <span style={{ color: "var(--caution)" }}>
                       {fmtBytes(logData.encoding_stats.output_size)}{" "}
                       <span style={{ color: "var(--text-muted)" }}>

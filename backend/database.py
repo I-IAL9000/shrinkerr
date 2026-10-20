@@ -1279,6 +1279,27 @@ async def init_db():
         except Exception as exc:
             print(f"[DB] v0.10.0 converted-savings backfill skipped: {exc}", flush=True)
 
+        # v0.10.0 backfill: a clean-up that grew the file (a sidecar subtitle
+        # merged in…) ignored it as "no savings", so it was never converted.
+        # Not when a conversion of it came out larger too. Once.
+        try:
+            flag = "_v0_10_0_unignore_cleanups"
+            async with db.execute("SELECT 1 FROM settings WHERE key = ?", (flag,)) as cur:
+                already_run = await cur.fetchone() is not None
+            if not already_run:
+                cur = await db.execute(
+                    "DELETE FROM ignored_files WHERE reason = 'no_savings' "
+                    "AND EXISTS (SELECT 1 FROM jobs j WHERE j.file_path = ignored_files.file_path "
+                    "AND j.status = 'completed' AND j.job_type = 'audio' AND j.space_saved <= 0) "
+                    "AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.file_path = ignored_files.file_path "
+                    "AND j.status = 'completed' AND j.job_type IN ('convert', 'combined') AND j.space_saved <= 0)")
+                await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", (flag,))
+                if cur.rowcount:
+                    print(f"[DB] v0.10.0 backfill: {cur.rowcount} file(s) no longer ignored — a clean-up "
+                          "that added to them had ignored them", flush=True)
+        except Exception as exc:
+            print(f"[DB] v0.10.0 clean-up ignore backfill skipped: {exc}", flush=True)
+
         # Duplicates as they're told apart now (v0.10.0, SC-16: by season and
         # episode; extras and parts aren't copies), at every start-up: a
         # folder's counts were redone only when a scan walked it, so files

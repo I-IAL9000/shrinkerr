@@ -783,7 +783,28 @@ def srt_plan(sub_tracks: list[dict], kept=None, merged: list[dict] | None = None
             continue
         plan.append({"stream_index": t.get("stream_index"), "codec": codec, "language": lang,
                      "forced": bool(t.get("forced")), "title": t.get("title") or "", "pack": pack})
+    # A sidecar image subtitle being merged (a VobSub stream) becomes one in
+    # the file too (v0.10.0: it got no SRT copy).
+    for es in merged or []:
+        codec = (es.get("codec") or "").lower()
+        lang = normalize_lang(es.get("language"))
+        if codec not in IMAGE_SUB_CODECS or (lang, bool(es.get("forced"))) in text:
+            continue
+        pack = ocr_pack(lang)
+        if not pack:
+            print(f"[IMG-OCR] No OCR language pack for {lang}: {os.path.basename(es['path'])} stays an image",
+                  flush=True)
+            continue
+        plan.append({"stream_index": None, "external_path": es["path"], "idx_stream": es.get("idx_stream"),
+                     "codec": codec, "language": lang, "forced": bool(es.get("forced")), "title": "", "pack": pack})
     return plan
+
+
+def without_replaced(merged: list[dict] | None, ocr_subs: list[dict]) -> list[dict]:
+    """The sidecar subtitles to merge, less the image ones read into SRT
+    tracks (when image subtitles aren't kept beside their SRT copy)."""
+    replaced = {(s["external_path"], s.get("idx_stream")) for s in ocr_subs if s.get("external_path")}
+    return [es for es in merged or [] if (es["path"], es.get("idx_stream")) not in replaced]
 
 
 def ocr_workdir(input_path: str) -> str:
@@ -820,8 +841,9 @@ async def image_subs_to_srt(input_path: str, plan: list[dict], workdir: str) -> 
     subtitles to merge: {path, codec, language, forced, title, stream_index}.
     A track that can't be read is left out. One extraction pass per kind:
     ffmpeg (mkvextract as the fallback) for PGS, mkvextract for VobSub."""
-    pgs = [(t, os.path.join(workdir, f"s{t['stream_index']}.sup")) for t in plan if t["codec"] in _PGS_CODECS]
-    vob = [(t, os.path.join(workdir, f"s{t['stream_index']}.idx")) for t in plan if t["codec"] in _VOBSUB_CODECS]
+    embedded = [t for t in plan if not t.get("external_path")]
+    pgs = [(t, os.path.join(workdir, f"s{t['stream_index']}.sup")) for t in embedded if t["codec"] in _PGS_CODECS]
+    vob = [(t, os.path.join(workdir, f"s{t['stream_index']}.idx")) for t in embedded if t["codec"] in _VOBSUB_CODECS]
     if pgs:
         cmd = ["ffmpeg", "-v", "error", "-y", "-i", input_path]
         for t, sup in pgs:
@@ -859,4 +881,28 @@ async def image_subs_to_srt(input_path: str, plan: list[dict], workdir: str) -> 
         out.append({"path": srt, "codec": "subrip", "language": t["language"], "forced": t["forced"],
                     "title": f"{t['title']} (OCR)" if t["title"] else OCR_TRACK_TITLE,
                     "stream_index": t["stream_index"]})
+
+    # Sidecar VobSub streams (v0.10.0): a copy of the pair in `workdir`, its
+    # own stream cut out, read where it is — nothing written beside the media.
+    for n, t in enumerate(t for t in plan if t.get("external_path")):
+        name = os.path.basename(t["external_path"])
+
+        def _copy(t=t, n=n) -> str | None:
+            idx = os.path.join(workdir, f"x{n}.idx")
+            try:
+                shutil.copyfile(t["external_path"], idx)
+                shutil.copyfile(os.path.splitext(t["external_path"])[0] + ".sub", idx[:-4] + ".sub")
+            except OSError:
+                return None
+            return _sample_idx(idx, None, t["idx_stream"]) if t.get("idx_stream") is not None else idx
+        idx = await asyncio.to_thread(_copy)
+        idx = idx or os.path.join(workdir, f"x{n}.idx")
+        srt = await loop.run_in_executor(None, _subtile_ocr_run, idx, t["pack"]) if os.path.exists(idx) else None
+        if not srt or not _srt_has_text(srt):
+            print(f"[IMG-OCR] OCR read no text from {name} ({t['language']})", flush=True)
+            continue
+        print(f"[IMG-OCR] {name} ({t['language']}, {t['pack']}) read into SRT", flush=True)
+        out.append({"path": srt, "codec": "subrip", "language": t["language"], "forced": t["forced"],
+                    "title": OCR_TRACK_TITLE, "stream_index": None,
+                    "external_path": t["external_path"], "idx_stream": t.get("idx_stream")})
     return out

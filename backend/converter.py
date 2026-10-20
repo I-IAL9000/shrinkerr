@@ -3779,7 +3779,10 @@ async def convert_file(
             ocr_subs = await _with_step(progress_callback, "Reading image subtitles (OCR)…",
                                         image_subs_to_srt(input_path, _ocr_plan, ocr_dir))
             if ocr_subs and not live_settings.get("image_subs_keep_original", True):
-                sub_remove_set |= {s["stream_index"] for s in ocr_subs}
+                from backend.image_sub_ocr import without_replaced
+                sub_remove_set |= {s["stream_index"] for s in ocr_subs if s.get("stream_index") is not None}
+                # A sidecar image subtitle read into SRT isn't merged beside it (v0.10.0).
+                external_sub_files = without_replaced(external_sub_files, ocr_subs) or None
             print(f"[CONVERT] {len(ocr_subs)} of {len(_ocr_plan)} image subtitle(s) read into SRT", flush=True)
 
     def _drop_ocr_dir() -> None:
