@@ -280,7 +280,7 @@
     "confirm": "Restore the original of {{name}}? The converted file is deleted.",
     "done": "Original restored; the converted file is deleted.",
     "blocked": {
-      "off": "Restoring needs the original, and originals aren't kept: choose “Kept for … days” to restore future conversions.",
+      "off": "Restoring needs the original, and originals aren't kept. In Settings → Automation → Originals & Backups, choose “Kept for … days”: conversions from then on can be restored.",
       "notKept": "This job's original wasn't kept: it was converted while originals weren't being kept.",
       "expired": "This job's original was deleted: originals are kept for {{days}} days."
     },
@@ -291,7 +291,7 @@
     "confirm": "Replace the original with the converted file? It's {{pct}}% larger. The original is kept for {{days}} days, so you can restore it.",
     "done": "Putting the larger file in place…",
     "blocked": {
-      "off": "Keeping a larger conversion needs originals kept: choose “Kept for … days” to keep the next ones.",
+      "off": "Keeping a larger conversion needs originals kept. In Settings → Automation → Originals & Backups, choose “Kept for … days”: larger conversions from then on can be kept.",
       "gone": "The larger file isn't kept: it was converted while originals weren't kept, or deleted after {{days}} days."
     }
   },

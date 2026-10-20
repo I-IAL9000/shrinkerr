@@ -313,7 +313,7 @@
     "confirm": "¿Restaurar el original de {{name}}? Se borra el archivo convertido.",
     "done": "Original restaurado; se borró el archivo convertido.",
     "blocked": {
-      "off": "Para restaurar hace falta el original, y no se conservan: elige «Se guarda durante… días» para poder restaurar las próximas conversiones.",
+      "off": "Para restaurar hace falta el original, y no se conservan. En Ajustes → Automatización → Originales y copias de seguridad, elige «Se guarda durante… días»: las conversiones a partir de entonces se podrán restaurar.",
       "notKept": "No se conservó el original de este trabajo: se convirtió cuando no se conservaban los originales.",
       "expired": "Se borró el original de este trabajo: los originales se conservan {{days}} días."
     },
@@ -324,7 +324,7 @@
     "confirm": "¿Reemplazar el original por el archivo convertido? Es un {{pct}} % más grande. El original se conserva {{days}} días, así que puedes restaurarlo.",
     "done": "Colocando el archivo más grande…",
     "blocked": {
-      "off": "Conservar una conversión más grande requiere conservar los originales: elige «Se guarda durante… días» para conservar las próximas.",
+      "off": "Conservar una conversión más grande requiere conservar los originales. En Ajustes → Automatización → Originales y copias de seguridad, elige «Se guarda durante… días»: las conversiones más grandes a partir de entonces se podrán conservar.",
       "gone": "El archivo más grande no se conserva: se convirtió cuando no se conservaban los originales, o se eliminó pasados {{days}} días."
     }
   },
