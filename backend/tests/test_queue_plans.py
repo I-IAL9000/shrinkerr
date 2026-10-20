@@ -177,3 +177,24 @@ async def test_add_to_queue_estimates_at_the_encoder_chosen(routes, test_db, mon
     assert est["estimated_savings"] == int(4 * GB * cq_to_savings_pct(36))
     est = await jobs_route.estimate_jobs(jobs_route.EstimateRequest(file_paths=["/m/a.mkv"]))
     assert est["estimated_savings"] == int(4 * GB * cq_to_savings_pct(23))  # the default: libx265 CRF 25
+
+
+@pytest.mark.asyncio
+async def test_a_jobs_plan_lists_its_direct_play_fixes(routes, test_db):
+    """A clean-up queued for SRT copies of image subtitles read "Remux" with
+    a plan of "only the tracks change" (v0.10.0): the plan lists the fixes
+    the job makes on its file, and whether the copies replace the images."""
+    jobs_route, _ = routes
+    pgs = {"stream_index": 3, "language": "eng", "codec": "hdmv_pgs_subtitle", "keep": True}
+    await _file(test_db, "/m/a.mkv", [tr(1, "jpn", True)], subs=[pgs])
+    chosen = await _job(test_db, "/m/a.mkv", "audio", direct_play="subs")
+    every = await _job(test_db, "/m/a.mkv", "audio", direct_play=1)  # the setting's: those the file has
+    none = await _job(test_db, "/m/a.mkv", "audio")
+    plan = await jobs_route.job_plan(chosen)
+    assert plan["direct_play"] == ["subs"] and plan["image_subs_keep_original"] is True
+    assert (await jobs_route.job_plan(every))["direct_play"] == ["subs"]
+    assert (await jobs_route.job_plan(none))["direct_play"] == []
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('image_subs_keep_original', 'false')")
+        await db.commit()
+    assert (await jobs_route.job_plan(chosen))["image_subs_keep_original"] is False

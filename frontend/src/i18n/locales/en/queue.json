@@ -116,7 +116,8 @@
       "audioSubCleanup": "Audio + Sub cleanup",
       "subCleanup": "Sub cleanup",
       "audioCleanup": "Audio cleanup",
-      "remux": "Remux"
+      "remux": "Remux",
+      "directPlay": "Direct play fix"
     },
     "healthWarnTitle": "Health check surfaced warnings (file is playable)",
     "noSavingsTitle": "No space savings — file was auto-ignored after conversion",
@@ -238,6 +239,12 @@
     "nativeFirst": "Moves the original-language audio ({{language}}) first, so it plays by default",
     "size": "{{before}} → about {{after}} (saves about {{saved}})",
     "sizeSame": "Stays about {{size}}",
+    "fix": {
+      "container": "Remuxes it to MKV",
+      "subs": "Adds SRT copies of its image subtitles",
+      "subsReplace": "Replaces its image subtitles with SRT copies",
+      "audio": "Adds a stereo compatibility track"
+    },
     "originalKeep_one": "The original is kept for {{count}} day, so you can undo",
     "originalKeep_other": "The original is kept for {{count}} days, so you can undo",
     "originalTrash": "The original goes to the trash",

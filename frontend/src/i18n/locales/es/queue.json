@@ -136,7 +136,8 @@
       "audioSubCleanup": "Limpieza de audio + subtítulos",
       "subCleanup": "Limpieza de subtítulos",
       "audioCleanup": "Limpieza de audio",
-      "remux": "Remux"
+      "remux": "Remux",
+      "directPlay": "Arreglo de reproducción directa"
     },
     "healthWarnTitle": "La comprobación de estado encontró advertencias (el archivo se puede reproducir)",
     "noSavingsTitle": "Sin ahorro de espacio: el archivo se ignoró automáticamente tras la conversión",
@@ -263,6 +264,12 @@
     "nativeFirst": "Pone primero el audio del idioma original ({{language}}), para que se reproduzca por defecto",
     "size": "{{before}} → unos {{after}} (ahorra unos {{saved}})",
     "sizeSame": "Se queda en unos {{size}}",
+    "fix": {
+      "container": "Lo remultiplexa a MKV",
+      "subs": "Añade copias SRT de sus subtítulos de imagen",
+      "subsReplace": "Sustituye sus subtítulos de imagen por copias SRT",
+      "audio": "Añade una pista estéreo de compatibilidad"
+    },
     "originalKeep_one": "El original se guarda {{count}} día, así que puedes deshacerlo",
     "originalKeep_many": "El original se guarda {{count}} días, así que puedes deshacerlo",
     "originalKeep_other": "El original se guarda {{count}} días, así que puedes deshacerlo",

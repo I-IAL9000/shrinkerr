@@ -102,6 +102,9 @@ export interface Job {
   encoder: string | null;
   audio_tracks_to_remove: number[];
   subtitle_tracks_to_remove: number[];
+  // Fix for direct play: 1 (every fix the file needs), or the chosen ones
+  // comma-separated; "" / null none (v0.10.0)
+  direct_play?: number | string | null;
   progress: number;
   fps: number | null;
   eta_seconds: number | null;

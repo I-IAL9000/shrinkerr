@@ -337,7 +337,7 @@ def _job_savings(job: dict, row: dict, audio: list[dict], quality: dict) -> int:
 
 
 _JOB_PLAN_COLS = ("id, file_path, job_type, encoder, nvenc_cq, libx265_crf, target_resolution, original_size, "
-                  "audio_tracks_to_remove, subtitle_tracks_to_remove")
+                  "audio_tracks_to_remove, subtitle_tracks_to_remove, direct_play")
 
 
 @router.get("/pending-summary")
@@ -412,11 +412,19 @@ async def job_plan(job_id: int):
         row = (await _scan_rows_for(db, [job["file_path"]])).get(job["file_path"])
         quality = await load_quality_settings(db)
         originals = await _originals_setting(db)
+        # The direct-play fixes it makes on its file (v0.10.0: a clean-up for
+        # SRT copies read "Remux", "only the tracks change").
+        from backend.direct_play import job_fixes, problems_for
+        fixes = sorted(job_fixes(job) & set((await problems_for(db, [job["file_path"]])).get(job["file_path"], [])))
+        async with db.execute("SELECT value FROM settings WHERE key = 'image_subs_keep_original'") as cur:
+            r = await cur.fetchone()
+        keep_image_subs = ((r[0] if r else None) or "true").lower() != "false"
     finally:
         await db.close()
     if row is None:
         return {"scan_id": None, "job_type": job["job_type"], "audio": [], "subtitles": [], "native_first": None,
-                "file_size": job.get("original_size") or 0, "estimated_savings": 0, "originals": originals}
+                "file_size": job.get("original_size") or 0, "estimated_savings": 0, "originals": originals,
+                "direct_play": fixes, "image_subs_keep_original": keep_image_subs}
     audio = json.loads(row["audio_tracks_json"] or "[]")
     subs = json.loads(row["subtitle_tracks_json"] or "[]")
     remove_a = set(json.loads(job["audio_tracks_to_remove"] or "[]"))
@@ -431,6 +439,7 @@ async def job_plan(job_id: int):
         "native_first": reorder,  # the original language's audio moved first
         "file_size": row["file_size"] or 0, "estimated_savings": _job_savings(job, row, audio, quality),
         "originals": originals,
+        "direct_play": fixes, "image_subs_keep_original": keep_image_subs,
     }
 
 

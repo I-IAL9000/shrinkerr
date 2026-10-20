@@ -944,6 +944,8 @@ export interface JobPlan {
   file_size: number;
   estimated_savings: number;
   originals: Originals;
+  direct_play?: string[];  // the direct-play fixes it makes on its file (v0.10.0)
+  image_subs_keep_original?: boolean;
 }
 export const getJobPlan = (id: number) => apiFetch<JobPlan>(`/jobs/${id}/plan`);
 export interface PendingSummary {

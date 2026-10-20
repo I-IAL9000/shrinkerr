@@ -76,6 +76,8 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
     : hasAudioRemoval && hasSubRemoval ? t("queue:item.type.audioSubCleanup")
     : hasSubRemoval ? t("queue:item.type.subCleanup")
     : hasAudioRemoval ? t("queue:item.type.audioCleanup")
+    // A clean-up for Fix for direct play (SRT copies, a stereo track…; v0.10.0).
+    : job.direct_play && String(job.direct_play) !== "0" ? t("queue:item.type.directPlay")
     // v0.9.38: an audio job with no track removal is a stream-copy remux
     // (e.g. apply a detected language to an AVI) — not a "cleanup".
     : t("queue:item.type.remux");

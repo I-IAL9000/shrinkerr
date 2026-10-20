@@ -75,6 +75,10 @@ export default function PendingJobPlan({ job, encodingDefaults, onChanged }: {
         : t("queue:plan.noVideo"),
     },
     ...(plan.native_first ? [{ text: t("queue:plan.nativeFirst", { language: trackLanguageName(plan.native_first) }) }] : []),
+    // Fix for direct play (v0.10.0): Hi10P's fix is the conversion above.
+    ...(plan.direct_play || []).filter(fix => fix !== "video").map(fix => ({
+      text: t(`queue:plan.fix.${fix === "subs" && plan.image_subs_keep_original === false ? "subsReplace" : fix}`),
+    })),
     {
       text: plan.estimated_savings > 0
         ? t("queue:plan.size", { before: fmtBytes(plan.file_size), after: fmtBytes(plan.file_size - plan.estimated_savings), saved: fmtBytes(plan.estimated_savings) })
