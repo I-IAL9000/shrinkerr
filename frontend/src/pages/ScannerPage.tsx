@@ -23,6 +23,7 @@ import ReplaceCorruptModal from "../components/ReplaceCorruptModal";
 import type { ScannedFile, ScanProgress, AudioTrack, SubtitleTrack } from "../types";
 import { encoderSettingsLabel } from "../utils/encoderLabel";
 import { selectAllExcept } from "../utils/selection";
+import { TRACKS_CHANGED } from "../components/FileDetail";
 import { useVisibleInterval } from "../useVisibleInterval";
 
 // Module-level cache for tree data
@@ -930,6 +931,9 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             : t("scanner:toasts.detectDone", { changed: p.changed, total: p.total }) + (p.failed ? t("scanner:toasts.detectFailedSuffix", { n: p.failed }) : "");
         toast(msg, (p.failed && !p.changed) ? "error" : "success");
         loadTree();
+        // Open file panels read their tracks again: the results and notes
+        // showed only after a reload (v0.10.0).
+        window.dispatchEvent(new Event(TRACKS_CHANGED));
         offerRemuxIfPending(p);
       }
       detectWasActiveRef.current = false;

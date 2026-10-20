@@ -15,6 +15,10 @@ import { fmtBytes } from "../fmt";
 import { useScannerItemActions } from "../scannerItemActions";
 import { useRequestReplacement } from "../useRequestReplacement";
 
+// Dispatched on window when files' tracks changed in bulk (a batch language
+// detection): open file panels read theirs again.
+export const TRACKS_CHANGED = "shrinkerr:tracks-changed";
+
 interface FileDetailProps {
   file: ScannedFile;
   // v0.9.156: called with the panel's whole, current track list — the one the
@@ -187,12 +191,16 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
     // v0.9.45: always refetch tracks from the DB (was skipped when the prop
     // already had tracks) so freshly-written fields — detect_note, a manual
     // language, detected_language — show without reloading the scanner list.
-    // Only show the spinner when we have nothing to render yet.
+    // Only show the spinner when we have nothing to render yet. Again when a
+    // batch language detection finishes (TRACKS_CHANGED, v0.10.0).
     if (!file.audio_tracks?.length) setLoading(true);
-    getTracksByPath(file.file_path).then((data) => {
+    const load = () => getTracksByPath(file.file_path).then((data) => {
       setFetchedAudio(data.audio_tracks || []);
       setFetchedSubs(data.subtitle_tracks || []);
     }).catch(() => {}).finally(() => setLoading(false));
+    load();
+    window.addEventListener(TRACKS_CHANGED, load);
+    return () => window.removeEventListener(TRACKS_CHANGED, load);
   }, [file.file_path]);
 
   useEffect(() => {
