@@ -92,6 +92,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Light mode is readable**, and the app works on phones, from the keyboard and with a screen reader.
 - Each encoded audio track gets its own bitrate (lossless audio converted to EAC3 640k came out at 96k next to a 96k track).
 - DVD (VobSub) subtitles are read on the standard image too, and non-Latin Blu-ray subtitles (Chinese, Japanese, Korean, Russian, Arabic) are recognised.
+- **Detect languages**: DVD (VobSub) subtitles, embedded or a `.idx` / `.sub` pair, are read from their first 20 minutes first, as Blu-ray ones are (every image in the film was OCR'd, twice when the first pass found nothing); an external subtitle that stays unknown says why, as embedded tracks do; and a title whose file already names its languages, while Shrinkerr still had them as unknown, is brought up to date instead of staying under Unknown language with no explanation.
 - Request replacement refuses when Radarr would delete a different file than the one you picked.
 - Advanced Search: "Matches regex" is a real regular expression, "Filename" searches the name only, and "audio codec is not X" means no track is X.
 - Advanced Search: a yes / no condition saved without a value (the form showed "Yes") means "Yes". An "HDR" view saved that way listed every file without HDR.

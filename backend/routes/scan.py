@@ -1264,10 +1264,15 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     # we re-persist (rebuilding subtitle_tracks_json from probe alone would
     # otherwise drop them).
     stored_external_subs: list[dict] = []
+    # v0.10.0: a row whose embedded tracks say und where the file names the
+    # language (tagged since by something else) is brought up to date — it
+    # found nothing und in the file, left the row, and the title stayed under
+    # Unknown language with no explanation.
+    stale_row = False
     _db0 = await connect_db()
     try:
         async with _db0.execute(
-            "SELECT subtitle_tracks_json FROM scan_results WHERE file_path = ?",
+            "SELECT audio_tracks_json, subtitle_tracks_json FROM scan_results WHERE file_path = ?",
             (req.file_path,),
         ) as cur:
             _row0 = await cur.fetchone()
@@ -1279,6 +1284,18 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                 ]
             except (ValueError, TypeError):
                 stored_external_subs = []
+        if _row0:
+            def _languages(tracks) -> dict:
+                return {t.get("stream_index"): (t.get("language") or "und").lower()
+                        for t in tracks if not t.get("external")}
+            try:
+                stored_langs = {**_languages(json.loads(_row0["audio_tracks_json"] or "[]")),
+                                **_languages(json.loads(_row0["subtitle_tracks_json"] or "[]"))}
+                file_langs = {**_languages(raw_audio), **_languages(raw_subs)}
+                stale_row = any(lang == "und" and file_langs.get(si, "und") != "und"
+                                for si, lang in stored_langs.items())
+            except (ValueError, TypeError):
+                pass
     finally:
         await _db0.close()
 
@@ -1317,8 +1334,9 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                 # v0.9.46: always record a reason so the UI never shows a bare
                 # und with no explanation.
                 detect_notes[("audio", t["stream_index"])] = _note or KeyedNote("could not identify audio language", "audioUnidentified")
-                print(f"[LANG-DETECT] audio s{t.get('stream_index')} codec={t.get('codec')} "
-                      f"title={t.get('title','')!r}: stayed und", flush=True)
+                print(f"[LANG-DETECT] {os.path.basename(req.file_path)} audio s{t.get('stream_index')} "
+                      f"codec={t.get('codec')} title={t.get('title','')!r}: stayed und ({detect_notes[('audio', t['stream_index'])]})",
+                      flush=True)
 
     # Subtitles: detect und text subs (fast, langdetect) and und image
     # subs (PGS/VobSub via OCR — v0.9.0, on-demand only, slower).
@@ -1385,13 +1403,17 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
             if (t.get("language") or "und").lower() == "und":
                 _sup = "text" if codec_l in _TEXT_SUB_CODECS else "image" if codec_l in _IMAGE_SUB_CODECS else "unsupported"
                 detect_notes[("sub", t["stream_index"])] = _sub_note or KeyedNote("could not identify subtitle language", "subUnidentified")
-                print(f"[LANG-DETECT] sub s{t.get('stream_index')} codec={codec_l} ({_sup}): stayed und", flush=True)
+                print(f"[LANG-DETECT] {os.path.basename(req.file_path)} sub s{t.get('stream_index')} codec={codec_l} "
+                      f"({_sup}): stayed und ({detect_notes[('sub', t['stream_index'])]})", flush=True)
 
     # External sidecar subs: read the file text (charset-aware), detect with
     # the same gated detector as embedded text subs, then rename the file to
     # embed the ISO-639-2 code so the language persists (the scanner and media
     # servers both read it from the filename). The DB language is updated even
     # if the rename fails (fail-open, same as embedded file writes).
+    # Why an external sub stayed und, by its path (they all have stream index
+    # -1): shown as for embedded tracks (v0.10.0 — they had no explanation).
+    external_notes: dict[str, KeyedNote] = {}
     for es in stored_external_subs:
         if (es.get("language") or "und").lower() != "und":
             continue
@@ -1400,6 +1422,7 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
             print(f"[LANG-DETECT] external sub missing on disk ({es_path}): stayed und", flush=True)
             continue
         codec_l = (es.get("codec") or "").lower()
+        _ext_note = None
         try:
             if codec_l in _IMAGE_SUB_CODECS:
                 # v0.9.11: external VobSub (.idx/.sub) is image data, not text —
@@ -1407,12 +1430,17 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                 from backend.image_sub_ocr import detect_external_vobsub_language
                 _ocr_lang, _c = await detect_external_vobsub_language(es_path)
                 new_lang = _ocr_lang or "und"
+                if new_lang == "und":
+                    _ext_note = KeyedNote("image subtitle OCR found no usable text", "ocrNoText")
             else:
                 from backend.scanner import _clean_srt_bytes
                 with open(es_path, "rb") as _fh:
                     _raw = _fh.read(200_000)
                 _text = _clean_srt_bytes(_raw)
                 new_lang = maybe_detect_subtitle_track_language("und", codec_l, _text)
+                if new_lang == "und":
+                    _ext_note = (KeyedNote("no text in subtitle", "subNoText") if not (_text and _text.strip())
+                                 else KeyedNote("subtitle text not confidently identified", "subNotConfident"))
         except Exception:
             new_lang = "und"
         if new_lang != "und":
@@ -1423,10 +1451,11 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                 external_renamed = True
             changed = True
         else:
+            external_notes[es_path] = _ext_note or KeyedNote("could not identify subtitle language", "subUnidentified")
             print(f"[LANG-DETECT] external sub codec={codec_l} "
-                  f"({os.path.basename(es_path)}): stayed und", flush=True)
+                  f"({os.path.basename(es_path)}): stayed und ({external_notes[es_path]})", flush=True)
 
-    if not changed and not detect_notes:
+    if not changed and not detect_notes and not external_notes and not stale_row:
         return {"status": "ok", "changed": False}
 
     # v0.9.26: write the detected tags into the FILE first, and only keep an
@@ -1476,7 +1505,7 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     # Nothing persisted or remembered — leave the row untouched so the title
     # stays in the Unknown-language filter and can be re-attempted.
     if not (any(audio_write) or any(sub_write) or external_renamed
-            or audio_detected or sub_detected or detect_notes):
+            or audio_detected or sub_detected or detect_notes or external_notes or stale_row):
         return {"status": "ok", "changed": False, "file_written": False}
 
     # Re-classify + persist in the STORED schema (mirror the v0.6.5 backfill).
@@ -1495,6 +1524,10 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     # they'd be dropped from subtitle_tracks_json.
     from backend.models import SubtitleTrack
     for es in stored_external_subs:
+        _ext_note = external_notes.get(es.get("external_path") or "")
+        if _ext_note is not None:
+            es["detect_note"], es["detect_note_key"] = str(_ext_note), _ext_note.key
+            es["detect_note_params"] = _ext_note.params or None
         try:
             subtitle_tracks.append(SubtitleTrack(**es))
         except Exception:
@@ -1564,7 +1597,7 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
         # why) persists but isn't a real language change — keep the batch
         # "updated" counter honest.
         "changed": bool(any(audio_write) or any(sub_write) or external_renamed
-                        or audio_detected or sub_detected),
+                        or audio_detected or sub_detected or stale_row),
         "file_written": file_written,
         "external_renamed": external_renamed,
         # v0.9.35: a language was detected but only remembered (untaggable

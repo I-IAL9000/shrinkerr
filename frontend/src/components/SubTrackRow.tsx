@@ -14,9 +14,10 @@ export default function SubTrackRow({ track, filePath, onToggle, isExternal, onS
 }) {
   const { t } = useTranslation(["fileDetail", "common"]);
   const [editing, setEditing] = useState(false);
-  const basename = isExternal && track.external_path
-    ? track.external_path.split("/").pop() || track.title
-    : null;
+  // A VobSub pair is one track, listed by its .idx; the .sub beside it holds
+  // the images (v0.10.0: only the .idx showed).
+  const name = isExternal && track.external_path ? track.external_path.split("/").pop() || track.title : null;
+  const basename = name && /\.idx$/i.test(name) ? `${name} + .sub` : name;
 
   // v0.5.16: lock branch removed (issue #11). Every track renders as an
   // editable checkbox so users can override always-keep defaults. See
