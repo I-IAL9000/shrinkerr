@@ -129,9 +129,11 @@ def build_remux_cmd(
         "ffmpeg", "-y", "-fflags", "+genpts", "-i", input_path,
     ]
     # Add external subtitle files as additional inputs
+    from backend.converter import external_sub_inputs
     ext_subs = external_subtitle_files or []
-    for es in ext_subs:
-        cmd += ["-i", es["path"]]
+    ext_paths, ext_maps = external_sub_inputs(ext_subs, optional=False)
+    for ext_path in ext_paths:
+        cmd += ["-i", ext_path]
 
     # v0.7.28: map ONLY the first real video stream, not all video
     # streams. `-map 0:v?` (the pre-v0.7.28 form) maps every video
@@ -181,9 +183,8 @@ def build_remux_cmd(
     # Map external subtitle inputs. v0.4.9+: copy SRT/ASS/SSA byte-wise
     # rather than re-encoding through the strict UTF-8 SRT encoder.
     # See converter.py for full rationale (mirror of the same fix).
-    for i, es in enumerate(ext_subs):
-        input_idx = i + 1
-        cmd += ["-map", f"{input_idx}:s"]
+    for es, ext_map in zip(ext_subs, ext_maps):
+        cmd += ["-map", ext_map]
         codec = (es.get("codec") or "subrip").lower()
         if codec in ("subrip", "srt", "ass", "ssa"):
             sub_codec_args += [f"-c:s:{out_sub_idx}", "copy"]

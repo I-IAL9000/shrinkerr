@@ -37,6 +37,7 @@ class SubtitleTrack(BaseModel):
     num_frames: Optional[int] = None
     external: bool = False       # True for sidecar .srt/.ass files (not embedded)
     external_path: str = ""      # Absolute path to the external subtitle file
+    idx_stream: Optional[int] = None  # v0.10.0: which stream of a VobSub .idx (one track per stream)
     detected_language: Optional[str] = None  # v0.9.35 (see AudioTrack)
     detect_note: Optional[str] = None         # v0.9.44 (see AudioTrack)
     detect_note_key: Optional[str] = None      # v0.9.132

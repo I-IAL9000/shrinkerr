@@ -1247,6 +1247,35 @@ def und_flag(*track_lists) -> int:
     return 0
 
 
+_IDX_ID_RE = re.compile(r"^\s*id:\s*([A-Za-z-]*)\s*,\s*index:\s*\d+", re.IGNORECASE)
+_idx_languages_cache: dict[str, tuple[float, list[str]]] = {}
+
+
+def vobsub_stream_languages(idx_path: str) -> list[str]:
+    """The languages a VobSub .idx names for its streams, in stream order —
+    "id: it, index: 0" → "ita", "--" → "und" — as players and ffmpeg read
+    them. [] when it names none or can't be read. Cached by modification
+    time: the watcher looks at sidecars every cycle (v0.10.0)."""
+    try:
+        mtime = os.stat(idx_path).st_mtime
+    except OSError:
+        return []
+    cached = _idx_languages_cache.get(idx_path)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    languages: list[str] = []
+    try:
+        with open(idx_path, encoding="latin-1") as fh:
+            for line in fh:
+                found = _IDX_ID_RE.match(line)
+                if found:
+                    languages.append(normalize_lang(found.group(1)))
+    except OSError:
+        return []
+    _idx_languages_cache[idx_path] = (mtime, languages)
+    return languages
+
+
 def merge_external_subs(
     stored_subs: list[dict], native_language: str, external_subs_raw: list[dict]
 ) -> tuple[bool, list[dict], bool, bool]:
@@ -1258,8 +1287,10 @@ def merge_external_subs(
     `changed` is False (and `new_subs is stored_subs`) when the external-sub set
     is unchanged, so the caller can skip the DB write. v0.9.107.
     """
-    stored_ext_paths = {t.get("external_path") for t in stored_subs if t.get("external")}
-    cur_ext_paths = {es.get("external_path") for es in external_subs_raw}
+    # By path and VobSub stream: an .idx read as one track becomes one per
+    # stream (v0.10.0).
+    stored_ext_paths = {(t.get("external_path"), t.get("idx_stream")) for t in stored_subs if t.get("external")}
+    cur_ext_paths = {(es.get("external_path"), es.get("idx_stream")) for es in external_subs_raw}
     if stored_ext_paths == cur_ext_paths:
         has_external = bool(cur_ext_paths)
         has_removable = any(not t.get("keep", True) for t in stored_subs)
@@ -1512,15 +1543,23 @@ def detect_external_subtitles(video_path: str, siblings: Optional[list] = None) 
         title_parts = ["SDH"] if sdh else []
 
         codec = _EXT_CODEC_MAP.get(f.suffix.lower(), "subrip")
-
-        results.append({
+        entry = {
             "language": language,
             "codec": codec,
             "title": " ".join(title_parts) if title_parts else f.name,
             "forced": forced,
             "external_path": str(f),
             "stream_index": 0,  # placeholder, assigned by caller
-        })
+        }
+        # A VobSub .idx can hold several streams and names their languages:
+        # one track each (v0.10.0), the name's tag for a stream it doesn't name.
+        streams = vobsub_stream_languages(str(f)) if f.suffix.lower() == ".idx" else []
+        if streams:
+            for n, stream_language in enumerate(streams):
+                results.append({**entry, "idx_stream": n,
+                                "language": stream_language if stream_language != "und" else language})
+        else:
+            results.append(entry)
 
     # Sort by language then filename for deterministic order
     results.sort(key=lambda x: (x["language"], x["external_path"]))
@@ -1948,6 +1987,7 @@ def classify_subtitle_tracks(
                 title=t.get("title", ""),
                 forced=t.get("forced", False),
                 num_frames=t.get("num_frames"),
+                idx_stream=t.get("idx_stream"),
                 keep=True, locked=True,
             ) for t in tracks
         ]
@@ -1982,6 +2022,7 @@ def classify_subtitle_tracks(
                     title=track.get("title", ""),
                     forced=forced,
                     num_frames=num_frames,
+                    idx_stream=track.get("idx_stream"),
                     keep=False,
                     locked=False,
                 )
@@ -2016,6 +2057,7 @@ def classify_subtitle_tracks(
                 title=track.get("title", ""),
                 forced=forced,
                 num_frames=num_frames,
+                idx_stream=track.get("idx_stream"),
                 keep=keep,
                 locked=locked,
             )

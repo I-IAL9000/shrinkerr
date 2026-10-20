@@ -365,6 +365,23 @@ def build_ffmpeg_cmd(
     )
 
 
+def external_sub_inputs(ext_subs: list[dict], optional: bool = True) -> tuple[list[str], list[str]]:
+    """The external subtitles' ffmpeg inputs (one per file, numbered from 1)
+    and each subtitle's map, in order: a VobSub .idx with several streams is
+    one file with a subtitle per kept stream (`idx_stream`, v0.10.0) — as
+    one input per subtitle, its every stream was mapped once per subtitle,
+    and the language set for one landed on another's stream."""
+    paths: list[str] = []
+    maps: list[str] = []
+    for es in ext_subs:
+        if es["path"] not in paths:
+            paths.append(es["path"])
+        stream = es.get("idx_stream")
+        spec = f"{paths.index(es['path']) + 1}:s" + (f":{stream}" if stream is not None else "")
+        maps.append(spec + ("?" if optional else ""))
+    return paths, maps
+
+
 def _build_ffmpeg_cmd_impl(
     input_path: str,
     output_path: str,
@@ -527,8 +544,9 @@ def _build_ffmpeg_cmd_impl(
 
     # Add external subtitle files as additional inputs (input 1, 2, 3, ...)
     ext_subs = external_subtitle_files or []
-    for es in ext_subs:
-        cmd += ["-i", es["path"]]
+    ext_paths, ext_maps = external_sub_inputs(ext_subs)
+    for ext_path in ext_paths:
+        cmd += ["-i", ext_path]
 
     # v0.7.12: disable ffmpeg's auto-inserted scale filter on the
     # NVDEC-native CUDA path. When the decoder's video parameters
@@ -888,14 +906,13 @@ def _build_ffmpeg_cmd_impl(
     # Map external subtitle files (additional inputs)
     # These come after embedded subs, and need per-stream codec + metadata
     if ext_subs:
-        for i, es in enumerate(ext_subs):
-            input_idx = i + 1  # input 0 is the video, 1+ are external subs
+        for es, ext_map in zip(ext_subs, ext_maps):
             # v0.7.34: `{idx}:s?` (optional) so a sidecar input that
             # opened but exposes no subtitle stream (corrupt / empty /
             # misdetected) doesn't hard-fail the whole job with "Stream
             # map matches no streams" (exit 234). Same defensive form as
             # the audio map in v0.7.31.
-            cmd += ["-map", f"{input_idx}:s?"]
+            cmd += ["-map", ext_map]
             codec = (es.get("codec") or "subrip").lower()
             # SRT and ASS/SSA are natively supported by MKV — byte-copy
             # them. v0.4.9+: pre-fix this path used `-c:s srt` for SRT
@@ -2724,7 +2741,8 @@ async def external_subs_to_merge(source_path: str) -> list[dict] | None:
                     if ext_subs_to_merge:
                         _sub_candidates = [
                             {"path": t["external_path"], "codec": t.get("codec", "subrip"),
-                             "language": t.get("language", "und"), "forced": t.get("forced", False)}
+                             "language": t.get("language", "und"), "forced": t.get("forced", False),
+                             **({"idx_stream": t["idx_stream"]} if t.get("idx_stream") is not None else {})}
                             for t in ext_subs_to_merge
                             if os.path.exists(t["external_path"])
                             # v0.7.34: skip macOS AppleDouble / hidden
@@ -2746,8 +2764,11 @@ async def external_subs_to_merge(source_path: str) -> list[dict] | None:
                         # 183 "Invalid data found". Probe each and drop the
                         # bad ones so one corrupt .srt can't fail the job.
                         external_sub_files = []
+                        _readable: dict[str, bool] = {}  # a VobSub pair: one per stream, probed once
                         for _sc in _sub_candidates:
-                            if await _external_sub_is_readable(_sc["path"]):
+                            if _sc["path"] not in _readable:
+                                _readable[_sc["path"]] = await _external_sub_is_readable(_sc["path"])
+                            if _readable[_sc["path"]]:
                                 external_sub_files.append(_sc)
                             else:
                                 print(f"[SUBS] Skipping unreadable external subtitle: {_sc['path']}", flush=True)
@@ -2776,14 +2797,18 @@ def delete_merged_external_subs(external_sub_files: list[dict] | None, delete: b
             delete = False
     if not delete:
         return
-    for es in external_sub_files:
+    # Each file once (a VobSub pair is listed once per stream), and a .idx with
+    # its .sub — the images were left behind (v0.10.0).
+    paths = list(dict.fromkeys(es["path"] for es in external_sub_files))
+    paths += [str(Path(p).with_suffix(".sub")) for p in paths if Path(p).suffix.lower() == ".idx"]
+    for path in paths:
         try:
-            p = Path(es["path"])
+            p = Path(path)
             if p.exists():
                 p.unlink()
                 print(f"[SUBS] Deleted merged external sub: {p.name}", flush=True)
         except Exception as exc:
-            print(f"[SUBS] Failed to delete external sub {es['path']}: {exc}", flush=True)
+            print(f"[SUBS] Failed to delete external sub {path}: {exc}", flush=True)
 
 
 async def _external_sub_is_readable(path: str) -> bool:
