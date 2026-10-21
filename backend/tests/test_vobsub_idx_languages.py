@@ -80,3 +80,15 @@ def test_merged_pairs_go_whole(tmp_path):
               for n, lang in enumerate(("ita", "eng"))]
     delete_merged_external_subs(merged, delete=True)
     assert not (tmp_path / "Film.idx").exists() and not (tmp_path / "Film.sub").exists()
+
+
+def test_an_embedded_mov_text_is_still_converted_beside_a_merged_srt():
+    """The Sky at Night (an MP4 with mov_text, beside its .eng.srt): ffmpeg
+    exited 218, "Subtitle codec mov_text is not supported" — the catch-all
+    "-c:s copy" for the merged sidecars came after mov_text's "-c:s:0 srt"
+    and, the last option winning, copied it into the MKV (v0.10.0)."""
+    ext = [{"path": "/m/S.eng.srt", "codec": "subrip", "language": "eng"}]
+    cmd = _build_ffmpeg_cmd_impl("/m/S.mp4", "/m/S.mkv", encoder="libx265", external_subtitle_files=ext,
+                                 subtitle_streams=[{"index": 3, "codec_name": "mov_text"}])
+    copies = [i for i, a in enumerate(cmd) if a == "-c:s" and cmd[i + 1] == "copy"]
+    assert copies and copies[-1] < cmd.index("-c:s:0") and cmd[cmd.index("-c:s:0") + 1] == "srt"

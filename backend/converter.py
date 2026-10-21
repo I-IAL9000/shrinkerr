@@ -866,6 +866,15 @@ def _build_ffmpeg_cmd_impl(
     SUPPORTED_SUB_CODECS = COPYABLE_TEXT_SUBS | CONVERTIBLE_TEXT_SUBS | IMAGE_SUBS
 
     to_remove = set(subtitle_streams_to_remove or [])
+    if ext_subs:
+        # v0.5.19: catch-all `-c:s copy` for any unset external-sub output
+        # stream (an old row's VobSub .idx maps all its streams with one
+        # entry; with no codec they defaulted to matroska's ass, "Subtitle
+        # encoding currently only possible from text to text or bitmap to
+        # bitmap"). Before every per-stream `-c:s:N`, which then win — the
+        # last option for a stream wins (v0.10.0: after them, it copied an
+        # MP4's mov_text into the MKV, "mov_text is not supported", exit 218).
+        cmd += ["-c:s", "copy"]
     sub_codec_args: list[str] = []  # per-output-stream codec args, appended after maps
     mapped_any_sub = False
     out_sub_idx = 0
@@ -942,20 +951,6 @@ def _build_ffmpeg_cmd_impl(
             if es.get("forced"):
                 cmd += [f"-disposition:s:{out_sub_idx}", "forced"]
             out_sub_idx += 1
-        # v0.5.19: catch-all `-c:s copy` for any unset external-sub
-        # output streams. Each ext_subs entry maps with `-map 1:s` (all
-        # streams in the input), but a VobSub `.idx` typically carries
-        # multiple language streams in one file. The per-stream codec
-        # spec above (`-c:s:N copy`) only sets ONE output index per
-        # entry; the additional streams pulled in by `-map 1:s` had no
-        # codec setting and defaulted to matroska's text default (ass).
-        # That triggered "Subtitle encoding currently only possible
-        # from text to text or bitmap to bitmap" when ffmpeg tried to
-        # transcode dvdsub bitmap → ass text. The unindexed `-c:s
-        # copy` sets the default for ALL output sub streams; the
-        # per-stream specifiers above still win for the streams they
-        # name (so the webvtt → srt conversion path is preserved).
-        cmd += ["-c:s", "copy"]
         print(f"[CONVERT] Merging {len(ext_subs)} external subtitle(s)", flush=True)
 
     # Map attachments (fonts etc.)
