@@ -29,42 +29,68 @@ RUN npm run build
 # NVENC image has built it since v0.9.8; this one never had it, so DVD
 # subtitles were neither language-detected nor converted to SRT. It's a Rust
 # build (a rustup toolchain — subtile-ocr's deps need Cargo >= 1.85) against
-# the runtime's tesseract / leptonica, so it runs on the same base, for the
-# target architecture. Its own stage keeps the toolchain out of the image and
-# lets the layer cache skip the compile (minutes; far longer for arm64 under
-# emulation) until this stage changes. GUARDED: a failed build leaves /out
+# the runtime's tesseract / leptonica: bookworm's, for the target architecture
+# through Debian multiarch. It compiles on the build machine's architecture
+# and cross-compiles for the target's — compiled for arm64 under QEMU it took
+# ~25 min, and on a cold cache (the base image is re-pushed upstream now and
+# then) the arm64 compiles ran CI past its 30-minute limit. Its own stage
+# keeps the toolchain out of the image. GUARDED: a failed build leaves /out
 # empty, and the runtime code is fail-open (VobSub tracks stay images / und).
-FROM mirror.gcr.io/library/python:3.11-slim-bookworm AS subtile-ocr-build
+FROM --platform=$BUILDPLATFORM mirror.gcr.io/library/python:3.11-slim-bookworm AS subtile-ocr-build
+ARG BUILDARCH
+ARG TARGETARCH
 RUN set -eux; \
+    case "${TARGETARCH}" in \
+        amd64) GNU=x86_64-linux-gnu ;; \
+        arm64) GNU=aarch64-linux-gnu ;; \
+        *)     echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 2 ;; \
+    esac; \
+    RUST_TARGET="${GNU%%-*}-unknown-linux-gnu"; \
+    RUST_TARGET_VAR="$(echo "${RUST_TARGET}" | tr '-' '_')"; \
+    GCC=gcc; \
+    if [ "${TARGETARCH}" != "${BUILDARCH}" ]; then \
+        dpkg --add-architecture "${TARGETARCH}"; \
+        GCC="gcc-$(echo "${GNU}" | tr '_' '-')"; \
+    fi; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-        ca-certificates curl gcc libc6-dev clang libclang-dev libtesseract-dev libleptonica-dev pkg-config; \
+        ca-certificates curl "${GCC}" clang libclang-dev pkg-config \
+        "libc6-dev:${TARGETARCH}" "libtesseract-dev:${TARGETARCH}" "libleptonica-dev:${TARGETARCH}"; \
     mkdir -p /out; \
     ( export RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo \
-        && curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable \
-        && /opt/cargo/bin/cargo install subtile-ocr --version 0.2.6 --root /out \
+        PKG_CONFIG_ALLOW_CROSS=1 PKG_CONFIG_LIBDIR="/usr/lib/${GNU}/pkgconfig:/usr/share/pkgconfig" \
+        "CC_${RUST_TARGET_VAR}=${GNU}-gcc" \
+        "CARGO_TARGET_$(echo "${RUST_TARGET_VAR}" | tr 'a-z' 'A-Z')_LINKER=${GNU}-gcc" \
+        && curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable --target "${RUST_TARGET}" \
+        && /opt/cargo/bin/cargo install subtile-ocr --version 0.2.6 --target "${RUST_TARGET}" --root /out \
         && /out/bin/subtile-ocr --version ) \
         || echo "[BUILD] subtile-ocr build failed — VobSub OCR will be unavailable"; \
     rm -f /out/.crates.toml /out/.crates2.json
 
 # dovi_tool (v0.10.0): keeps Dolby Vision through a conversion (backend/dovi.py):
 # it takes the RPU from the original and puts it into the new HEVC stream.
-# Not on crates.io: built from its repository at a pinned release, with the
-# built-in font (its plot command's) so it needs no fontconfig. GUARDED: a
-# failed build leaves /out empty, and Dolby Vision files then stay
+# The release's static (musl) binary, pinned by checksum: upstream builds it
+# with the built-in font (its plot command's), as we did, so it needs no
+# fontconfig. Compiling it here took ~20 min for arm64 under QEMU. GUARDED: a
+# failed download leaves /out empty, and Dolby Vision files then stay
 # unconverted, as before.
-FROM mirror.gcr.io/library/python:3.11-slim-bookworm AS dovi-build
+FROM --platform=$BUILDPLATFORM mirror.gcr.io/library/python:3.11-slim-bookworm AS dovi-build
+ARG TARGETARCH
 RUN set -eux; \
+    case "${TARGETARCH}" in \
+        amd64) DOVI_ARCH=x86_64;  DOVI_SHA256=1844258e13c26607b32224bf1fa82b595d3b35949f5467405fda560daad32b3f ;; \
+        arm64) DOVI_ARCH=aarch64; DOVI_SHA256=b4f22a7db56954efe4ed8d02276d0f991799e84602f3584711be6c9df950cb15 ;; \
+        *)     echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 2 ;; \
+    esac; \
     apt-get update; \
-    apt-get install -y --no-install-recommends ca-certificates curl gcc libc6-dev git; \
+    apt-get install -y --no-install-recommends ca-certificates curl; \
     mkdir -p /out; \
-    ( export RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo \
-        && curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable \
-        && /opt/cargo/bin/cargo install --git https://github.com/quietvoid/dovi_tool --tag 2.3.4 --locked \
-           --no-default-features --features internal-font dovi_tool --root /out \
+    ( curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors -o /tmp/dovi_tool.tar.gz \
+          "https://github.com/quietvoid/dovi_tool/releases/download/2.3.4/dovi_tool-2.3.4-${DOVI_ARCH}-unknown-linux-musl.tar.gz" \
+        && echo "${DOVI_SHA256}  /tmp/dovi_tool.tar.gz" | sha256sum -c - \
+        && mkdir -p /out/bin && tar -xzf /tmp/dovi_tool.tar.gz -C /out/bin ./dovi_tool \
         && /out/bin/dovi_tool --version ) \
-        || echo "[BUILD] dovi_tool build failed — Dolby Vision files won't be converted"; \
-    rm -f /out/.crates.toml /out/.crates2.json
+        || echo "[BUILD] dovi_tool download failed — Dolby Vision files won't be converted"
 
 # Stage 3: runtime image.
 # python:3.11-slim-bookworm is multi-arch (amd64 + arm64) and much smaller
