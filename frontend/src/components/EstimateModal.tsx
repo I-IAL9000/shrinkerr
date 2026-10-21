@@ -205,6 +205,13 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
     if (directPlay) o.direct_play_fixes = dpFixes;
     return o;
   };
+  // A clean-up's Dolby Vision (v0.10.0): removed under "Convert to HDR10";
+  // with Cleanup only, also why it's kept (files it leaves out included).
+  const dolbyVisionRows = (dv: Record<string, number> = {}) =>
+    ["removed", "kept", "ffmpeg", "profile5"]
+      .filter(outcome => (dv[outcome] || 0) > 0 && (outcome === "removed" || cleanupOnly))
+      .map(outcome => t(`scannerModals:estimate.whatHappens.dolbyVision.${outcome}`,
+        { count: dv[outcome], num: fmtNum(dv[outcome]) }));
 
   return (
     <div style={{
@@ -346,6 +353,9 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                     )}
                   </div>
                 )}
+                {dolbyVisionRows(estimate.dolby_vision).map((row, i) => (
+                  <div key={i} style={{ marginTop: 8 }}>{row}</div>
+                ))}
               </div>
             )}
             {estimate.total_files === 0 && (estimate.ignored_files > 0 || estimate.skipped_by_rules > 0 || estimate.hardlinked > 0 || estimate.leaving_soon > 0) && (
@@ -412,6 +422,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                   }
                 }
               }
+              rows.push(...dolbyVisionRows(estimate.dolby_vision));
               // (a file with a fix to make is queued for it)
               if (cleanupOnly) rows.push(t(`scannerModals:estimate.whatHappens.${fixing ? "cleanupSkipsFixes" : "cleanupSkips"}`));
               if (estimate.hardlinked > 0) rows.push(t("scannerModals:estimate.whatHappens.hardlinked", { count: estimate.hardlinked, num: fmtNum(estimate.hardlinked) }));

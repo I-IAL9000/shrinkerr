@@ -18,7 +18,8 @@
     "readingImageSubs": "Leyendo los subtítulos de imagen (OCR)…",
     "convertingSubtitles": "convirtiendo subtítulos",
     "vmafTargetSearch": "Buscando la calidad para el objetivo VMAF…",
-    "fixingDirectPlay": "Arreglando para reproducción directa"
+    "fixingDirectPlay": "Arreglando para reproducción directa",
+    "removingDolbyVision": "Quitando Dolby Vision"
   },
   "errors": {
     "fileNotFound": "Archivo no encontrado",
@@ -51,7 +52,7 @@
       "ffmpeg": "Se conservó el vídeo tal cual: descartar Dolby Vision requiere ffmpeg 7.1 o posterior, y no se puede conservar en este trabajo."
     },
     "hdrKept8Bit": "Se conservó el vídeo tal cual: el vídeo HDR necesita un codificador de 10 bits; {{encoder}} codifica en 8 bits aquí. Usa NVENC, libx265 o VideoToolbox.",
-    "dolbyVisionNotDropped": "Había que descartar Dolby Vision, pero la codificación aún lo lleva. Se conservó el original.",
+    "dolbyVisionNotDropped": "Había que descartar Dolby Vision, pero el archivo nuevo aún lo lleva. Se conservó el original.",
     "encodeLarger": "El archivo convertido era un {{pct}} % más grande que el original, así que se conservó el original.",
     "hdrLost": "El original {{format}} perdió su HDR en la codificación. Se ha conservado el original.",
     "remuxOutputMissing": "El archivo de salida falta o está vacío tras el remux.",

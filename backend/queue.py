@@ -3260,10 +3260,14 @@ class QueueWorker:
             _direct_play = remux_fixes(job)
             _ocr_planned = _image_subs_to_srt and bool(srt_plan(
                 raw_subs, set(keep_sub_indices) if keep_sub_indices is not None else None))
+            # Settings → Video → Dolby Vision → Convert to HDR10: a clean-up
+            # drops it too, copying the HDR10 under it (v0.10.0).
+            from backend import dovi
+            _drop_dv = dovi.remux_drop(probe, _live.get("dolby_vision_mode"))
 
             if (keep_indices != all_indices
                     or (keep_sub_indices is not None and keep_sub_indices != all_sub_indices)
-                    or _remux_audio_langs or _ocr_planned or _direct_play):
+                    or _remux_audio_langs or _ocr_planned or _direct_play or _drop_dv):
                 # Throttled, awaited DB write — see comment on convert
                 # progress_cb above for why we DON'T use create_task here.
                 _audio_last_db = [0.0]
@@ -3283,7 +3287,7 @@ class QueueWorker:
                         fps=None,
                         speed=round(speed, 1) if speed else None,
                         eta=eta_seconds,
-                        step=step or ("removing tracks" if audio_tracks_to_remove else ("removing subtitles" if subtitle_tracks_to_remove else ("applying language" if _remux_audio_langs else ("converting subtitles" if _ocr_planned else ("fixing for direct play" if _direct_play else "reordering audio"))))),
+                        step=step or ("removing tracks" if audio_tracks_to_remove else ("removing subtitles" if subtitle_tracks_to_remove else ("applying language" if _remux_audio_langs else ("converting subtitles" if _ocr_planned else ("fixing for direct play" if _direct_play else ("removing Dolby Vision" if _drop_dv else "reordering audio")))))),
                         jobs_completed=jobs_completed,
                         jobs_total=jobs_total,
                         total_saved=total_saved,
@@ -3305,6 +3309,7 @@ class QueueWorker:
                     keep_image_subs=_live.get("image_subs_keep_original", True),
                     compat_settings=_live if _direct_play else None,
                     originals=_live,
+                    drop_dolby_vision=bool(_drop_dv),
                 )
                 if not result["success"] and job_id in self._cancel_flags:
                     await self.queue.update_status(job_id, "cancelled", error_log="Cancelled by user",
@@ -3398,13 +3403,15 @@ class QueueWorker:
                                 _rund = 1 if any((t.language or "und").lower() == "und" for t in list(_rat) + list(_rst)) else 0
                                 _rrem_a = _rraf(_rat, _rnl)
                                 _rrem_s = 1 if any(not t.keep for t in _rst) else 0
+                                # hdr_format: a dropped Dolby Vision leaves the
+                                # Dolby Vision filter (v0.10.0).
                                 _cols += ["audio_tracks_json = ?", "subtitle_tracks_json = ?",
                                           "has_und_tracks_flag = ?", "has_removable_tracks_flag = ?",
-                                          "has_removable_subs_flag = ?", "file_size = ?"]
+                                          "has_removable_subs_flag = ?", "file_size = ?", "hdr_format = ?"]
                                 _params += [
                                     _rj.dumps([t.model_dump() for t in _rat]),
                                     _rj.dumps([t.model_dump() for t in _rst]),
-                                    _rund, _rrem_a, _rrem_s, _new_sz,
+                                    _rund, _rrem_a, _rrem_s, _new_sz, _rp.get("hdr_format"),
                                 ]
                                 if _path_changed:
                                     _cols += ["video_codec = ?"]

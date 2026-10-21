@@ -4319,7 +4319,7 @@ async def convert_file(
     _truncated = (await _truncation_failure(input_path, temp_path, duration, disc_type, all_lines)
                   or await _hdr_failure(source_hdr, temp_path))
     if not _truncated and drop_dv and await dovi.left_in(temp_path):
-        _truncated = {"error": "Dolby Vision was to be dropped, but the encode still carries it. Original kept.",
+        _truncated = {"error": "Dolby Vision was to be dropped, but the new file still carries it. Original kept.",
                       "error_key": "errors.dolbyVisionNotDropped"}
     if not _truncated and keep_dv:
         # v0.10.0: the original's Dolby Vision into the encode (dovi.py)

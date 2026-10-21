@@ -95,6 +95,7 @@ def build_remux_cmd(
     audio_languages: dict[int, str] | None = None,
     video_map: str = "0:V:0?",
     compat_track: dict | None = None,
+    drop_dolby_vision: bool = False,
 ) -> list[str]:
     """
     Build an ffmpeg command to remux keeping only the specified audio and subtitle stream indices.
@@ -113,6 +114,9 @@ def build_remux_cmd(
 
     `compat_track` (v0.10.0): a compatibility track to encode after the kept
     audio (converter.compat_track_plan) — the only stream not copied.
+
+    `drop_dolby_vision` (v0.10.0): the video's Dolby Vision is removed, the
+    HDR10 (and HDR10+) under it copied (dovi.remux_drop).
     """
     # Subtitle codecs matroska can't accept on -c copy — must be transcoded
     # to srt. mov_text is the mp4/QuickTime text codec; tx3g is its
@@ -225,6 +229,9 @@ def build_remux_cmd(
         cmd += ["-c", "copy"]
 
     cmd += audio_lang_args
+    if drop_dolby_vision:
+        from backend.dovi import REMUX_STRIP_ARGS
+        cmd += REMUX_STRIP_ARGS
     if compat_track:
         from backend.converter import compat_track_args
         cmd += ["-map", f"0:{compat_track['source']}", *compat_track_args(compat_track)]
@@ -276,6 +283,7 @@ async def remux_audio(
     keep_image_subs: bool = True,
     compat_settings: dict | None = None,
     originals: dict | None = None,
+    drop_dolby_vision: bool = False,
 ) -> dict:
     """_remux_audio, after reading the kept image subtitles (PGS / VobSub)
     into SRT tracks with OCR when `image_subs_to_srt` (v0.10.0): they're
@@ -288,7 +296,10 @@ async def remux_audio(
 
     `originals` (v0.10.0): what happens to the original — the settings
     converter.dispose_original reads, with the job's rule applied. Without
-    it they're read from this server's settings."""
+    it they're read from this server's settings.
+
+    `drop_dolby_vision` (v0.10.0): the remux removes the video's Dolby Vision
+    (dovi.remux_drop); an output that still carries it isn't kept."""
     ocr_dir: str | None = None
     ocr_subs: list[dict] = []
     compat_track = None
@@ -322,7 +333,8 @@ async def remux_audio(
         return await _remux_audio(input_path, keep_audio_indices, duration, progress_callback,
                                   keep_subtitle_indices, audio_languages, proc_callback, on_output_placed,
                                   ocr_subs=ocr_subs, compat_track=compat_track, originals=originals,
-                                  drop_replaced=bool(ocr_subs) and not keep_image_subs)
+                                  drop_replaced=bool(ocr_subs) and not keep_image_subs,
+                                  drop_dolby_vision=drop_dolby_vision)
     finally:
         if ocr_dir:
             shutil.rmtree(ocr_dir, ignore_errors=True)
@@ -341,6 +353,7 @@ async def _remux_audio(
     drop_replaced: bool = False,
     compat_track: dict | None = None,
     originals: dict | None = None,
+    drop_dolby_vision: bool = False,
 ) -> dict:
     """
     Remux a file, keeping only the specified audio streams.
@@ -416,6 +429,7 @@ async def _remux_audio(
         audio_languages=audio_languages,
         video_map=await _probe_video_map(input_path),
         compat_track=compat_track,
+        drop_dolby_vision=drop_dolby_vision,
     )
     # Used by the worker to populate update_conversion_log so the
     # Completed tab's expanded view has something to show on
@@ -584,6 +598,16 @@ async def _remux_audio(
         except OSError:
             pass
         return {"success": False, "output_path": None, "space_saved": 0, "source_intact": p.exists(), **truncated}
+    from backend import dovi
+    if drop_dolby_vision and await dovi.left_in(str(temp)):
+        error = "Dolby Vision was to be dropped, but the new file still carries it. Original kept."
+        print(f"[REMUX] {error}", flush=True)
+        try:
+            temp.unlink()
+        except OSError:
+            pass
+        return {"success": False, "output_path": None, "space_saved": 0, "source_intact": p.exists(),
+                "error": error, "error_key": "errors.dolbyVisionNotDropped"}
 
     output_size = temp.stat().st_size
     space_saved = original_size - output_size

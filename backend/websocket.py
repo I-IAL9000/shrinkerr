@@ -43,6 +43,7 @@ STEP_KEYS: dict[str, str] = {
     "Reading image subtitles (OCR)…": "steps.readingImageSubs",
     "converting subtitles": "steps.convertingSubtitles",
     "fixing for direct play": "steps.fixingDirectPlay",
+    "removing Dolby Vision": "steps.removingDolbyVision",
     "Finding the quality for the VMAF target…": "steps.vmafTargetSearch",
 }
 

@@ -50,8 +50,18 @@
       "leavingSoon_one": "{{num}} file is in a Maintainerr collection (leaving soon) and is left out",
       "leavingSoon_other": "{{num}} files are in a Maintainerr collection (leaving soon) and are left out",
       "noEncode": "No video conversion: the video is copied as it is, only tracks are removed",
-      "cleanupSkips": "Files with no track to remove are left out",
-      "cleanupSkipsFixes": "Files with no track to remove or fix are left out",
+      "cleanupSkips": "Files with nothing to remove are left out",
+      "cleanupSkipsFixes": "Files with nothing to remove or fix are left out",
+      "dolbyVision": {
+        "removed_one": "Dolby Vision removed from {{num}} file: HDR10 and HDR10+ kept, the video isn't re-encoded",
+        "removed_other": "Dolby Vision removed from {{num}} files: HDR10 and HDR10+ kept, the video isn't re-encoded",
+        "kept_one": "{{num}} file keeps Dolby Vision: Settings → Video → Dolby Vision → Convert to HDR10 removes it",
+        "kept_other": "{{num}} files keep Dolby Vision: Settings → Video → Dolby Vision → Convert to HDR10 removes it",
+        "ffmpeg_one": "{{num}} file keeps Dolby Vision: removing it needs ffmpeg 7.1 or later",
+        "ffmpeg_other": "{{num}} files keep Dolby Vision: removing it needs ffmpeg 7.1 or later",
+        "profile5_one": "{{num}} file keeps Dolby Vision: it's profile 5, with no HDR10 under it",
+        "profile5_other": "{{num}} files keep Dolby Vision: they're profile 5, with no HDR10 under it"
+      },
       "directPlay": {
         "container_one": "{{num}} file is remuxed to MKV",
         "container_other": "{{num}} files are remuxed to MKV",

@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 from backend.api_errors import ApiError
 from pydantic import BaseModel
 
+from backend import dovi
 from backend.database import connect_db, prefix_clause
 from backend.queue import JobQueue, QueueWorker
 
@@ -517,7 +518,7 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
             async with db.execute(
                 f"SELECT file_path, file_size, needs_conversion, audio_tracks_json, "
                 f"subtitle_tracks_json, native_language, duration, COALESCE(video_height, 0) as video_height, "
-                f"COALESCE(video_width, 0) as video_width, disc_type, link_count, video_conv_savings_bytes "
+                f"COALESCE(video_width, 0) as video_width, disc_type, link_count, video_conv_savings_bytes, hdr_format "
                 f"FROM scan_results WHERE file_path IN ({placeholders})",
                 chunk,
             ) as cur:
@@ -618,6 +619,8 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
                 has_audio_work=has_audio_work,
                 skip_conversion=skip_conversion,
             )
+            if job_type is None and dovi.remux_outcome(row.get("hdr_format")) == "removed":
+                job_type = "audio"  # the clean-up drops its Dolby Vision ("Convert to HDR10", v0.10.0)
             if job_type is None:
                 # Nothing to do and the file was explicitly exempted from
                 # conversion (ignore rule / cleanup-only) — skip with a note.
@@ -2203,7 +2206,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                     f"subtitle_tracks_json, COALESCE(video_height, 0) as video_height, "
                     f"COALESCE(video_width, 0) as video_width, "
                     f"COALESCE(duration, 0) as duration, native_language, disc_type, link_count, "
-                    f"video_conv_savings_bytes, video_codec "
+                    f"video_conv_savings_bytes, video_codec, hdr_format "
                     f"FROM scan_results WHERE file_path IN ({placeholders})",
                     chunk,
                 ) as cur:
@@ -2219,6 +2222,9 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         direct_play_files = 0
         # An old container's fix: a remux, or the conversion (MKV too)
         direct_play_container = {"remux": 0, "convert": 0}
+        # The files a clean-up copies the video of, by what becomes of their
+        # Dolby Vision (dovi.remux_outcome, v0.10.0).
+        dolby_vision = {"removed": 0, "kept": 0, "ffmpeg": 0, "profile5": 0}
 
         print(f"[ESTIMATE] {len(file_paths)} file(s) to estimate, {len(scan_rows)} found in scan_results, {len(ignored_set)} ignored", flush=True)
         if len(file_paths) > 0 and len(scan_rows) == 0:
@@ -2269,6 +2275,9 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                 needs_conv = False
             if payload.cleanup_only:  # as add-from-scan (_classify_job_type)
                 needs_conv = False
+            dv = None if needs_conv else dovi.remux_outcome(row.get("hdr_format"))
+            if dv:
+                dolby_vision[dv] += 1
 
             if needs_conv and has_work:
                 jt = "combined"
@@ -2276,7 +2285,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                 jt = "convert"
             elif has_work:
                 jt = "audio"
-            elif (skip_conv or payload.cleanup_only) and not fixes:
+            elif (skip_conv or payload.cleanup_only) and not fixes and dv != "removed":
                 continue
             else:
                 jt = "audio"
@@ -2436,6 +2445,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             "image_subs_keep_original": (est_settings.get("image_subs_keep_original") or "true").lower() != "false",
             "direct_play_files": direct_play_files,
             "direct_play_container": direct_play_container,
+            "dolby_vision": dolby_vision,
             "cq": representative_cq,
             "savings_pct": round((estimated_savings / total_size * 100) if total_size > 0 else 0),
             "learned_from": savings_model.current().samples,  # v0.10.0

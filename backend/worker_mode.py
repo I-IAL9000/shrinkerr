@@ -646,9 +646,12 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 {t["stream_index"] for t in probe.get("subtitle_tracks", [])} - set(sub_remove)))
             from backend.direct_play import remux_fixes
             direct_play = remux_fixes(job)  # v0.10.0: the remux to MKV is the fix
-            if audio_remove or sub_remove or ocr_planned or direct_play:
+            from backend import dovi
+            drop_dv = dovi.remux_drop(probe, job.get("dolby_vision_mode"))  # v0.10.0: "Convert to HDR10"
+            if audio_remove or sub_remove or ocr_planned or direct_play or drop_dv:
                 await progress_cb(progress=95, step="removing tracks" if audio_remove or sub_remove else (
-                    "converting subtitles" if ocr_planned else "fixing for direct play"))
+                    "converting subtitles" if ocr_planned else (
+                        "fixing for direct play" if direct_play else "removing Dolby Vision")))
                 # v0.9.155: remux_audio takes KEEP lists. Passing the remove
                 # lists positionally kept exactly the tracks meant to go (and
                 # sent the subtitle list as `duration`). Derive them like the
@@ -669,6 +672,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                         originals={"backup_original_days": int(job.get("backup_original_days") or 0),
                                    "trash_original_after_conversion": bool(job.get("trash_original_after_conversion")),
                                    "backup_folder": job.get("backup_folder") or ""},
+                        drop_dolby_vision=bool(drop_dv),
                     )
                 except Exception as exc:
                     audio_result = {"success": False, "error": str(exc)}

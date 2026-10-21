@@ -11,6 +11,9 @@ no resizing.
 Not converted (as before): profile 5, whose base layer isn't HDR10 (the
 colours would go purple and green); a resize; AV1 output; Quick Sync and
 VAAPI (8-bit here); discs; and installs without dovi_tool and mkvmerge.
+
+Under "Convert to HDR10" a clean-up drops it too, with no re-encode
+(remux_drop).
 """
 from __future__ import annotations
 
@@ -98,6 +101,41 @@ def strip_args(encoder: str) -> list[str]:
     if _strip_filter():
         args += ["-bsf:v", "dovi_rpu=strip=1"]
     return args
+
+
+# A clean-up's remux drops Dolby Vision without re-encoding (v0.10.0): the
+# dovi_rpu filter removes the RPUs and the configuration record, and
+# filter_units profile 7's enhancement layer (NAL units of type 63). The
+# HDR10 under it, and any HDR10+, are copied as they are.
+REMUX_STRIP_ARGS = ["-bsf:v", "dovi_rpu=strip=1,filter_units=remove_types=63"]
+
+
+def remux_outcome(hdr_format: str | None) -> str | None:
+    """What a clean-up (a remux: the video's copied) does with a file's Dolby
+    Vision, for Add to Queue (v0.10.0): "removed" under "Convert to HDR10"
+    (profiles 7 and 8), "kept" under the other settings, "ffmpeg" when this
+    ffmpeg can't remove it, "profile5" (no HDR10 under it), or None (no
+    Dolby Vision)."""
+    if hdr_format == "dv5":
+        return "profile5"
+    if hdr_format not in KEEPABLE:
+        return None
+    if _mode != "hdr10":
+        return "kept"
+    return "removed" if can_strip() else "ffmpeg"
+
+
+def remux_drop(probe: dict, mode: str | None) -> str | None:
+    """The HDR a clean-up leaves when it drops the file's Dolby Vision —
+    "hdr10" or "hlg" — under "Convert to HDR10" (`mode`: the job's
+    dolby_vision_mode), else None (v0.10.0)."""
+    if mode != "hdr10":
+        return None
+    drop = drop_to(probe.get("hdr_format"), probe.get("dv_base"))
+    if drop and not can_strip():
+        print("[REMUX] Can't drop Dolby Vision: this ffmpeg has no dovi_rpu filter (7.1 or later)", flush=True)
+        return None
+    return drop
 
 
 async def left_in(path: str) -> bool:
