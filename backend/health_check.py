@@ -55,6 +55,11 @@ BENIGN_PATTERNS: tuple[re.Pattern, ...] = tuple(re.compile(p, re.IGNORECASE) for
     r"estimating duration from bitrate",
     # B-frame parsing quirks — the decoder recovers automatically.
     r"co located pocs unavailable",
+    # A frame that refers to a picture from before the first keyframe — a
+    # broadcast recording that starts mid-GOP, or one a clean-up cut before
+    # v0.10.0 — is decoded without it; pictures it can't decode are
+    # "concealing … errors" (fatal, below).
+    r"\[h264 @ [^\]]+\]\s*mmco: unref short failure",
     # Edge-list warnings on some mp4/m4v remuxes. Plays fine.
     r"edit list elements are not supported",
     r"edit list starts at a non-zero offset",

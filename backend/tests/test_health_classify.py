@@ -33,3 +33,16 @@ def test_an_eac3_exponent_out_of_range_is_a_warning():
                 "[eac3 @ 0x55a119252540] error decoding the audio block\n")
     assert classify_errors(reported, 0)[0] == "warnings"
     assert classify_errors("[ac3 @ 0x1] exponent 25 is out-of-range\n", 0)[0] == "corrupt"  # E-AC3 only, as before
+
+
+def test_a_missing_reference_at_the_start_is_a_warning():
+    """A broadcast recording a clean-up cut before v0.10.0 starts on a
+    keyframe whose next frames refer to pictures before it: the decoder says
+    so, recovers, and the episode plays fine (Dragons' Den, 1080p HDTV)."""
+    reported = ("[h264 @ 0x55b036899680] mmco: unref short failure\n"
+                "[h264 @ 0x55b036899680] number of reference frames (0+5) exceeds max (4; probably corrupt input), "
+                "discarding one\n")
+    assert classify_errors(reported, 0)[0] == "warnings"
+    # pictures it couldn't decode are still damage
+    assert classify_errors(reported + "[h264 @ 0x55b036899680] concealing 400 DC, 400 AC, 400 MV errors in P frame\n",
+                           0)[0] == "corrupt"
