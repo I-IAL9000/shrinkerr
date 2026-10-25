@@ -2340,11 +2340,26 @@ class QueueWorker:
                 total_saved=stats["total_space_saved"],
             )
 
+        def register(proc) -> None:
+            # Cancel kills it (v0.10.0: a thorough check ran to the end) — at
+            # once when Cancel came before it started.
+            self._active_procs[job_id] = proc
+            if job_id in self._cancel_flags:
+                proc.kill()
+
         try:
-            result = await run_check(file_path, mode=mode, progress_cb=progress, duration_seconds_hint=duration)
+            result = await run_check(file_path, mode=mode, progress_cb=progress, duration_seconds_hint=duration,
+                                     proc_callback=register)
         except Exception as exc:
             await self.queue.update_status(job_id, "failed", error_log=f"Health check failed: {exc}",
                                            error_key="errors.healthCheckFailed", error_params={"error": str(exc)})
+            return
+        if job_id in self._cancel_flags:
+            # Killed, its verdict says nothing about the file: none is recorded.
+            await self.queue.update_status(job_id, "cancelled", error_log="Cancelled by user",
+                                           error_key="errors.cancelledByUser")
+            await ws_manager.send_job_complete(job_id, "cancelled", 0, "Cancelled by user",
+                                               error_key="errors.cancelledByUser")
             return
 
         status = result.get("status", "healthy")

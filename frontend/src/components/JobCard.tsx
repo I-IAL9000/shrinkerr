@@ -34,6 +34,7 @@ interface JobCardProps {
 function JobCardImpl({ progress, jobIndex, fileSize, encoderLabel, jobType, audioCodec, audioBitrate, audioTracksToRemove, subtitleTracksToRemove, removedTrackLangs, losslessCodec, losslessBitrate, onCancel }: JobCardProps) {
   const { t } = useTranslation(["queue", "common"]);
   const confirm = useConfirm();
+  const healthCheck = jobType === "health_check";  // v0.10.0: it said "Cancel conversion"
   return (
     <div className="job-active">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -46,10 +47,14 @@ function JobCardImpl({ progress, jobIndex, fileSize, encoderLabel, jobType, audi
             <button
               className="btn btn-xs btn-ghost btn-danger"
               onClick={async () => {
-                const ok = await confirm({ message: t("queue:card.cancelConfirm"), confirmLabel: t("queue:card.cancelConversion"), danger: true });
+                const ok = await confirm({
+                  message: t(healthCheck ? "queue:card.cancelHealthConfirm" : "queue:card.cancelConfirm"),
+                  confirmLabel: t(healthCheck ? "queue:card.cancelHealthCheck" : "queue:card.cancelConversion"),
+                  danger: true,
+                });
                 if (ok) onCancel();
               }}
-              title={t("queue:card.cancelTitle")}
+              title={t(healthCheck ? "queue:card.cancelHealthCheck" : "queue:card.cancelTitle")}
             >
               {t("common:actions.cancel")}
             </button>

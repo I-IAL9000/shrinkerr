@@ -63,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Demo mode never hands out the API key, backups or download scripts; links in the in-app changelog only open http(s) addresses; scan progress and cancel files live in the data folder instead of fixed names in `/tmp`.
 
 ### Fixed
+- **Cancel stops a health check**: a thorough check ran to the end and recorded its verdict — its ffmpeg wasn't the job's to stop. Cancelled, it stops at once and records nothing, and the prompt and toast say "health check", not "conversion".
 - **A thorough health check isn't marked corrupt for ffmpeg's "Last message repeated N times"**: it's the line before it said again, not an error of its own; repeated audio glitches now count toward the limit too.
 - **A job's health check shows its warnings**: a check that found only warnings (the file plays) read "Healthy" in the job's report, without them, beside the row's warnings icon. It now says Warnings and lists what was noticed.
 - **E-AC3 audio that plays fine isn't marked corrupt**: the health check allowed the decoder's "expacc N is out-of-range" but not the same check's "exponent N is out-of-range", which streaming releases trip too.

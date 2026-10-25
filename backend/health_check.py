@@ -183,8 +183,9 @@ def classify_errors(stderr_text: str, returncode: int) -> tuple[HealthStatus, li
     return "corrupt", capped
 
 
-async def quick_check(file_path: str, timeout: int = 30) -> dict:
-    """Parse container/streams with ffprobe. Fast; catches truncated/malformed files."""
+async def quick_check(file_path: str, timeout: int = 30, proc_callback=None) -> dict:
+    """Parse container/streams with ffprobe. Fast; catches truncated/malformed files.
+    `proc_callback(proc)` gets the ffprobe, for Cancel to kill (v0.10.0)."""
     t0 = time.monotonic()
     proc = await asyncio.create_subprocess_exec(
         "ffprobe",
@@ -196,6 +197,8 @@ async def quick_check(file_path: str, timeout: int = 30) -> dict:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
+    if proc_callback:
+        proc_callback(proc)
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
@@ -222,13 +225,16 @@ async def quick_check(file_path: str, timeout: int = 30) -> dict:
     }
 
 
-async def thorough_check(file_path: str, timeout: int = 7200, progress_cb=None, duration_seconds_hint: float = 0) -> dict:
+async def thorough_check(file_path: str, timeout: int = 7200, progress_cb=None, duration_seconds_hint: float = 0,
+                         proc_callback=None) -> dict:
     """Fully decode the file; flag any decoder errors.
 
     Uses ``-f null -`` so no output is written. ``-xerror`` makes ffmpeg exit
     non-zero on decoder errors rather than trying to recover silently. An
     optional ``progress_cb(percent: float)`` is called as the decode advances
     (needs ``duration_seconds_hint`` to convert timestamps to percent).
+    ``proc_callback(proc)`` gets the ffmpeg, for Cancel to kill (v0.10.0: a
+    thorough check ran to the end).
     """
     t0 = time.monotonic()
     proc = await asyncio.create_subprocess_exec(
@@ -245,6 +251,8 @@ async def thorough_check(file_path: str, timeout: int = 7200, progress_cb=None, 
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
+    if proc_callback:
+        proc_callback(proc)
 
     errors_collected: list[str] = []
     last_pct = 0.0
@@ -315,8 +323,10 @@ async def thorough_check(file_path: str, timeout: int = 7200, progress_cb=None, 
     }
 
 
-async def run_check(file_path: str, mode: str = "quick", progress_cb=None, duration_seconds_hint: float = 0) -> dict:
+async def run_check(file_path: str, mode: str = "quick", progress_cb=None, duration_seconds_hint: float = 0,
+                    proc_callback=None) -> dict:
     """Dispatch to quick_check or thorough_check based on mode."""
     if mode == "thorough":
-        return await thorough_check(file_path, progress_cb=progress_cb, duration_seconds_hint=duration_seconds_hint)
-    return await quick_check(file_path)
+        return await thorough_check(file_path, progress_cb=progress_cb, duration_seconds_hint=duration_seconds_hint,
+                                    proc_callback=proc_callback)
+    return await quick_check(file_path, proc_callback=proc_callback)

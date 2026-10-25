@@ -707,7 +707,10 @@ export default function QueuePage() {
             losslessCodec={hasLossless && encodingDefaults?.auto_convert_lossless ? encodingDefaults?.lossless_target_codec : null}
             losslessBitrate={hasLossless && encodingDefaults?.auto_convert_lossless ? encodingDefaults?.lossless_target_bitrate : null}
             onCancel={() => {
-              cancelCurrentJob(job.id).then(() => { toast(t("queue:toasts.conversionCancelled")); load(); });
+              cancelCurrentJob(job.id).then(() => {
+                toast(t(job.job_type === "health_check" ? "queue:toasts.healthCheckCancelled" : "queue:toasts.conversionCancelled"));
+                load();
+              });
             }}
           />
         );

@@ -21,7 +21,7 @@ async def test_a_thorough_check_reports_its_progress(test_db, tmp_path, monkeypa
 
     asked = {}
 
-    async def check(path, mode="quick", progress_cb=None, duration_seconds_hint=0):
+    async def check(path, mode="quick", progress_cb=None, duration_seconds_hint=0, proc_callback=None):
         asked.update(mode=mode, hint=duration_seconds_hint)
         await progress_cb(50.0)
         return {"status": "healthy", "errors": [], "duration_seconds": 1.0}
