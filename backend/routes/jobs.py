@@ -1596,7 +1596,7 @@ async def retry_job(job_id: int):
     want tracks removed.
     """
     import os as _os
-    from backend.converter import rename_x264_to_x265
+    from backend.converter import rename_source_to_target_codec
 
     if _queue is None:
         raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
@@ -1626,14 +1626,16 @@ async def retry_job(job_id: int):
     if row:
         fp = row["file_path"]
         if fp and not _os.path.exists(fp):
-            # Try common renames: x264 → x265 in the filename
+            # Try common renames: x264 → x265 in the filename, or → AV1 for
+            # an AV1 output (v0.10.0)
             candidates = []
             try:
                 d = _os.path.dirname(fp)
                 orig_name = _os.path.basename(fp)
-                renamed_name = rename_x264_to_x265(orig_name)
-                if renamed_name != orig_name:
-                    candidates.append(_os.path.join(d, renamed_name))
+                for encoder in (None, "av1"):
+                    renamed_name = rename_source_to_target_codec(orig_name, encoder=encoder)
+                    if renamed_name != orig_name:
+                        candidates.append(_os.path.join(d, renamed_name))
             except Exception:
                 pass
 

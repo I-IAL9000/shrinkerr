@@ -156,6 +156,29 @@ async def test_retry_records_the_codec_of_the_output_it_finds(test_db, tmp_path,
 
 
 @pytest.mark.asyncio
+async def test_retry_finds_an_av1_output(test_db, tmp_path, monkeypatch):
+    """An AV1 output is tagged AV1, not x265: Retry only looked for the
+    x265 name, so it re-ran a conversion whose output was already there."""
+    from backend.routes.jobs import init_job_routes, retry_job
+    src = tmp_path / "Film (2009) x264.mkv"
+    out = tmp_path / "Film (2009) AV1.mkv"
+    out.write_bytes(b"converted in a run that failed afterwards")
+    await _row(test_db, src)
+    _probe(monkeypatch, {str(out): "av1"})
+    queue = JobQueue(test_db)
+    init_job_routes(QueueWorker(test_db), queue)
+    job_id = await queue.add_job(str(src), "convert", encoder="nvenc")
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("UPDATE jobs SET status = 'failed' WHERE id = ?", (job_id,))
+        await db.commit()
+
+    result = await retry_job(job_id)
+
+    assert (result["status"], result.get("new_path")) == ("completed", str(out))
+    assert await _codec(test_db, out) == "av1"
+
+
+@pytest.mark.asyncio
 async def test_start_up_relabels_the_files_converted_to_av1(test_db):
     from backend.database import init_db
     for path in ("/m/av1.mkv", "/m/hevc.mkv", "/m/kept.mkv", "/m/again.mkv", "/m/cleaned.mkv"):
