@@ -63,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Demo mode never hands out the API key, backups or download scripts; links in the in-app changelog only open http(s) addresses; scan progress and cancel files live in the data folder instead of fixed names in `/tmp`.
 
 ### Fixed
+- **E-AC3 audio that plays fine isn't marked corrupt**: the health check allowed the decoder's "expacc N is out-of-range" but not the same check's "exponent N is out-of-range", which streaming releases trip too.
 - **A clean-up keeps the start of a broadcast recording's video**: a remux dropped the video before the first keyframe — an HDTV capture starts mid-GOP — so each episode lost its first second or so, and the health check then marked it corrupt ("mmco: unref short failure"). The language writer's remux dropped them the same way.
 - **An MP4 with text subtitles (mov_text) converts with a sidecar subtitle merged**: the conversion failed (ffmpeg exit 218, "mov_text is not supported") — the merge's catch-all subtitle copy overrode converting the MP4's subtitles to SRT.
 - **A clean-up doesn't mark the file converted**: it copies the video, but marked the file converted and not needing conversion, so the next Add to Queue for an XviD was a clean-up again. Files marked that way need converting again (once, at start-up). Add to Queue says when SRT copies replace the image subtitles instead of "no tracks are removed".

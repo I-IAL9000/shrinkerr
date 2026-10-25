@@ -23,3 +23,13 @@ def test_other_damage_still_is_corrupt():
         == "corrupt"
     assert classify_errors(f"{GLITCH}\n", 1)[0] == "corrupt"  # ffmpeg failed
     assert classify_errors("", 0) == ("healthy", [])
+
+
+def test_an_eac3_exponent_out_of_range_is_a_warning():
+    """E-AC3 from streaming services trips the decoder's exponent check two
+    ways — "expacc N" (allowed since v0.3.32) and "exponent N" — and it skips
+    the block; the file plays fine. A converted film was marked corrupt."""
+    reported = ("[eac3 @ 0x55a119252540] exponent 25 is out-of-range\n"
+                "[eac3 @ 0x55a119252540] error decoding the audio block\n")
+    assert classify_errors(reported, 0)[0] == "warnings"
+    assert classify_errors("[ac3 @ 0x1] exponent 25 is out-of-range\n", 0)[0] == "corrupt"  # E-AC3 only, as before

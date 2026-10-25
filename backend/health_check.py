@@ -79,6 +79,7 @@ BENIGN_PATTERNS: tuple[re.Pattern, ...] = tuple(re.compile(p, re.IGNORECASE) for
     # Plex / MPV / VLC / hardware decoders. Codec-scoped to avoid shadowing
     # real decode errors from other streams.
     r"\[eac3 @ [^\]]+\]\s*expacc \d+ is out-of-range",
+    r"\[eac3 @ [^\]]+\]\s*exponent \d+ is out-of-range",  # the same check's other message (v0.10.0)
     r"\[eac3 @ [^\]]+\]\s*error decoding the audio block",
 ))
 
