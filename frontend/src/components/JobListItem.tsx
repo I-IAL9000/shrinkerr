@@ -617,16 +617,21 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
               {logData.started_at && <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.started")} {fmtDateTime(logData.started_at)}</span>}
             </div>
 
-            {/* Health check result (inline post-conversion OR standalone health_check job) */}
+            {/* Health check result (inline post-conversion OR standalone health_check job).
+                v0.10.0: "warnings" (playable) has its own badge and lines — it read
+                "Healthy", without the lines, beside the row's warnings icon. */}
             {job.health_status && (
               <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 4, background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: job.health_status === "corrupt" && job.health_errors_json ? 6 : 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: job.health_status !== "healthy" && job.health_errors_json ? 6 : 0 }}>
                   <span style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>{t("queue:item.health.label")}</span>
                   <span style={{
-                    fontSize: 11, fontWeight: 600, padding: "1px 6px", borderRadius: 3, color: "#ffffff",
-                    background: job.health_status === "corrupt" ? "var(--danger)" : "var(--success)",
+                    fontSize: 11, fontWeight: 600, padding: "1px 6px", borderRadius: 3,
+                    color: job.health_status === "warnings" ? "var(--bg-primary)" : "#ffffff",
+                    background: job.health_status === "corrupt" ? "var(--danger)"
+                      : job.health_status === "warnings" ? "var(--caution)" : "var(--success)",
                   }}>
-                    {job.health_status === "corrupt" ? t("queue:item.corrupt") : t("queue:item.healthy")}
+                    {job.health_status === "corrupt" ? t("queue:item.corrupt")
+                      : job.health_status === "warnings" ? t("queue:item.warnings") : t("queue:item.healthy")}
                   </span>
                   {job.health_check_type && (
                     <span style={{ fontSize: 11, color: "var(--text-muted)" }}>({job.health_check_type})</span>
@@ -635,12 +640,12 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
                     <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{job.health_check_seconds.toFixed(1)}s</span>
                   )}
                 </div>
-                {job.health_status === "corrupt" && job.health_errors_json && (() => {
+                {job.health_status !== "healthy" && job.health_errors_json && (() => {
                   let errs: string[] = [];
                   try { errs = JSON.parse(job.health_errors_json); } catch { /* ignore */ }
                   if (!errs.length) return null;
                   return (
-                    <ul style={{ margin: 0, padding: "4px 0 0 18px", color: "var(--danger)", fontSize: 11, fontFamily: "var(--font-mono)", lineHeight: 1.5 }}>
+                    <ul style={{ margin: 0, padding: "4px 0 0 18px", color: job.health_status === "corrupt" ? "var(--danger)" : "var(--caution)", fontSize: 11, fontFamily: "var(--font-mono)", lineHeight: 1.5 }}>
                       {errs.slice(0, 8).map((e, i) => <li key={i} style={{ wordBreak: "break-word" }}>{e}</li>)}
                       {errs.length > 8 && <li style={{ color: "var(--text-muted)" }}>{t("queue:item.health.more", { count: errs.length - 8 })}</li>}
                     </ul>

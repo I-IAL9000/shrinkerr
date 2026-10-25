@@ -146,6 +146,7 @@
     "badgeHigh": "ALTA",
     "corrupt": "Dañado",
     "healthy": "Correcto",
+    "warnings": "Advertencias",
     "saved": "ahorrado {{size}}",
     "vmafRejected": "Rechazado por VMAF",
     "ignored": "Ignorado",

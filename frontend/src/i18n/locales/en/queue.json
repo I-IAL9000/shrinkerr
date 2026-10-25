@@ -126,6 +126,7 @@
     "badgeHigh": "HIGH",
     "corrupt": "Corrupt",
     "healthy": "Healthy",
+    "warnings": "Warnings",
     "saved": "saved {{size}}",
     "vmafRejected": "VMAF rejected",
     "ignored": "Ignored",
