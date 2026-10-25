@@ -13,6 +13,9 @@
 # libx265 in this image; the Monitor page shows "Using CPU encoding".
 # ============================================================================
 
+# BtbN ffmpeg build to install, master or nX.Y (ffmpeg-download stage).
+ARG FFMPEG_BUILD=n7.1
+
 # Stage 1: build the frontend bundle.
 # Pinning --platform=$BUILDPLATFORM makes sure buildx does the npm step on
 # the native architecture of the builder host (the runner, not the target),
@@ -92,6 +95,48 @@ RUN set -eux; \
         && /out/bin/dovi_tool --version ) \
         || echo "[BUILD] dovi_tool download failed — Dolby Vision files won't be converted"
 
+# ffmpeg: BtbN's static build (includes libx265, libvmaf, x264).
+# BtbN publishes per-architecture assets under the rolling `latest` release;
+# asset filenames differ between master and tagged (nX.Y) releases.
+#   master: ffmpeg-master-latest-{linux64,linuxarm64}-gpl.tar.xz
+#   nX.Y:   ffmpeg-nX.Y-latest-{linux64,linuxarm64}-gpl-X.Y.tar.xz
+# BtbN replaces these with a new build every day under the same URLs, but a
+# RUN is cached by its text, so the image kept whatever ffmpeg was current when
+# the cache last missed. The workflow passes the assets' digests in
+# FFMPEG_DIGESTS: a new BtbN build reruns the download. Downloaded and unpacked
+# on the build machine's architecture, so the arm64 leg doesn't unpack it under
+# QEMU (the binaries need the target's glibc, so they only run in the runtime
+# stage); copied in after the pip install, so a new ffmpeg rebuilds nothing
+# before it.
+FROM --platform=$BUILDPLATFORM mirror.gcr.io/library/python:3.11-slim-bookworm AS ffmpeg-download
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates curl xz-utils
+ARG TARGETARCH
+ARG FFMPEG_BUILD
+ARG FFMPEG_DIGESTS=""
+RUN set -e; \
+    case "${TARGETARCH}" in \
+        amd64) ARCH_TAG="linux64" ;; \
+        arm64) ARCH_TAG="linuxarm64" ;; \
+        *)     echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 2 ;; \
+    esac; \
+    case "${FFMPEG_BUILD}" in \
+        master) FF_URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-${ARCH_TAG}-gpl.tar.xz" ;; \
+        n*)     FF_VER="${FFMPEG_BUILD#n}"; \
+                FF_URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-${FFMPEG_BUILD}-latest-${ARCH_TAG}-gpl-${FF_VER}.tar.xz" ;; \
+        *)      echo "Unknown FFMPEG_BUILD: ${FFMPEG_BUILD} (expected 'master' or 'nX.Y')" >&2; exit 2 ;; \
+    esac; \
+    echo "Installing ffmpeg ${FFMPEG_BUILD} for ${TARGETARCH}: ${FF_URL} (BtbN digests: ${FFMPEG_DIGESTS:-not given})"; \
+    # v0.9.105: download to a file with retries, THEN extract. Piping curl
+    # straight into tar can't retry a mid-stream cut (tar has already consumed
+    # a partial stream) — that flaked the arm64 leg under slow QEMU emulation.
+    curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors "${FF_URL}" -o /tmp/ffmpeg.tar.xz; \
+    mkdir -p /out; \
+    tar -xJf /tmp/ffmpeg.tar.xz --strip-components=2 -C /out/ --wildcards '*/bin/ffmpeg' '*/bin/ffprobe'; \
+    rm -f /tmp/ffmpeg.tar.xz; \
+    chmod +x /out/ffmpeg /out/ffprobe
+
 # Stage 3: runtime image.
 # python:3.11-slim-bookworm is multi-arch (amd64 + arm64) and much smaller
 # than the ubuntu/CUDA image used by the :nvenc variant.
@@ -105,8 +150,9 @@ RUN set -eux; \
 FROM mirror.gcr.io/library/python:3.11-slim-bookworm
 ARG TARGETARCH
 
-# curl + xz-utils only needed for the ffmpeg download step below; purged at
-# the end of that step so they don't bloat the final image layer.
+# curl is only needed for the libva / vpl-gpu-rt downloads below, and xz-utils
+# no longer at all (ffmpeg comes from its own stage; taking it out of this list
+# would rebuild this slow layer). Both are purged in the next step.
 #
 # VA-API runtime libraries (~30 MB total) let ffmpeg's hevc_qsv (Intel
 # Quick Sync) and hevc_vaapi (Intel + AMD generic VA-API) actually run
@@ -250,40 +296,8 @@ RUN set -eux; \
     fi; \
     rm -rf /var/lib/apt/lists/*
 
-# Install ffmpeg static build from BtbN (includes libx265, libvmaf, x264).
-# BtbN publishes per-architecture assets under the rolling `latest` release;
-# asset filenames differ between master and tagged (nX.Y) releases.
-#   master: ffmpeg-master-latest-{linux64,linuxarm64}-gpl.tar.xz
-#   nX.Y:   ffmpeg-nX.Y-latest-{linux64,linuxarm64}-gpl-X.Y.tar.xz
-ARG FFMPEG_BUILD=n7.1
-RUN set -e; \
-    case "${TARGETARCH}" in \
-        amd64) ARCH_TAG="linux64" ;; \
-        arm64) ARCH_TAG="linuxarm64" ;; \
-        *)     echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 2 ;; \
-    esac; \
-    case "${FFMPEG_BUILD}" in \
-        master) FF_URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-${ARCH_TAG}-gpl.tar.xz" ;; \
-        n*)     FF_VER="${FFMPEG_BUILD#n}"; \
-                FF_URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-${FFMPEG_BUILD}-latest-${ARCH_TAG}-gpl-${FF_VER}.tar.xz" ;; \
-        *)      echo "Unknown FFMPEG_BUILD: ${FFMPEG_BUILD} (expected 'master' or 'nX.Y')" >&2; exit 2 ;; \
-    esac; \
-    echo "Installing ffmpeg ${FFMPEG_BUILD} for ${TARGETARCH}: ${FF_URL}"; \
-    # v0.9.105: download to a file with retries, THEN extract. Piping curl
-    # straight into tar can't retry a mid-stream cut (tar has already consumed
-    # a partial stream) — that flaked the arm64 leg under slow QEMU emulation.
-    curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors "${FF_URL}" -o /tmp/ffmpeg.tar.xz; \
-    tar -xJf /tmp/ffmpeg.tar.xz --strip-components=2 -C /usr/local/bin/ --wildcards '*/bin/ffmpeg' '*/bin/ffprobe'; \
-    rm -f /tmp/ffmpeg.tar.xz; \
-    chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe; \
-    apt-get purge -y curl xz-utils && apt-get autoremove -y; \
-    rm -rf /var/lib/apt/lists/*; \
-    echo "ffmpeg installed:"; ffmpeg -version 2>&1 | head -1; \
-    echo "VMAF filter:"; (ffmpeg -filters 2>&1 | grep libvmaf || echo "NOT FOUND")
+RUN apt-get purge -y curl xz-utils && apt-get autoremove -y
 
-# Record lineage so the running backend's Monitor page knows exactly which
-# ffmpeg build the image shipped with.
-ENV SHRINKERR_FFMPEG_BUILD=${FFMPEG_BUILD}
 # This image has no CUDA runtime, so NVENC is structurally unavailable.
 # Backend detection (backend/nodes.py) will notice no NVIDIA GPU + no
 # nvidia-smi and advertise only libx265. Flag it here too so the UI can
@@ -295,6 +309,15 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
+
+# ffmpeg (ffmpeg-download stage).
+COPY --from=ffmpeg-download /out/ /usr/local/bin/
+RUN echo "ffmpeg installed:"; ffmpeg -version 2>&1 | head -1; \
+    echo "VMAF filter:"; (ffmpeg -filters 2>&1 | grep libvmaf || echo "NOT FOUND")
+# Record lineage so the running backend's Monitor page knows exactly which
+# ffmpeg build the image shipped with.
+ARG FFMPEG_BUILD
+ENV SHRINKERR_FFMPEG_BUILD=${FFMPEG_BUILD}
 
 COPY backend/ backend/
 COPY VERSION .

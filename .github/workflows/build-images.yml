@@ -227,6 +227,26 @@ jobs:
         id: version
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
 
+      - name: Look up the BtbN ffmpeg build
+        id: ffmpeg
+        # BtbN replaces its `latest` release's assets with a new build every
+        # day, under the same URLs. Their digests (FFMPEG_DIGESTS) rerun the
+        # Dockerfiles' ffmpeg download when there's a new build; cached by its
+        # command text alone, it kept the ffmpeg of the last cache miss.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FFMPEG_BUILD: ${{ matrix.variant.ffmpeg_build }}
+        run: |
+          DIGESTS="$(curl -fsSL --retry 5 --retry-all-errors -H "Authorization: Bearer ${GH_TOKEN}" \
+              https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/tags/latest \
+            | jq -r '[.assets[] | select(.name | test("^ffmpeg-\(env.FFMPEG_BUILD)-latest-linux(arm)?64-gpl(-[0-9.]+)?\\.tar\\.xz$")) | .digest] | join(" ")')"
+          if [[ "$(wc -w <<< "$DIGESTS")" -ne 2 ]]; then
+            echo "::error::BtbN's latest release has no linux64 + linuxarm64 GPL assets (with digests) for ffmpeg ${FFMPEG_BUILD}: '${DIGESTS}'"
+            exit 1
+          fi
+          echo "BtbN ffmpeg ${FFMPEG_BUILD}: ${DIGESTS}"
+          echo "digests=${DIGESTS}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -251,6 +271,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
           build-args: |
             FFMPEG_BUILD=${{ matrix.variant.ffmpeg_build }}
+            FFMPEG_DIGESTS=${{ steps.ffmpeg.outputs.digests }}
             TMDB_API_KEY=${{ secrets.TMDB_API_KEY }}
           # Per-Dockerfile cache scope (v0.3.91+). Variants of the same
           # Dockerfile share scope so the heavy hwaccel-build layer

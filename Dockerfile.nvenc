@@ -135,38 +135,6 @@ RUN set -eux; \
     apt-get autoremove -y; \
     rm -rf /var/lib/apt/lists/*
 
-# Install ffmpeg with NVENC + libvmaf.
-# BtbN GPL static builds include: NVENC, libvmaf, x265, and all common codecs.
-#
-# FFMPEG_BUILD picks which BtbN release asset to install. The NVENC SDK baked
-# in determines the minimum NVIDIA driver required on the host:
-#   n7.1    = NVENC SDK 12.2  → driver 525.60.13+
-#   n8.1    = NVENC SDK 13.0  → driver 570.00+     (DEFAULT, and the :nvenc image)
-#   master  = NVENC SDK 13.0  → driver 570.00+     (bleeding edge)
-#
-# All are assets of the same rolling `latest` BtbN release, but the filename
-# pattern differs: `master` builds have no version suffix, while tagged
-# releases (nX.Y) append "-X.Y" to the filename.
-# Override at build time:
-#   docker build --build-arg FFMPEG_BUILD=master -t shrinkerr:edge .
-ARG FFMPEG_BUILD=n8.1
-RUN set -e; \
-    case "${FFMPEG_BUILD}" in \
-        master) FF_URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz" ;; \
-        n*)     FF_VER="${FFMPEG_BUILD#n}"; \
-                FF_URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-${FFMPEG_BUILD}-latest-linux64-gpl-${FF_VER}.tar.xz" ;; \
-        *)      echo "Unknown FFMPEG_BUILD: ${FFMPEG_BUILD} (expected 'master' or 'nX.Y')" >&2; exit 2 ;; \
-    esac; \
-    echo "Installing ffmpeg build: ${FFMPEG_BUILD} from ${FF_URL}"; \
-    # v0.9.105: download to a file with retries, THEN extract (piping curl into
-    # tar can't retry a mid-stream cut). See Dockerfile for the full rationale.
-    curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors "${FF_URL}" -o /tmp/ffmpeg.tar.xz; \
-    tar -xJf /tmp/ffmpeg.tar.xz --strip-components=2 -C /usr/local/bin/ --wildcards '*/bin/ffmpeg' '*/bin/ffprobe'; \
-    rm -f /tmp/ffmpeg.tar.xz; \
-    chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe; \
-    echo "ffmpeg installed:"; ffmpeg -version 2>&1 | head -1; \
-    echo "VMAF filter:"; (ffmpeg -filters 2>&1 | grep libvmaf || echo "NOT FOUND")
-
 # v0.9.8: subtile-ocr for VobSub (DVD, dvd_subtitle) subtitle OCR. pgsrip
 # (already installed via pip) handles PGS/Blu-ray only and can't read VobSub,
 # so DVD image subs get their own tool. Built from crates.io — but via a
@@ -191,13 +159,6 @@ RUN set -eux; \
     apt-get autoremove -y; \
     rm -rf /var/lib/apt/lists/* /opt/rustup /opt/cargo
 
-# Record the ffmpeg lineage + its NVENC-SDK driver floor so the backend can
-# produce an actionable error message if the runtime NVENC test fails. Read
-# by backend/nodes.py during startup-time capability detection.
-ENV SHRINKERR_FFMPEG_BUILD=${FFMPEG_BUILD}
-ARG NVENC_MIN_DRIVER=570.00
-ENV SHRINKERR_NVENC_MIN_DRIVER=${NVENC_MIN_DRIVER}
-
 # The CUDA base image asks the NVIDIA runtime for compute,utility only, which
 # leaves out NVENC / NVDEC: `--gpus all` or a compose `capabilities: [gpu]`
 # then gave a container without hardware encoding. Ask for video too
@@ -218,6 +179,52 @@ WORKDIR /app
 # hatch for the Docker use case. v0.5.13+.
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+
+# Install ffmpeg with NVENC + libvmaf.
+# BtbN GPL static builds include: NVENC, libvmaf, x265, and all common codecs.
+#
+# FFMPEG_BUILD picks which BtbN release asset to install. The NVENC SDK baked
+# in determines the minimum NVIDIA driver required on the host:
+#   n7.1    = NVENC SDK 12.2  → driver 525.60.13+
+#   n8.1    = NVENC SDK 13.0  → driver 570.00+     (DEFAULT, and the :nvenc image)
+#   master  = NVENC SDK 13.0  → driver 570.00+     (bleeding edge)
+#
+# All are assets of the same rolling `latest` BtbN release, but the filename
+# pattern differs: `master` builds have no version suffix, while tagged
+# releases (nX.Y) append "-X.Y" to the filename.
+# Override at build time:
+#   docker build --build-arg FFMPEG_BUILD=master -t shrinkerr:edge .
+#
+# BtbN replaces these assets with a new build every day under the same URLs,
+# but a RUN is cached by its text, so the image kept whatever ffmpeg was
+# current when the cache last missed. The workflow passes the assets' digests
+# in FFMPEG_DIGESTS: a new BtbN build reruns the download. It comes after the
+# pip install, so a new ffmpeg rebuilds nothing before it.
+ARG FFMPEG_BUILD=n8.1
+ARG FFMPEG_DIGESTS=""
+RUN set -e; \
+    case "${FFMPEG_BUILD}" in \
+        master) FF_URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz" ;; \
+        n*)     FF_VER="${FFMPEG_BUILD#n}"; \
+                FF_URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-${FFMPEG_BUILD}-latest-linux64-gpl-${FF_VER}.tar.xz" ;; \
+        *)      echo "Unknown FFMPEG_BUILD: ${FFMPEG_BUILD} (expected 'master' or 'nX.Y')" >&2; exit 2 ;; \
+    esac; \
+    echo "Installing ffmpeg build: ${FFMPEG_BUILD} from ${FF_URL} (BtbN digests: ${FFMPEG_DIGESTS:-not given})"; \
+    # v0.9.105: download to a file with retries, THEN extract (piping curl into
+    # tar can't retry a mid-stream cut). See Dockerfile for the full rationale.
+    curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors "${FF_URL}" -o /tmp/ffmpeg.tar.xz; \
+    tar -xJf /tmp/ffmpeg.tar.xz --strip-components=2 -C /usr/local/bin/ --wildcards '*/bin/ffmpeg' '*/bin/ffprobe'; \
+    rm -f /tmp/ffmpeg.tar.xz; \
+    chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe; \
+    echo "ffmpeg installed:"; ffmpeg -version 2>&1 | head -1; \
+    echo "VMAF filter:"; (ffmpeg -filters 2>&1 | grep libvmaf || echo "NOT FOUND")
+
+# Record the ffmpeg lineage + its NVENC-SDK driver floor so the backend can
+# produce an actionable error message if the runtime NVENC test fails. Read
+# by backend/nodes.py during startup-time capability detection.
+ENV SHRINKERR_FFMPEG_BUILD=${FFMPEG_BUILD}
+ARG NVENC_MIN_DRIVER=570.00
+ENV SHRINKERR_NVENC_MIN_DRIVER=${NVENC_MIN_DRIVER}
 
 # Copy backend and version file
 COPY backend/ backend/
