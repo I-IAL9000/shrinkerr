@@ -14,7 +14,7 @@
 # ============================================================================
 
 # BtbN ffmpeg build to install, master or nX.Y (ffmpeg-download stage).
-ARG FFMPEG_BUILD=n7.1
+ARG FFMPEG_BUILD=n8.1
 
 # Stage 1: build the frontend bundle.
 # Pinning --platform=$BUILDPLATFORM makes sure buildx does the npm step on
