@@ -686,7 +686,8 @@ def _build_metadata_remux_cmd(
     supported" (seen on an MP4-that's-named-.mkv). Transcode those specific
     subtitle streams to srt (`-c:s:N srt`); everything else still copies."""
     cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-           "-i", file_path, "-map", "0", "-c", "copy"]
+           "-i", file_path, "-map", "0", "-c", "copy",
+           "-copyinkf"]  # v0.10.0: the video before the first keyframe too (audio.build_remux_cmd)
     for j, cc in enumerate(sub_codecs or []):
         if (cc or "").lower() in _MKV_INCOMPATIBLE_SUBS:
             cmd += [f"-c:s:{j}", "srt"]

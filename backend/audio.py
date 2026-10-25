@@ -227,6 +227,12 @@ def build_remux_cmd(
         cmd += ["-c:v", "copy", "-c:a", "copy"] + sub_codec_args
     else:
         cmd += ["-c", "copy"]
+    # v0.10.0: keep the video before the first keyframe. A broadcast recording
+    # starts mid-GOP, and stream copy drops those frames by default: a
+    # clean-up cut the start of each HDTV episode, and the frames after the
+    # first keyframe referred to pictures no longer there ("mmco: unref short
+    # failure": marked corrupt).
+    cmd += ["-copyinkf"]
 
     cmd += audio_lang_args
     if drop_dolby_vision:
