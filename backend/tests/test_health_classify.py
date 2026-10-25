@@ -46,3 +46,26 @@ def test_a_missing_reference_at_the_start_is_a_warning():
     # pictures it couldn't decode are still damage
     assert classify_errors(reported + "[h264 @ 0x55b036899680] concealing 400 DC, 400 AC, 400 MV errors in P frame\n",
                            0)[0] == "corrupt"
+
+
+THOROUGH = """[h264 @ 0x55c0f8b57680] mmco: unref short failure
+[h264 @ 0x55c0f8b57680] number of reference frames (0+5) exceeds max (4; probably corrupt input), discarding one
+[null @ 0x55c0f8b5a0c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 84080 >= 84080
+[null @ 0x55c0f8b5a0c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 84085 >= 84085
+    Last message repeated 2 times
+[null @ 0x55c0f8b5a0c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 84087 >= 84087
+"""
+
+
+def test_a_repeated_message_is_the_message_again():
+    """ffmpeg collapses a line said again into "Last message repeated N
+    times" — not a message of its own: a thorough check of the Dragons' Den
+    episodes was marked corrupt for it."""
+    status, errors = classify_errors(THOROUGH, 0)
+    assert status == "warnings"
+    assert not any("Last message repeated" in e for e in errors)
+
+
+def test_repeated_audio_glitches_count():
+    assert classify_errors(f"{GLITCH}\n    Last message repeated {AUDIO_GLITCHES - 1} times\n", 0)[0] == "warnings"
+    assert classify_errors(f"{GLITCH}\n    Last message repeated {AUDIO_GLITCHES} times\n", 0)[0] == "corrupt"

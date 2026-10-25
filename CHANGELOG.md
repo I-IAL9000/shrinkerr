@@ -63,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Demo mode never hands out the API key, backups or download scripts; links in the in-app changelog only open http(s) addresses; scan progress and cancel files live in the data folder instead of fixed names in `/tmp`.
 
 ### Fixed
+- **A thorough health check isn't marked corrupt for ffmpeg's "Last message repeated N times"**: it's the line before it said again, not an error of its own; repeated audio glitches now count toward the limit too.
 - **A job's health check shows its warnings**: a check that found only warnings (the file plays) read "Healthy" in the job's report, without them, beside the row's warnings icon. It now says Warnings and lists what was noticed.
 - **E-AC3 audio that plays fine isn't marked corrupt**: the health check allowed the decoder's "expacc N is out-of-range" but not the same check's "exponent N is out-of-range", which streaming releases trip too.
 - **A clean-up keeps the start of a broadcast recording's video**: a remux dropped the video before the first keyframe — an HDTV capture starts mid-GOP — so each episode lost its first second or so, and the health check then marked it corrupt ("mmco: unref short failure"). The language writer's remux dropped them the same way. A file a clean-up already cut plays fine and is no longer marked corrupt for it ("mmco: unref short failure" is a warning).

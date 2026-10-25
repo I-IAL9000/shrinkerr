@@ -119,6 +119,14 @@ GLITCH_PATTERNS: tuple[re.Pattern, ...] = tuple(re.compile(p, re.IGNORECASE) for
 ))
 AUDIO_GLITCHES = 10
 
+# ffmpeg collapses a line said again into this (v0.10.0): the line before it,
+# N more times — not a message of its own.
+_REPEATED = re.compile(r"^last message repeated (\d+) times?$", re.IGNORECASE)
+
+
+def _is_glitch(line: str) -> bool:
+    return any(p.search(line) for p in GLITCH_PATTERNS)
+
 
 def classify_errors(stderr_text: str, returncode: int) -> tuple[HealthStatus, list[str]]:
     """Classify ffprobe/ffmpeg stderr into (status, cleaned_errors).
@@ -126,7 +134,16 @@ def classify_errors(stderr_text: str, returncode: int) -> tuple[HealthStatus, li
     Returns the health status label plus the stderr lines we want to surface
     to the user (deduplicated, capped at 10 to avoid log spam).
     """
-    lines = [ln.strip() for ln in (stderr_text or "").splitlines() if ln.strip()]
+    # A few audio glitches are benign; many are damage (counted before the dedup).
+    lines: list[str] = []
+    glitches = 0
+    for ln in (ln.strip() for ln in (stderr_text or "").splitlines()):
+        repeated = _REPEATED.match(ln)
+        if repeated:
+            glitches += int(repeated.group(1)) if lines and _is_glitch(lines[-1]) else 0
+        elif ln:
+            lines.append(ln)
+            glitches += _is_glitch(ln)
     # Deduplicate while preserving order — decoders often repeat the same warning
     # thousands of times, which isn't useful.
     seen: set[str] = set()
@@ -138,10 +155,8 @@ def classify_errors(stderr_text: str, returncode: int) -> tuple[HealthStatus, li
 
     capped = unique[:10]
 
-    # A few audio glitches are benign; many are damage (counted before the dedup).
-    glitches = sum(1 for ln in lines if any(p.search(ln) for p in GLITCH_PATTERNS))
     def glitch(ln: str) -> bool:
-        return glitches <= AUDIO_GLITCHES and any(p.search(ln) for p in GLITCH_PATTERNS)
+        return glitches <= AUDIO_GLITCHES and _is_glitch(ln)
 
     # Any fatal match → corrupt, full stop.
     for ln in unique:
