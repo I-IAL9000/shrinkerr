@@ -2108,6 +2108,7 @@ async def _probe_vmaf_stream(path: str) -> dict:
     info = {
         "width": 0, "height": 0, "fps": None, "frame_count": None,
         "pix_fmt": "", "color_range": "", "color_space": "", "duration": None,
+        "start_time": None,
     }
     try:
         cmd = [
@@ -2115,7 +2116,7 @@ async def _probe_vmaf_stream(path: str) -> dict:
             "-select_streams", "V:0",
             "-show_entries",
             "stream=width,height,r_frame_rate,avg_frame_rate,nb_frames,"
-            "pix_fmt,color_range,color_space,duration",
+            "pix_fmt,color_range,color_space,duration,start_time",
             path,
         ]
         proc = await asyncio.create_subprocess_exec(
@@ -2140,6 +2141,10 @@ async def _probe_vmaf_stream(path: str) -> dict:
             info["duration"] = float(s.get("duration") or 0) or None
         except (TypeError, ValueError):
             info["duration"] = None
+        try:  # where the video starts (v0.10.0: _vmaf_grid_shift)
+            info["start_time"] = float(s["start_time"])
+        except (KeyError, TypeError, ValueError):
+            info["start_time"] = None
         # Frame rate: prefer r_frame_rate ("24000/1001"), fall back to avg
         fr = s.get("r_frame_rate") or s.get("avg_frame_rate") or ""
         if "/" in fr:
@@ -2186,7 +2191,55 @@ def _vmaf_probe_summary(label: str, info: dict) -> str:
         parts.append(f"range={info['color_range']}")
     if info.get("color_space"):
         parts.append(f"cs={info['color_space']}")
+    if info.get("start_time"):
+        parts.append(f"start={info['start_time']:.3f}s")
     return " ".join(parts)
+
+
+def _vmaf_grid_shift(ref_start: float | None, dist_start: float | None, fps: float) -> float:
+    """How far the encode's frames sit from the source's, within a frame
+    (seconds; 0 when they line up or a start is unknown). The encoder puts
+    its frames on the frame-rate grid: a source whose video starts off it is
+    a fraction of a frame from its encode. Whole frames don't count — they'd
+    be frames the encode doesn't have (v0.10.0)."""
+    if ref_start is None or dist_start is None or not fps:
+        return 0.0
+    frame = 1.0 / fps
+    offset = dist_start - ref_start
+    shift = offset - round(offset / frame) * frame
+    return shift if abs(shift) >= 0.0005 else 0.0
+
+
+def _vmaf_pipelines(src_info: dict, dst_info: dict) -> tuple[str, str, float | None]:
+    """The reference's and the encode's filter chains before libvmaf, and the
+    frame rate both are brought to (_probe_vmaf_stream's dicts):
+
+      range fix: `scale=in_range=auto:out_range=tv` — a "tv"-tagged source
+        and a "pc" (or untagged) encode put every pixel value off, and VMAF
+        cratered on a visually-correct encode;
+      fps fix: both through the same `fps` (the source's rate), so a VFR
+        source and its CFR encode come out with the same frames — "sibling
+        episodes score 49 and 96 on identical settings";
+      grid fix (v0.10.0): the `fps` filter rounds each frame to a slot of the
+        grid, and when the encode's frames sit a fraction of a frame from the
+        source's, some sample windows rounded them a whole slot apart — every
+        frame compared with its neighbour (Dragons' Den, 1080i HDTV cut at a
+        keyframe 1.112 s in: VMAF 43 on a fine encode). The encode's
+        timestamps are moved by that fraction first (_vmaf_grid_shift).
+    """
+    target_fps = src_info.get("fps") or dst_info.get("fps")
+    range_clause = "scale=in_range=auto:out_range=tv:flags=bicubic"
+    ref_chain, dist_chain = [range_clause], [range_clause]
+    if target_fps and target_fps > 0:
+        shift = _vmaf_grid_shift(src_info.get("start_time"), dst_info.get("start_time"), target_fps)
+        if shift:
+            dist_chain.append(f"setpts=PTS{'-' if shift > 0 else '+'}{abs(shift):.6f}/TB")
+        # Rational-exact for common TV rates (23.976 = 24000/1001, etc.).
+        ref_chain.append(f"fps=fps={target_fps:.6f}")
+        dist_chain.append(f"fps=fps={target_fps:.6f}")
+    ref_chain.append("format=yuv420p")
+    dist_chain.append("format=yuv420p")
+    return ",".join(ref_chain), ",".join(dist_chain), target_fps
 
 
 def _is_bimodal_vmaf(result: dict) -> bool:
@@ -2405,19 +2458,8 @@ async def remeasure_vmaf(
         primary_seek = 0.0
         window_dur = 30.0
 
-    # Build the same normalisation pipeline convert_file uses.
-    target_fps = src_info.get("fps") or dst_info.get("fps")
-    fps_clause = f"fps=fps={target_fps:.6f}" if target_fps and target_fps > 0 else ""
-    range_clause = "scale=in_range=auto:out_range=tv:flags=bicubic"
-    ref_chain = [range_clause]
-    dist_chain = [range_clause]
-    if fps_clause:
-        ref_chain.append(fps_clause)
-        dist_chain.append(fps_clause)
-    ref_chain.append("format=yuv420p")
-    dist_chain.append("format=yuv420p")
-    ref_pipeline = ",".join(ref_chain)
-    dist_pipeline = ",".join(dist_chain)
+    # The same normalisation pipeline convert_file uses.
+    ref_pipeline, dist_pipeline, target_fps = _vmaf_pipelines(src_info, dst_info)
 
     fps_for_progress = target_fps or 24.0
     vmaf_dir = Path("/tmp/shrinkerr_vmaf")
@@ -4594,45 +4636,10 @@ async def convert_file(
                 dst_info = await _probe_vmaf_stream(temp_path)
                 print(f"[CONVERT] VMAF inputs — {_vmaf_probe_summary('ref', src_info)} | {_vmaf_probe_summary('dist', dst_info)}", flush=True)
 
-                # Pick target fps for normalization. Prefer source fps; fall
-                # back to encoded fps, then to no-op. Forcing both streams
-                # through the same `fps` filter guarantees they emerge with
-                # identical frame counts and rates, which is what libvmaf
-                # needs for valid pairwise comparison. This is the canonical
-                # fix for "sibling episodes score 49 and 96 on identical
-                # settings" — the fps mismatch used to leave libvmaf comparing
-                # frame N of one stream against a time-shifted frame N of the
-                # other after any drift accumulated.
-                target_fps = src_info.get("fps") or dst_info.get("fps")
-                if target_fps and target_fps > 0:
-                    # Use rational form so ffmpeg does exact arithmetic for
-                    # common TV rates (23.976 = 24000/1001, etc.).
-                    fps_clause = f"fps=fps={target_fps:.6f}"
-                else:
-                    fps_clause = ""
-
-                # Color-range normalization. If the source is tagged "tv"
-                # (limited 16-235) and the encode ended up "pc" (full 0-255)
-                # — or tags are missing and ffmpeg assumes differently per
-                # pipeline branch — every pixel value is systematically
-                # shifted and VMAF cratered scores on a visually-correct
-                # encode. `scale=in_range=auto:out_range=tv` auto-detects
-                # the input range (honouring the stream tag) and forces
-                # output to limited range on BOTH sides, so they definitely
-                # agree.
-                range_clause = "scale=in_range=auto:out_range=tv:flags=bicubic"
-
-                # Assemble per-stream normalisation pipeline:
-                #   range fix → fps fix → pixel format → scale2ref → libvmaf
-                ref_chain = [range_clause]
-                dist_chain = [range_clause]
-                if fps_clause:
-                    ref_chain.append(fps_clause)
-                    dist_chain.append(fps_clause)
-                ref_chain.append("format=yuv420p")
-                dist_chain.append("format=yuv420p")
-                ref_pipeline = ",".join(ref_chain)
-                dist_pipeline = ",".join(dist_chain)
+                # Per-stream normalisation (range fix → fps fix → pixel format,
+                # and the encode moved onto the source's frame grid), then
+                # scale2ref → libvmaf: _vmaf_pipelines says why each is there.
+                ref_pipeline, dist_pipeline, target_fps = _vmaf_pipelines(src_info, dst_info)
 
                 # Total frame count for the sampled window — used to map the
                 # frame=NN progress lines to 0–100%. Prefer the real source

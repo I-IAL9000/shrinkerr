@@ -63,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Demo mode never hands out the API key, backups or download scripts; links in the in-app changelog only open http(s) addresses; scan progress and cancel files live in the data folder instead of fixed names in `/tmp`.
 
 ### Fixed
+- **VMAF compares each frame with the same frame of the encode**: when a file's video starts off the frame grid (a recording cut at a keyframe), its encode's frames sit a fraction of a frame away, and some sample windows compared every frame with its neighbour — VMAF 43–59 on fine encodes (a good encode could be rejected). The encode is moved onto the source's grid before the compare, in Remeasure and the VMAF target search too.
 - **Cancel stops a health check**: a thorough check ran to the end and recorded its verdict — its ffmpeg wasn't the job's to stop. Cancelled, it stops at once and records nothing, and the prompt and toast say "health check", not "conversion".
 - **A thorough health check isn't marked corrupt for ffmpeg's "Last message repeated N times"**: it's the line before it said again, not an error of its own; repeated audio glitches now count toward the limit too.
 - **A job's health check shows its warnings**: a check that found only warnings (the file plays) read "Healthy" in the job's report, without them, beside the row's warnings icon. It now says Warnings and lists what was noticed.

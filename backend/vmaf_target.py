@@ -69,15 +69,12 @@ async def _run(cmd: list[str], timeout: int) -> bool:
 
 
 async def _vmaf(reference: str, encoded: str, seconds: float, json_path: str) -> float | None:
-    from backend.converter import _probe_vmaf_stream, _run_libvmaf_pass
-    fps = (await _probe_vmaf_stream(reference)).get("fps")
-    chain = ["scale=in_range=auto:out_range=tv:flags=bicubic"]
-    if fps:
-        chain.append(f"fps=fps={fps:.6f}")
-    chain.append("format=yuv420p")
+    from backend.converter import _probe_vmaf_stream, _run_libvmaf_pass, _vmaf_pipelines
+    ref_pipeline, dist_pipeline, fps = _vmaf_pipelines(await _probe_vmaf_stream(reference),
+                                                       await _probe_vmaf_stream(encoded))
     result = await _run_libvmaf_pass(
         input_path=reference, temp_path=encoded, seek=0.0, duration=seconds,
-        ref_pipeline=",".join(chain), dist_pipeline=",".join(chain), json_path=json_path,
+        ref_pipeline=ref_pipeline, dist_pipeline=dist_pipeline, json_path=json_path,
         fps_for_progress=fps or 24.0, progress_callback=None, step_label="")
     return result.get("score")
 
