@@ -1626,13 +1626,13 @@ async def retry_job(job_id: int):
     if row:
         fp = row["file_path"]
         if fp and not _os.path.exists(fp):
-            # Try common renames: x264 → x265 in the filename, or → AV1 for
-            # an AV1 output (v0.10.0)
+            # Try common renames: the source's codec tag → the one the output
+            # got: x265 (libx265), h265 (the hardware encoders) or AV1 (v0.10.0)
             candidates = []
             try:
                 d = _os.path.dirname(fp)
                 orig_name = _os.path.basename(fp)
-                for encoder in (None, "av1"):
+                for encoder in ("libx265", "nvenc", "av1"):
                     renamed_name = rename_source_to_target_codec(orig_name, encoder=encoder)
                     if renamed_name != orig_name:
                         candidates.append(_os.path.join(d, renamed_name))
