@@ -34,8 +34,8 @@
         "name": "Automático",
         "recommended": "Recomendado",
         "savings": "el ahorro varía según el título",
-        "desc": "Cada título recibe su propio ajuste: el archivo más pequeño que aún puntúa VMAF {{score}}, que se ve igual que el original. Las películas antiguas con grano conservan más detalle; los estrenos limpios se reducen más.",
-        "slower": "Más lento: antes se codifican de prueba unas muestras de 10 segundos de cada archivo."
+        "desc": "Cada título recibe su propio ajuste: el archivo más pequeño que aún puntúa VMAF {{score}}, que se ve igual que el original. Las películas antiguas con grano conservan más detalle; los estrenos limpios se reducen más. Las reglas pueden fijar su propio objetivo o desactivarlo.",
+        "slower": "Más lento: antes se codifican de prueba de 3 a 6 muestras de 10 segundos de cada archivo (según su duración), y un archivo que no alcanza el objetivo se codifica de nuevo."
       },
       "custom": {
         "name": "Mantener mis ajustes",

@@ -1,5 +1,6 @@
 import i18n from ".";
 import { fmtBytes } from "../fmt";
+import { qualityLabelForCq } from "../utils/encoderLabel";
 
 // Server message codes (v0.9.132). The backend stores/sends a stable key plus
 // params next to its English text. When a key is present we translate it;
@@ -29,9 +30,18 @@ export function serverText(ns: string, key: string | null | undefined, params: P
 export const eventSummary = (ev: { summary?: string | null; summary_key?: string | null; summary_params?: Params; details?: any }) =>
   serverText("serverEvents", ev.summary_key, withSize(ev.summary_params, ev.details?.space_saved), ev.summary);
 
+// A step's quality on NVENC's CQ scale (`cq`: the VMAF target's round and
+// re-encode, v0.10.0) named as the encoder names it, as the job report does:
+// "q:v 40", "CRF 34". A server or worker that sends no encoder gets "CQ 32".
+function withQuality(params: Params): Params {
+  if (!params || typeof params.cq !== "number") return params;
+  const crfOffset = typeof params.crf === "number" ? params.crf - params.cq : null;
+  return { ...params, quality: qualityLabelForCq(params.encoder as string | undefined, params.cq, crfOffset) };
+}
+
 /** Live job progress step label ("converting", "removing tracks", …). */
 export const jobStep = (p: { step?: string | null; step_key?: string | null; step_params?: Params }) =>
-  serverText("serverJobs", p.step_key, p.step_params, p.step);
+  serverText("serverJobs", p.step_key, withQuality(p.step_params), p.step);
 
 /**
  * Translated headline for a Shrinkerr-authored job error, or null when the

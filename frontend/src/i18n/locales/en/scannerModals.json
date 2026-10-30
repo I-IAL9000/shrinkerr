@@ -42,6 +42,10 @@
       "originalsKeep_other": "Originals are kept for {{count}} days, so you can undo",
       "originalsTrash": "Originals go to the trash",
       "originalsDelete": "Originals are deleted once the new file is in place",
+      "vmafTarget_one": "VMAF target {{target}}: each file's quality is found with test encodes first, about {{time}} ({{num}} file)",
+      "vmafTarget_other": "VMAF target {{target}}: each file's quality is found with test encodes first, about {{time}} each ({{num}} files)",
+      "vmafFixed_one": "Fixed quality, VMAF target off by rule: {{num}} file",
+      "vmafFixed_other": "Fixed quality, VMAF target off by rule: {{num}} files",
       "audioRemoved": "Audio tracks removed: {{list}}",
       "subsRemoved": "Subtitles removed: {{list}}",
       "nothingRemoved": "No audio or subtitle tracks are removed",
@@ -90,7 +94,8 @@
     },
     "learnedFrom_one": "learned from {{count}} of your conversions",
     "learnedFrom_other": "learned from {{count}} of your conversions",
-    "typicalSavings": "typical results, until your conversions teach it"
+    "typicalSavings": "typical results, until your conversions teach it",
+    "savingsAtStartingQuality": "files with a VMAF target: at the quality their search starts from"
   },
   "overrides": {
     "encodingSettings": "Encoding Settings",
@@ -99,6 +104,7 @@
     "encoder": "Encoder",
     "auto": "Auto",
     "quality": "Quality ({{mode}})",
+    "qualityStartsSearch": "The starting point for the VMAF target",
     "reset": "Reset",
     "preset": "Preset",
     "cpuPresetDefault": "(default)",

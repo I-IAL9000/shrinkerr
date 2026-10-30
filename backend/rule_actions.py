@@ -1,6 +1,7 @@
 """Per-rule actions beyond the encoder settings (v0.10.0) — per-library
 policies without a separate system: the languages to keep, a subtitle
-policy, what happens to originals, a VMAF minimum, and a savings threshold.
+policy, what happens to originals, a VMAF minimum, a VMAF target (or none),
+and a savings threshold.
 
 A rule's languages decide its files' track removals when they're queued
 (and when pending jobs are refreshed); the Scanner keeps showing the global
@@ -78,12 +79,14 @@ def job_overrides(rule: Optional[dict]) -> dict:
     rule = rule or {}
     return {"originals_policy": rule.get("originals_policy") if rule.get("originals_policy") in ORIGINALS_POLICIES else None,
             "originals_days": rule.get("originals_days"),
-            "vmaf_min_score": rule.get("vmaf_min_score")}
+            "vmaf_min_score": rule.get("vmaf_min_score"),
+            "vmaf_target": rule.get("vmaf_target")}
 
 
 def settings_overrides(job: dict) -> dict:
-    """A job's own originals policy and VMAF minimum, as the encoding
-    settings convert_file reads (empty: the global ones apply). A "Fix for
+    """A job's own originals policy, VMAF minimum and VMAF target, as the
+    encoding settings convert_file reads (empty: the global ones apply; a
+    target of 0 is Off, whatever Settings say). A "Fix for
     direct play" job (backend/direct_play.py) reads image subtitles into SRT
     and adds a compatibility track where the audio needs one — those it
     was asked to."""
@@ -104,4 +107,9 @@ def settings_overrides(job: dict) -> dict:
         out.update(backup_original_days=0, trash_original_after_conversion=False)
     if job.get("vmaf_min_score") is not None:
         out["vmaf_min_score"] = float(job["vmaf_min_score"])
+    target = job.get("vmaf_target")
+    if target is not None:
+        out["vmaf_target_enabled"] = float(target) > 0
+        if float(target) > 0:
+            out["vmaf_target_score"] = float(target)
     return out

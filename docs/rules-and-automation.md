@@ -75,6 +75,9 @@ policies:
 - **Originals** — keep for N days, move to trash or delete, instead of the
   global setting (Encode rules).
 - **Minimum VMAF** — this rule's rejection threshold; 0 never rejects.
+- **VMAF target** — Settings' target (the default), **Off** (the rule's own
+  quality, no search) or a score of 80–99 for this rule's files; see
+  [VMAF target quality](encoding-guide.md#vmaf-target-quality).
 - **Skip if savings below (%)** — leave the video alone when the estimated
   saving is smaller; the track cleanup still runs.
 
@@ -142,8 +145,8 @@ saved_views:
 `nvenc_cq`, `libx265_crf`, `libx265_preset`, `output_codec`,
 `target_resolution`, `audio_codec`, `audio_bitrate`, `queue_priority`,
 `audio_keep_languages`, `sub_policy`, `sub_keep_languages`,
-`originals_policy`, `originals_days`, `vmaf_min_score` and
-`min_savings_pct`.
+`originals_policy`, `originals_days`, `vmaf_min_score`,
+`vmaf_target` (0 is off) and `min_savings_pct`.
 
 **Rule library** has ready-made rules to start from:
 

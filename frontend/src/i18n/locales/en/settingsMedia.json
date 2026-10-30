@@ -202,7 +202,7 @@
         "other": "Other (live action)"
       },
       "target": "Target a VMAF score",
-      "targetHelp": "Choose each title's quality for it instead of one quality for all: before encoding, three 10-second samples are encoded at a few quality settings and scored with VMAF, and the file is encoded at the lowest quality whose samples still average the target — grainy films get more bits, clean animation fewer. It replaces the quality from presets, rules and content type, and adds a few minutes per file (more on a CPU encoder). Files under two minutes and discs keep their quality. Needs ffmpeg with VMAF.",
+      "targetHelp": "Choose each title's quality for it instead of one quality for all: before encoding, 3 to 6 ten-second samples (by length) are encoded at a few quality settings and scored with VMAF, and the file is encoded at the highest compression whose samples still reach the target — grainy films get more bits, clean animation fewer. The quality from presets, rules and content type is where the search starts. A finished file more than a point under the target is encoded once more. It adds a few minutes per file (more on a CPU encoder). Files under two minutes and discs keep their quality. A rule can set its own target, or switch it off to keep its own quality. Needs ffmpeg with VMAF.",
       "compareFrames": "Keep before / after frames",
       "compareFramesHelp": "Each conversion grabs three moments from the original and the converted file, to compare in the job's details (Queue → Completed). The last 100 jobs keep theirs, about 0.5 MB each."
     },

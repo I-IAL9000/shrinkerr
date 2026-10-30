@@ -450,13 +450,14 @@ async def init_db():
                 except Exception:
                     pass
         # v0.10.0: per-rule actions (backend/rule_actions.py); jobs carry the
-        # originals policy and VMAF minimum.
+        # originals policy, VMAF minimum and VMAF target (NULL: Settings',
+        # 0: off, else the score).
         for table, cols in (("encoding_rules", (("audio_keep_languages", "TEXT"), ("sub_policy", "TEXT"),
                                                 ("sub_keep_languages", "TEXT"), ("min_savings_pct", "REAL"))),
                             ("encoding_rules", (("originals_policy", "TEXT"), ("originals_days", "INTEGER"),
-                                                ("vmaf_min_score", "REAL"))),
+                                                ("vmaf_min_score", "REAL"), ("vmaf_target", "REAL"))),
                             ("jobs", (("originals_policy", "TEXT"), ("originals_days", "INTEGER"),
-                                      ("vmaf_min_score", "REAL"))),
+                                      ("vmaf_min_score", "REAL"), ("vmaf_target", "REAL"))),
                             # "Fix for direct play" (backend/direct_play.py)
                             ("jobs", (("direct_play", "INTEGER"),))):
             for col, coltype in cols:
@@ -828,6 +829,13 @@ async def init_db():
             "weekday INTEGER, at TEXT NOT NULL DEFAULT '01:00', max_files INTEGER, max_gb REAL, "
             "start_queue INTEGER NOT NULL DEFAULT 1, enabled INTEGER NOT NULL DEFAULT 1, "
             "last_run_at TEXT, last_result TEXT, created_at TEXT NOT NULL)")
+        # v0.10.0: where each VMAF target search landed, by folder, target,
+        # encoder and output codec (vmaf_target.remember): the next search in
+        # the folder starts there.
+        await db.execute(
+            "CREATE TABLE IF NOT EXISTS vmaf_target_memory (folder TEXT NOT NULL, target REAL NOT NULL, "
+            "encoder TEXT NOT NULL, output_codec TEXT NOT NULL, cq REAL NOT NULL, updated_at TEXT NOT NULL, "
+            "PRIMARY KEY (folder, target, encoder, output_codec))")
         # v0.10.0: HDR10 / HLG / Dolby Vision ("dv<profile>"), from the probe.
         try:
             await db.execute("ALTER TABLE scan_results ADD COLUMN hdr_format TEXT DEFAULT NULL")

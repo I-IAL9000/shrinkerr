@@ -371,6 +371,7 @@ class JobQueue:
                     j.get("originals_policy"),
                     j.get("originals_days"),
                     j.get("vmaf_min_score"),
+                    j.get("vmaf_target"),
                     # The fixes Add to Queue chose ("" = none), else the setting's
                     (j["direct_play"] or None) if j.get("direct_play") is not None
                     else 1 if direct_play_default and j["job_type"] in _DIRECT_PLAY_JOB_TYPES else None,
@@ -383,8 +384,8 @@ class JobQueue:
                 "audio_tracks_to_remove, subtitle_tracks_to_remove, created_at, "
                 "queue_order, original_size, nvenc_preset, nvenc_cq, audio_codec, "
                 "audio_bitrate, libx265_crf, libx265_preset, target_resolution, priority, not_before, output_codec, "
-                "originals_policy, originals_days, vmaf_min_score, direct_play) "
-                "VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "originals_policy, originals_days, vmaf_min_score, vmaf_target, direct_play) "
+                "VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
             assigned_ids: list[int] = []
             if params_list:
@@ -1789,6 +1790,26 @@ class QueueWorker:
             pass
         return len(orphans)
 
+    def _register_proc(self, job_id: int, proc) -> None:
+        """A job's ffmpeg, as it starts (its encode, or a VMAF target sample)."""
+        self._active_procs[job_id] = proc
+        # Cancelled before this ffmpeg started — e.g. during the VMAF
+        # pass, before the VMAF target's re-encode: killed at once,
+        # as a health check's is (v0.10.0).
+        if job_id in self._cancel_flags:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+        # A stream froze this job's previous ffmpeg (a VMAF target sample,
+        # say), which has since ended: this one waits for the stream too.
+        # The freeze loop skips jobs already marked paused (v0.10.0).
+        elif job_id in self._stream_paused_jobs:
+            try:
+                proc.send_signal(signal.SIGSTOP)
+            except (ProcessLookupError, OSError) as exc:
+                print(f"[WORKER] SIGSTOP failed for job {job_id}: {exc}", flush=True)
+
     def _freeze_active_procs(self, server_label: str) -> int:
         """Send SIGSTOP to every active ffmpeg subprocess, freezing them
         in place without losing work. Returns the number of procs newly
@@ -2473,6 +2494,38 @@ class QueueWorker:
             pass
         print(f"[WORKER] Job {job_id}: output held for review", flush=True)
 
+    async def _remembered_target_cq(self, job: dict, encoder: str, settings: dict) -> Optional[float]:
+        """Where the last VMAF target search in the job's folder landed (with
+        this target, encoder and output codec), for the search to start from
+        (v0.10.0): None when the job has no target, or nothing's remembered."""
+        from backend import vmaf_target
+        target = vmaf_target.effective_target(settings)
+        if target is None:
+            return None
+        codec = "av1" if (job.get("output_codec") or settings.get("output_codec")) == "av1" else "hevc"
+        try:
+            db = await self._db()
+            try:
+                return await vmaf_target.remembered_cq(db, job["file_path"], target, encoder, codec)
+            finally:
+                await db.close()
+        except Exception as exc:
+            print(f"[WORKER] Couldn't look up where the VMAF target search starts (non-fatal): {exc}", flush=True)
+            return None
+
+    async def _remember_target_cq(self, job: dict, result: dict) -> None:
+        """Remember where the job's VMAF target search landed, for the next
+        search in its folder to start from (v0.10.0)."""
+        from backend import vmaf_target
+        try:
+            db = await self._db()
+            try:
+                await vmaf_target.remember_landing(db, job["file_path"], result.get("encoding_stats"))
+            finally:
+                await db.close()
+        except Exception as exc:
+            print(f"[WORKER] Couldn't remember where the VMAF target search landed (non-fatal): {exc}", flush=True)
+
     async def _clear_review(self, job_id: int) -> None:
         db = await self._db()
         try:
@@ -2713,7 +2766,8 @@ class QueueWorker:
             # so even a 30-second WAL stall costs at most a 30-second pause
             # per job rather than every-progress-line locking.
             _last_db_write = [0.0]
-            async def progress_cb(progress: float, fps=None, eta_seconds=None, step=None, speed=None):
+            async def progress_cb(progress: float, fps=None, eta_seconds=None, step=None, speed=None,
+                                  step_key=None, step_params=None):
                 now = time.monotonic()
                 is_terminal = progress >= 99.99
                 # Only persist fps during the encoding phase. The same
@@ -2738,13 +2792,15 @@ class QueueWorker:
                     encoder=encoder,
                     eta=eta_seconds,
                     step=step or "converting",
+                    step_key=step_key,
+                    step_params=step_params,
                     jobs_completed=jobs_completed,
                     jobs_total=jobs_total,
                     total_saved=total_saved,
                 )
 
             def on_proc(proc):
-                self._active_procs[job_id] = proc
+                self._register_proc(job_id, proc)
 
             # Pass per-job encoding overrides (None means use global settings).
             # For combined jobs, pass audio/subtitle removal lists so they're applied
@@ -2765,6 +2821,8 @@ class QueueWorker:
                 await self._clear_review(job_id)  # placed, or failed: a retry converts it again
                 self._stamp(job_id, "move")
             else:
+                start_cq = await self._remembered_target_cq(
+                    job, encoder, job_settings if job_settings is not None else await get_live_encoding_settings())
                 result = await convert_file(
                     input_path=current_file_path,
                     encoder=encoder,
@@ -2785,7 +2843,10 @@ class QueueWorker:
                     pre_probe=probe,
                     output_codec=job.get("output_codec"),
                     pre_settings=job_settings,
+                    vmaf_target_start_cq=start_cq,
+                    is_cancelled=lambda: job_id in self._cancel_flags,
                 )
+                await self._remember_target_cq(job, result)
             frames = result.pop("frames", None)  # before / after (v0.10.0): kept with the job
             if frames:
                 from backend import frames as frames_mod

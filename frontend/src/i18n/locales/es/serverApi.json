@@ -62,6 +62,8 @@
     "noFieldsToUpdate": "No hay campos que actualizar",
     "plexOptionsFailed": "No se pudieron obtener las opciones de Plex: {{error}}",
     "plexSyncFailed": "Falló la sincronización con Plex: {{error}}",
+    "vmafTargetBelowMinimum": "El objetivo de VMAF ({{target}}) no puede quedar por debajo del VMAF mínimo ({{minimum}}).",
+    "vmafTargetRange": "El objetivo de VMAF debe ser una puntuación de 80 a 99.",
     "import": {
       "notYaml": "No es un archivo YAML: {{error}}",
       "notRulesFile": "No es un archivo de reglas de Shrinkerr.",

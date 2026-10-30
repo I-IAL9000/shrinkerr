@@ -34,8 +34,8 @@
         "name": "Automatic",
         "recommended": "Recommended",
         "savings": "savings vary by title",
-        "desc": "Each title gets its own setting: the smallest file that still scores VMAF {{score}}, which looks the same as the original. Grainy older films keep more detail, clean new releases shrink more.",
-        "slower": "Slower: a few 10-second samples of each file are test-encoded first."
+        "desc": "Each title gets its own setting: the smallest file that still scores VMAF {{score}}, which looks the same as the original. Grainy older films keep more detail, clean new releases shrink more. Rules can set their own target or switch it off.",
+        "slower": "Slower: 3 to 6 ten-second samples of each file (by length) are test-encoded first, and a file that misses the target is encoded again."
       },
       "custom": {
         "name": "Keep my settings",

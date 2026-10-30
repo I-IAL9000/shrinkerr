@@ -32,7 +32,7 @@ MAX_RULES, MAX_CONDITIONS = 500, 100
 SETTING_FIELDS = ("encoder", "nvenc_preset", "nvenc_cq", "libx265_crf", "libx265_preset", "output_codec",
                   "target_resolution", "audio_codec", "audio_bitrate", "queue_priority",
                   "audio_keep_languages", "sub_policy", "sub_keep_languages", "originals_policy",
-                  "originals_days", "vmaf_min_score", "min_savings_pct")
+                  "originals_days", "vmaf_min_score", "vmaf_target", "min_savings_pct")
 
 
 def _invalid(error: str) -> ApiError:
@@ -162,13 +162,16 @@ async def import_rules(doc: dict) -> dict:
         except ApiError as exc:
             errors.append({"name": name, "error": exc.detail, "code": exc.code, "params": exc.params})
             continue
-        if payload.name in rule_ids:
-            fields = payload.model_dump(exclude={"name"})
-            await route.update_rule(rule_ids[payload.name], route.RuleUpdate(**fields))
-            replaced += 1
-        else:
-            rule_ids[payload.name] = (await route.create_rule(payload))["id"]
-            added += 1
+        try:
+            if payload.name in rule_ids:
+                fields = payload.model_dump(exclude={"name"})
+                await route.update_rule(rule_ids[payload.name], route.RuleUpdate(**fields))
+                replaced += 1
+            else:
+                rule_ids[payload.name] = (await route.create_rule(payload))["id"]
+                added += 1
+        except ApiError as exc:  # a VMAF target below the minimum set here (v0.10.0)
+            errors.append({"name": payload.name, "error": exc.detail, "code": exc.code, "params": exc.params})
     return {"added": added, "replaced": replaced, "errors": errors}
 
 

@@ -293,31 +293,54 @@ the checks: [What happens to your files](what-happens-to-your-files.md#the-check
 
 **Settings → Video → "Target a VMAF score".** Instead of one quality
 setting for every title, Shrinkerr finds each title's own: before the
-encode it takes three 10-second samples (at 20 %, 50 % and 80 % of the
-file), encodes them at a few quality settings and scores each with VMAF,
+encode it takes a few 10-second samples spread through the file (three
+for a short episode, up to six for a long film: one per eight minutes or
+so), encodes them at a few quality settings and scores each with VMAF,
 then encodes the whole file at the lowest quality whose samples still
-average the target. Grainy films get more bits, clean animation fewer —
+hold the target. Grainy films get more bits, clean animation fewer —
 the way [ab-av1](https://github.com/alexheretic/ab-av1)'s CRF search
 works.
 
 - **Target:** 80–99, 93 by default: the score Shrinkerr counts as
   transparent, where the encode looks the same as the original. The setup
   wizard's **Automatic** quality turns this on at 93.
-- **The search** runs on NVENC's CQ scale from 14 to 34 (mapped to each
-  encoder's own setting, e.g. libx265's CRF is CQ + 2), starting from the
-  job's quality, and needs about five rounds of samples. If even CQ 14
-  misses the target, CQ 14 is used.
+- **A quality holds the target** when its samples average the target and
+  none is more than 2 points under, so one hard scene isn't averaged away
+  by easy ones.
+- **The search** runs on NVENC's CQ scale from 14 to 42 (mapped to each
+  encoder's own setting, e.g. libx265's CRF is CQ + 2). It starts where
+  the last search in the same folder landed (a season, say) or, the first
+  time, at the job's quality; steps up or down until it brackets the
+  answer, narrows it, and on NVENC and libx265 tries a half step more
+  (CQ 32.5). If even CQ 14 misses the target, CQ 14 is used.
 - **It replaces** the quality from presets, rules and content type for
-  that file. The job's details show the quality chosen and the samples'
-  score ("VMAF target: CQ 25: samples scored 93.4 (target 93)").
-- **Cost:** a few minutes per file on a GPU encoder; more on libx265
-  (fifteen-odd sample encodes at your preset).
+  that file. The job's details show the quality chosen, the samples'
+  score and the lowest sample ("VMAF target: CQ 25: samples scored 93.4
+  (target 93)").
+- **A miss is re-encoded once.** The finished file is scored against the
+  target, even with VMAF quality analysis off. If it comes out more than a
+  point under, it's encoded again at a lower quality; never a third time.
+  If that fails or is rejected, the first encode stays when it passes the
+  minimum score. The job's details show both.
+- **Cost:** a few minutes per file on a GPU encoder, longer for a film
+  (more samples); more on libx265, which encodes every sample at your
+  preset each round. Add to Queue's time estimate includes the search.
 - **Not searched:** files under two minutes, discs, and ffmpeg builds
   without libvmaf — they keep the job's quality. A failed sample also
   falls back to it.
-- The post-encode check and **minimum score** still apply to the whole
-  file.
+- The **minimum score** still rejects a file below it, when VMAF quality
+  analysis is on.
 - Remote workers run the search themselves.
+
+**Per rule.** A rule can have its own target (rule form → Languages,
+originals and more → **VMAF target**): Settings' (the default), **Off** to
+encode the rule's files at the rule's own quality with no search (reality
+TV, say), or a score of 80–99 for just those files, even when Settings
+has no target. A rule's score can't be below the minimum VMAF that
+applies to it. With a target, a rule's quality (or Add to Queue's
+slider) is only where the search starts. Add to Queue's "What will
+happen" says how many files search for which target, and how many keep a
+fixed quality because of a rule.
 
 ## Before / after frames
 

@@ -38,6 +38,8 @@ class RuleCreate(BaseModel):
     originals_policy: Optional[Literal["keep", "trash", "delete"]] = None
     originals_days: Optional[int] = Field(default=None, ge=1, le=3650)
     vmaf_min_score: Optional[float] = Field(default=None, ge=0, le=100)
+    # None: Settings' VMAF target; 0: off (this rule's own quality); else the score
+    vmaf_target: Optional[float] = Field(default=None, ge=0, le=99)
     min_savings_pct: Optional[float] = Field(default=None, ge=0, le=100)
     target_resolution: Optional[str] = None
     audio_codec: Optional[str] = None
@@ -64,6 +66,8 @@ class RuleUpdate(BaseModel):
     originals_policy: Optional[Literal["keep", "trash", "delete"]] = None
     originals_days: Optional[int] = Field(default=None, ge=1, le=3650)
     vmaf_min_score: Optional[float] = Field(default=None, ge=0, le=100)
+    # None: Settings' VMAF target; 0: off (this rule's own quality); else the score
+    vmaf_target: Optional[float] = Field(default=None, ge=0, le=99)
     min_savings_pct: Optional[float] = Field(default=None, ge=0, le=100)
     target_resolution: Optional[str] = None
     audio_codec: Optional[str] = None
@@ -162,12 +166,38 @@ def _check_rule(payload: RuleCreate) -> None:
         raise ApiError(400, "action must be encode, ignore, or skip", code="rules.invalidAction")
 
 
+async def _check_vmaf_target(db, target: Optional[float], rule_minimum: Optional[float]) -> None:
+    """A rule's VMAF target is Off (0) or Settings' (None), or a score of
+    80-99 that isn't below the VMAF minimum that applies to the rule: its
+    own, else Settings' when Settings' VMAF analysis is on (v0.10.0). Below
+    it the search would pass qualities the minimum then rejects."""
+    if not target:
+        return
+    if not 80 <= target <= 99:
+        raise ApiError(400, "The VMAF target must be a score from 80 to 99.", code="rules.vmafTargetRange")
+    minimum = rule_minimum
+    if minimum is None:
+        async with db.execute(
+                "SELECT key, value FROM settings WHERE key IN ('vmaf_analysis_enabled', 'vmaf_min_score')") as cur:
+            saved = {r["key"]: r["value"] for r in await cur.fetchall()}
+        try:
+            minimum = float(saved.get("vmaf_min_score") or 0)
+        except (TypeError, ValueError):
+            minimum = 0.0
+        if (saved.get("vmaf_analysis_enabled") or "true").lower() != "true":
+            minimum = 0.0
+    if target < minimum:
+        raise ApiError(400, f"The VMAF target ({target:g}) can't be below the VMAF minimum ({minimum:g}).",
+                       code="rules.vmafTargetBelowMinimum", params={"target": f"{target:g}", "minimum": f"{minimum:g}"})
+
+
 @router.post("/")
 async def create_rule(payload: RuleCreate):
     _check_rule(payload)
 
     db = await connect_db()
     try:
+        await _check_vmaf_target(db, payload.vmaf_target, payload.vmaf_min_score)
         async with db.execute("SELECT COALESCE(MAX(priority), -1) + 1 FROM encoding_rules") as cur:
             row = await cur.fetchone()
             next_priority = row[0]
@@ -185,14 +215,14 @@ async def create_rule(payload: RuleCreate):
                 encoder, nvenc_preset, nvenc_cq, libx265_crf, libx265_preset, target_resolution,
                 audio_codec, audio_bitrate, queue_priority, created_at, output_codec,
                 audio_keep_languages, sub_policy, sub_keep_languages, originals_policy, originals_days,
-                vmaf_min_score, min_savings_pct)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                vmaf_min_score, min_savings_pct, vmaf_target)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (payload.name, first.type, first.value, conditions_json, next_priority,
              payload.action, int(payload.enabled), payload.encoder, payload.nvenc_preset,
              payload.nvenc_cq, payload.libx265_crf, payload.libx265_preset, payload.target_resolution,
              payload.audio_codec, payload.audio_bitrate, payload.queue_priority, now, payload.output_codec,
              payload.audio_keep_languages, payload.sub_policy, payload.sub_keep_languages, payload.originals_policy,
-             payload.originals_days, payload.vmaf_min_score, payload.min_savings_pct),
+             payload.originals_days, payload.vmaf_min_score, payload.min_savings_pct, payload.vmaf_target),
         ) as cur:
             rule_id = cur.lastrowid
         await db.commit()
@@ -265,6 +295,17 @@ async def update_rule(rule_id: int, payload: RuleUpdate):
         updates = []
         values = []
         data = payload.dict(exclude_unset=True)
+        if "vmaf_target" in data or "vmaf_min_score" in data:
+            # Checked together, with the one that isn't being changed as stored.
+            target, minimum = data.get("vmaf_target"), data.get("vmaf_min_score")
+            if "vmaf_target" not in data or "vmaf_min_score" not in data:
+                async with db.execute("SELECT vmaf_target, vmaf_min_score FROM encoding_rules WHERE id = ?",
+                                      (rule_id,)) as cur:
+                    stored = await cur.fetchone()
+                if stored:
+                    target = target if "vmaf_target" in data else stored["vmaf_target"]
+                    minimum = minimum if "vmaf_min_score" in data else stored["vmaf_min_score"]
+            await _check_vmaf_target(db, target, minimum)
         for key, val in data.items():
             if key == "enabled":
                 updates.append("enabled = ?")

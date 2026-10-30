@@ -297,15 +297,21 @@ class ServerClient:
                               eta_seconds: int | None = None,
                               step: str = "converting",
                               speed: float | None = None,
-                              encoder: str | None = None) -> bool:
+                              encoder: str | None = None,
+                              step_key: str | None = None,
+                              step_params: dict | None = None) -> bool:
         """Report progress. Returns True if job was cancelled."""
         resp = await self._post_node("/api/nodes/report-progress", {
             "node_id": node_id, "job_id": job_id,
             "progress": progress, "fps": fps,
             "eta_seconds": eta_seconds, "step": step,
-            # v0.9.140/141; an older server just ignores the extra fields.
+            # v0.9.140/141, v0.10.0 (a step with parameters, which the server
+            # can't derive from its English label); an older server just
+            # ignores the extra fields.
             "speed": speed,
             "encoder": encoder,
+            "step_key": step_key,
+            "step_params": step_params,
         })
         resp.raise_for_status()
         return resp.json().get("cancelled", False)
@@ -391,6 +397,14 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
     def on_proc(proc):
         nonlocal active_proc
         active_proc = proc
+        # Cancelled before this ffmpeg started — e.g. during the VMAF pass,
+        # before the VMAF target's re-encode: killed at once (v0.10.0). The
+        # cancel only kills the ffmpeg running when it arrives.
+        if cancel_flag:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
 
     # Throttle outbound report-progress HTTP requests to ~once per 2 seconds
     # per job. The server-side WebSocket already throttles broadcasts to
@@ -406,7 +420,8 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
     # server's running card labels it right (v0.9.141). Set once resolved.
     current_encoder: str | None = None
 
-    async def progress_cb(progress: float = 0, fps=None, eta_seconds=None, step=None, speed=None):
+    async def progress_cb(progress: float = 0, fps=None, eta_seconds=None, step=None, speed=None,
+                          step_key=None, step_params=None):
         nonlocal cancel_flag, _last_report_at
         now = _time_pcb.monotonic()
         is_terminal = progress >= 99.99
@@ -416,7 +431,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
         try:
             cancelled = await client.report_progress(
                 node_id, job_id, progress, fps, eta_seconds, step or "converting", speed,
-                current_encoder,
+                current_encoder, step_key, step_params,
             )
             if cancelled and not cancel_flag:
                 cancel_flag = True
@@ -595,6 +610,8 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 external_subs=job.get("external_subs") if "external_subs" in job else None,
                 delete_merged_subs=job.get("delete_external_subs_after_merge"),
                 output_codec=job.get("output_codec"),
+                vmaf_target_start_cq=job.get("vmaf_target_start_cq"),  # where the folder's last search landed
+                is_cancelled=lambda: cancel_flag,
             )
             frames = result.pop("frames", None)  # before / after (v0.10.0), sent with the result
 

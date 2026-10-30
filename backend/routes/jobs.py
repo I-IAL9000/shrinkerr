@@ -2131,7 +2131,8 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         from backend.encoding_estimates import QUALITY_KEYS, effective_cq
         from backend.content_detect import SMART_CQ_KEYS
         est_keys = ('backup_original_days', 'trash_original_after_conversion', 'skip_hardlinked', 'maintainerr_skip',
-                    'target_resolution', 'image_subs_keep_original', *SMART_CQ_KEYS, *QUALITY_KEYS)
+                    'target_resolution', 'image_subs_keep_original', 'vmaf_target_enabled', 'vmaf_target_score',
+                    'vmaf_analysis_enabled', 'vmaf_min_score', *SMART_CQ_KEYS, *QUALITY_KEYS)
         est_settings = {}
         async with db.execute(
             f"SELECT key, value FROM settings WHERE key IN ({','.join('?' for _ in est_keys)})", est_keys
@@ -2228,6 +2229,28 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         # Dolby Vision (dovi.remux_outcome, v0.10.0).
         dolby_vision = {"removed": 0, "kept": 0, "ffmpeg": 0, "profile5": 0}
 
+        # The VMAF target (v0.10.0): the files the search runs on, by the
+        # target each is held to, and those a rule fixes at its own quality.
+        # A file's target is worked out as its job's is: Settings' values
+        # with the rule's own over them (rule_actions.settings_overrides).
+        from backend.rule_actions import settings_overrides
+        from backend.vmaf_target import DEFAULT_TARGET, MIN_DURATION, effective_target
+
+        def _est_float(key: str, default: float) -> float:
+            try:
+                return float(est_settings.get(key) or default)
+            except ValueError:
+                return default
+
+        target_settings = {
+            "vmaf_target_enabled": str(est_settings.get("vmaf_target_enabled")).lower() == "true",
+            "vmaf_target_score": _est_float("vmaf_target_score", DEFAULT_TARGET),
+            "vmaf_analysis_enabled": str(est_settings.get("vmaf_analysis_enabled", "true")).lower() == "true",
+            "vmaf_min_score": _est_float("vmaf_min_score", 0),
+        }
+        vmaf_targets: dict[str, int] = {}
+        vmaf_fixed_by_rule = 0
+
         print(f"[ESTIMATE] {len(file_paths)} file(s) to estimate, {len(scan_rows)} found in scan_results, {len(ignored_set)} ignored", flush=True)
         if len(file_paths) > 0 and len(scan_rows) == 0:
             print(f"[ESTIMATE] No scan_results found for paths: {file_paths[:5]}", flush=True)
@@ -2321,6 +2344,20 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                 per_file_seconds = avg_seconds
             total_est_time += per_file_seconds
 
+            # The search runs on conversions, not on discs or files under two
+            # minutes (convert_file, vmaf_target.find_quality); a file whose
+            # length isn't known yet is counted.
+            if jt in ("convert", "combined") and not row.get("disc_type") and not 0 < file_dur < MIN_DURATION:
+                rule_target = rule.get("vmaf_target") if rule else None
+                file_target = effective_target({**target_settings, **settings_overrides(
+                    {"vmaf_target": rule_target, "vmaf_min_score": rule.get("vmaf_min_score") if rule else None})})
+                if file_target is not None:
+                    key = f"{file_target:g}"
+                    vmaf_targets[key] = vmaf_targets.get(key, 0) + 1
+                elif target_settings["vmaf_target_enabled"] and rule_target is not None and float(rule_target) == 0:
+                    # a rule's Off overriding Settings' target (with Settings' off there's nothing to override)
+                    vmaf_fixed_by_rule += 1
+
             # Smart CQ per file for savings estimation
             if needs_conv:
                 # The shared classifier (SC-22): width when known, else the
@@ -2386,6 +2423,26 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         async with db.execute("SELECT value FROM settings WHERE key = 'parallel_jobs'") as cur:
             prow = await cur.fetchone()
             parallel = int(prow["value"]) if prow else 1
+
+        # The VMAF target's search, once per file it runs on: the median of
+        # the last 20 recorded (jobs.encoding_stats), else 3 minutes (v0.10.0).
+        # Looked up only when a file is searched: it walks the job history.
+        import statistics
+        search_seconds = 180.0
+        if vmaf_targets:
+            try:
+                async with db.execute(
+                    "SELECT CASE WHEN json_valid(encoding_stats) "
+                    "THEN json_extract(encoding_stats, '$.vmaf_target.seconds') END AS seconds "
+                    "FROM jobs WHERE status = 'completed' AND seconds IS NOT NULL "
+                    "ORDER BY completed_at DESC LIMIT 20"
+                ) as cur:
+                    recorded = [float(r["seconds"]) for r in await cur.fetchall()]
+                if recorded:
+                    search_seconds = float(statistics.median(recorded))
+            except Exception as exc:
+                print(f"[ESTIMATE] VMAF target search time query failed (using the default): {exc}", flush=True)
+        total_est_time += sum(vmaf_targets.values()) * search_seconds
 
         # Per-file estimates summed above; divide by parallel for wall-clock estimate
         est_time_seconds = total_est_time / max(1, parallel)
@@ -2454,6 +2511,8 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             "content_profiles": content_profiles,
             "resolution_breakdown": resolution_breakdown,
             "smart_encoding": smart_settings["content_detect"] or smart_settings["resolution_aware"],
+            "vmaf_target": {"targets": vmaf_targets, "fixed_by_rule": vmaf_fixed_by_rule},  # v0.10.0
+            "vmaf_target_search_seconds": search_seconds,
         }
     finally:
         await db.close()
