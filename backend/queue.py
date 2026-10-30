@@ -2713,7 +2713,8 @@ class QueueWorker:
             # so even a 30-second WAL stall costs at most a 30-second pause
             # per job rather than every-progress-line locking.
             _last_db_write = [0.0]
-            async def progress_cb(progress: float, fps=None, eta_seconds=None, step=None, speed=None):
+            async def progress_cb(progress: float, fps=None, eta_seconds=None, step=None, speed=None,
+                                  step_key=None, step_params=None):
                 now = time.monotonic()
                 is_terminal = progress >= 99.99
                 # Only persist fps during the encoding phase. The same
@@ -2738,6 +2739,8 @@ class QueueWorker:
                     encoder=encoder,
                     eta=eta_seconds,
                     step=step or "converting",
+                    step_key=step_key,
+                    step_params=step_params,
                     jobs_completed=jobs_completed,
                     jobs_total=jobs_total,
                     total_saved=total_saved,

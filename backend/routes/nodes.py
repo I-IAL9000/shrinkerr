@@ -180,6 +180,8 @@ class ProgressReport(BaseModel):
     step: str = "converting"
     speed: float | None = None  # v0.9.140; absent from older workers
     encoder: str | None = None  # v0.9.141: encoder the worker actually runs
+    step_key: str | None = None  # v0.10.0: a step with parameters ("VMAF target: CQ 32 (round 3)")
+    step_params: dict | None = None
 
 
 class CompletionReport(BaseModel):
@@ -676,6 +678,12 @@ async def report_progress(req: ProgressReport, request: Request):
     node = await nm.get_node(req.node_id)
     node_name = node["name"] if node else req.node_id
 
+    # A step with parameters (v0.10.0: "VMAF target: CQ 32 (round 3)") comes
+    # with its key; the rest are known by their English label.
+    step_fields = step_code(req.step)
+    if req.step_key:
+        step_fields = {"step_key": req.step_key, **({"step_params": req.step_params} if req.step_params else {})}
+
     # Broadcast to frontend via existing WebSocket pipeline
     # Get stats for the broadcast
     stats_db = await connect_db()
@@ -704,7 +712,7 @@ async def report_progress(req: ProgressReport, request: Request):
         "encoder": req.encoder,
         "eta": req.eta_seconds,
         "step": req.step,
-        **step_code(req.step),
+        **step_fields,
         "jobs_completed": srow["completed"] if srow else 0,
         "jobs_total": 0,
         "total_saved": srow["saved"] if srow else 0,

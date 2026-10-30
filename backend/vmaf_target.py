@@ -15,6 +15,7 @@ import asyncio
 import os
 import shutil
 import tempfile
+import time
 from typing import Awaitable, Callable
 
 # The search range, on NVENC's CQ scale.
@@ -22,8 +23,7 @@ CQ_BEST, CQ_WORST = 14, 42
 # The default target: the score the app counts as transparent (the
 # Excellent tier; 95 before the setup wizard offered it as Automatic).
 DEFAULT_TARGET = 93
-# Samples spread through the file; shorter files aren't searched.
-SAMPLE_AT = (0.2, 0.5, 0.8)
+# Each sample's length; shorter files aren't searched.
 SAMPLE_SECONDS = 10
 MIN_DURATION = 120
 # One sample per ~8 minutes of file, 3 to 6 of them (sample_points).
@@ -137,24 +137,29 @@ async def _vmaf(reference: str, encoded: str, seconds: float, json_path: str) ->
     return result.get("score")
 
 
-async def find_quality(input_path: str, encoder: str, duration: float, target: float, start: int,
-                       convert_kwargs: dict | None = None) -> dict | None:
+async def find_quality(input_path: str, encoder: str, duration: float, target: float, start: float,
+                       convert_kwargs: dict | None = None, *, output_codec: str | None = None,
+                       on_round: Callable[[float, int], Awaitable[None]] | None = None) -> dict | None:
     """The CQ to encode `input_path` at for VMAF `target` (search's dict,
-    plus "target"), or None when the file is too short, VMAF isn't
-    available or a sample fails — the job then keeps its own quality.
+    plus "target", "samples" and "seconds", the search's wall time), or None
+    when the file is too short, VMAF isn't available or a sample fails — the
+    job then keeps its own quality. `start`: where the search begins (the
+    job's quality, or where the last search in the folder landed).
     `convert_kwargs`: the job's convert_file overrides (preset, resolution,
-    settings) so samples encode exactly as the job will."""
+    settings) so samples encode exactly as the job will; `output_codec` the
+    codec it resolved (AV1 takes whole steps only). `on_round(cq, n)` is
+    awaited as each CQ's samples start (n counts the CQs scored)."""
     from backend.converter import convert_file
     from backend.encoding_estimates import quality_settings
     from backend.test_encode import check_vmaf_available
     if duration < MIN_DURATION or not await check_vmaf_available():
         return None
     work = tempfile.mkdtemp(prefix="shrinkerr_vmaf_target_")
+    began = time.monotonic()
     try:
         samples = []
-        for n, at in enumerate(SAMPLE_AT):
+        for n, start_s in enumerate(sample_points(duration)):
             sample = os.path.join(work, f"sample{n}.mkv")
-            start_s = min(duration * at, duration - SAMPLE_SECONDS)
             if not await _run(["ffmpeg", "-v", "error", "-y", "-ss", f"{start_s:.3f}", "-t", str(SAMPLE_SECONDS),
                                "-i", input_path, "-map", "0:V:0", "-c", "copy", sample], 600):
                 return None
@@ -163,13 +168,19 @@ async def find_quality(input_path: str, encoder: str, duration: float, target: f
         class _Failed(Exception):
             pass
 
-        async def score(cq: int) -> list[float]:
+        rounds = 0
+
+        async def score(cq: float) -> list[float]:
+            nonlocal rounds
+            rounds += 1
+            if on_round:
+                await on_round(cq, rounds)
             values = []
             for n, sample in enumerate(samples):
                 plan = await convert_file(
                     sample, encoder, SAMPLE_SECONDS, command_only=True, override_cq=cq,
                     override_crf=quality_settings("libx265", cq)["libx265_crf"] if encoder == "libx265" else None,
-                    **(convert_kwargs or {}))
+                    output_codec=output_codec, **(convert_kwargs or {}))
                 if not plan.get("command") or not await _run(list(plan["command"]), 1800):
                     raise _Failed
                 value = await _vmaf(sample, plan["output_path"], SAMPLE_SECONDS,
@@ -186,13 +197,21 @@ async def find_quality(input_path: str, encoder: str, duration: float, target: f
                   flush=True)
             return values
 
+        def setting_key(cq: float) -> object:
+            # What the encoder is actually given: VideoToolbox maps every CQ
+            # from 29 up to one -q:v. A half step is its own setting.
+            return tuple(quality_settings(encoder, cq).values()) if cq == int(cq) else cq
+
         try:
-            result = await search(score, target, start)
+            result = await search(score, target, start, half_steps=fractional_steps(encoder, output_codec),
+                                  setting_key=setting_key)
         except _Failed:
             print("[VMAF-TARGET] A sample couldn't be encoded or scored — keeping the job's quality", flush=True)
             return None
+        seconds = round(time.monotonic() - began, 1)
         print(f"[VMAF-TARGET] {os.path.basename(input_path)}: CQ {result['cq']} for VMAF {target} "
-              f"({result['vmaf']}{'' if result['reached'] else ', the best in range'})", flush=True)
-        return {**result, "target": target}
+              f"({result['vmaf']}{'' if result['reached'] else ', the best in range'}) "
+              f"in {result['rounds']} rounds, {seconds}s", flush=True)
+        return {**result, "target": target, "samples": len(samples), "seconds": seconds}
     finally:
         shutil.rmtree(work, ignore_errors=True)

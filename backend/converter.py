@@ -3007,17 +3007,20 @@ def _hold_output(temp: Path, final_path: str) -> Path:
 _STEP_REPEAT_S = 5
 
 
-async def _with_step(progress_callback: Optional[Callable], step: str, coro):
+async def _with_step(progress_callback: Optional[Callable], step: str | dict, coro):
     """Await `coro`, saying `step` now and every _STEP_REPEAT_S while it runs.
     The Queue shows a job's step from its live progress: said once at the
     start of a minutes-long step (reading image subtitles, the VMAF target
-    search), a page opened later showed a bare spinner meanwhile (v0.10.0)."""
+    search), a page opened later showed a bare spinner meanwhile (v0.10.0).
+    `step` can be a dict of progress fields (step, step_key, step_params)
+    that `coro` updates as it goes (the VMAF target's round)."""
     if not progress_callback:
         return await coro
+    fields = step if isinstance(step, dict) else {"step": step}
 
     async def repeat() -> None:
         while True:
-            await progress_callback(progress=0, fps=0, eta_seconds=None, step=step)
+            await progress_callback(progress=0, fps=0, eta_seconds=None, **fields)
             await asyncio.sleep(_STEP_REPEAT_S)
     ticker = asyncio.create_task(repeat())
     try:
@@ -3162,10 +3165,10 @@ async def convert_file(
     progress_callback: Optional[Callable] = None,
     proc_callback: Optional[Callable] = None,
     override_preset: Optional[str] = None,
-    override_cq: Optional[int] = None,
+    override_cq: Optional[float] = None,
     override_audio_codec: Optional[str] = None,
     override_audio_bitrate: Optional[int] = None,
-    override_crf: Optional[int] = None,
+    override_crf: Optional[float] = None,
     override_libx265_preset: Optional[str] = None,
     override_target_resolution: Optional[str] = None,
     nice: bool = False,
@@ -3181,6 +3184,7 @@ async def convert_file(
     command_only: bool = False,
     pre_probe: Optional[dict] = None,
     output_codec: Optional[str] = None,
+    vmaf_target_start_cq: Optional[float] = None,
 ) -> dict:
     """
     Convert a video file to HEVC — or AV1 when `output_codec` is "av1" (a
@@ -3194,6 +3198,11 @@ async def convert_file(
     `command_only` (v0.10.0): stop before running anything and return the
     ffmpeg command (`command`) and where it writes (`output_path`). The test
     encode runs it on its sample, so it encodes exactly as a job would.
+
+    `vmaf_target_start_cq` (v0.10.0): where the VMAF target search starts
+    (the quality the last search in the folder found); the job's own quality
+    when None. Quality values (`override_cq`, `override_crf`) can be half
+    steps ("-cq 32.5") — the search tries them for NVENC and libx265.
 
     `external_subs` / `delete_merged_subs` (v0.10.0): sidecar subtitles to
     merge and whether to delete them afterwards, from the caller — a remote
@@ -3632,13 +3641,25 @@ async def convert_file(
     if live_settings.get("vmaf_target_enabled") and not command_only and not disc_type:
         from backend.encoding_estimates import _CRF_OFFSET, quality_settings
         from backend.vmaf_target import DEFAULT_TARGET, find_quality
-        vmaf_target = await _with_step(progress_callback, "Finding the quality for the VMAF target…", find_quality(
+        # The step names the round being scored ("VMAF target: CQ 32 (round 3)").
+        said = {"step": "Finding the quality for the VMAF target…"}
+
+        async def say_round(round_cq: float, round_n: int) -> None:
+            said.update(step=f"VMAF target: CQ {round_cq} (round {round_n})", step_key="steps.vmafTargetRound",
+                        step_params={"cq": round_cq, "round": round_n})
+            if progress_callback:
+                await progress_callback(progress=0, fps=0, eta_seconds=None, **said)
+        # The folder's remembered CQ when there is one, else the job's own.
+        search_start = vmaf_target_start_cq
+        if search_start is None:
+            search_start = crf - _CRF_OFFSET if encoder == "libx265" else cq
+        vmaf_target = await _with_step(progress_callback, said, find_quality(
             input_path, encoder, float((probe_data or {}).get("duration") or duration or 0),
             float(live_settings.get("vmaf_target_score") or DEFAULT_TARGET),
-            start=crf - _CRF_OFFSET if encoder == "libx265" else cq,
+            start=search_start,
             convert_kwargs={"override_preset": override_preset, "override_libx265_preset": override_libx265_preset,
-                            "override_target_resolution": override_target_resolution, "pre_settings": live_settings,
-                            "output_codec": output_codec}))
+                            "override_target_resolution": override_target_resolution, "pre_settings": live_settings},
+            output_codec=output_codec, on_round=say_round))
         if vmaf_target:
             cq = vmaf_target["cq"]
             crf = quality_settings("libx265", cq)["libx265_crf"]
@@ -5042,7 +5063,8 @@ async def convert_file(
             "target_resolution": target_resolution,
             "output_codec": output_codec or "hevc",  # v0.10.0
             # v0.10.0: the quality the VMAF target search chose, and why.
-            "vmaf_target": ({k: vmaf_target[k] for k in ("target", "cq", "vmaf", "reached")}
+            "vmaf_target": ({k: vmaf_target[k] for k in ("target", "cq", "vmaf", "min", "reached", "rounds",
+                                                         "samples", "seconds")}
                             if vmaf_target else None),
             "input_size": original_size,
             "output_size": output_size,

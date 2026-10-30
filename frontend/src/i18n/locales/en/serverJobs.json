@@ -18,6 +18,7 @@
     "readingImageSubs": "Reading image subtitles (OCR)…",
     "convertingSubtitles": "converting subtitles",
     "vmafTargetSearch": "Finding the quality for the VMAF target…",
+    "vmafTargetRound": "VMAF target: CQ {{cq}} (round {{round}})",
     "fixingDirectPlay": "Fixing for direct play",
     "removingDolbyVision": "Removing Dolby Vision"
   },
