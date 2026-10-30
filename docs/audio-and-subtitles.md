@@ -178,10 +178,11 @@ streamers, even when the server could just send them. The Scanner's
 Select files (or folders), click **Add to queue** and tick **Fix for direct
 play**. It shows how many of the selected files have each problem; untick a
 fix to leave it out (all four are ticked to start with). Each file that
-needs a chosen fix gets it in its job: Hi10P files are converted, the others
-are remuxed to MKV without re-encoding the video, and the job reads image
-subtitles into SRT or adds the compatibility track where those were chosen,
-whatever the settings above say. The other files are queued as usual.
+needs a chosen fix gets it in its job: a file that's converted anyway (and
+Hi10P files, always) gets its fixes in the conversion; the others are
+remuxed to MKV without re-encoding the video. The job reads image subtitles
+into SRT or adds the compatibility track where those were chosen, whatever
+the settings above say. The other files are queued as usual.
 Fixing Hi10P means converting, so it's left out with **Cleanup only**.
 
 **Fix for direct play when converting** (Settings → Video) ticks it in Add

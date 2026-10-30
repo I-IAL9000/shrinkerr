@@ -541,8 +541,8 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
             rule = rule_results.get(fp)
             problems = direct_play.get(fp, [])
             # An explicit request like the language remux below (v0.10.0):
-            # rules and the conversion filters govern conversion, not fixes.
-            remux_fix = payload.language_remux or (bool(problems) and "video" not in problems)
+            # rules and the conversion filters govern conversion, not fixes —
+            # a file they keep from converting still gets its fix, by remux.
             explicit_fix = payload.language_remux or bool(problems)
 
             # "skip" = do nothing at all, skip entirely.
@@ -553,8 +553,9 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
                 ignored_by_rule += 1
                 continue
 
-            # "ignore" = skip video conversion, still do audio/sub cleanup
-            skip_conversion = rule and rule["action"] == "ignore"
+            # "ignore" = skip video conversion, still do audio/sub cleanup; a
+            # "skip" rule's file is here only for its fix: no conversion either
+            skip_conversion = bool(rule) and rule["action"] in ("ignore", "skip")
             if skip_conversion:
                 ignored_by_rule += 1
             elif fp in ignored:
@@ -570,20 +571,19 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
             # Skip them for a language_remux: a stream-copy tag fix has no
             # video-conversion cost, so size/bitrate gates don't apply and
             # would otherwise drop the file with a "Nothing queued". v0.9.52.
-            if not payload.override_rules and not explicit_fix:
+            if not payload.override_rules:
                 file_size = row["file_size"] or 0
                 duration = row["duration"] or 0
-
-                if min_file_size_bytes > 0 and file_size < min_file_size_bytes:
-                    continue
-                if max_bitrate_bps > 0 and duration > 0:
-                    bitrate = file_size * 8 / duration
-                    if bitrate > max_bitrate_bps:
-                        continue  # Above ceiling — don't convert (already high quality)
-                if min_bitrate_bps > 0 and duration > 0:
-                    bitrate = file_size * 8 / duration
-                    if bitrate < min_bitrate_bps:
-                        continue  # Below minimum — savings too small
+                bitrate = file_size * 8 / duration if duration > 0 else 0
+                filtered = ((min_file_size_bytes > 0 and file_size < min_file_size_bytes)
+                            # Above the ceiling — don't convert (already high quality)
+                            or (max_bitrate_bps > 0 and bitrate > max_bitrate_bps)
+                            # Below the minimum — savings too small
+                            or (min_bitrate_bps > 0 and duration > 0 and bitrate < min_bitrate_bps))
+                if filtered:
+                    if not explicit_fix:
+                        continue
+                    skip_conversion = True  # the fix is still made, without the conversion
 
             # Still hardlinked elsewhere (a torrent client seeding it): a new
             # file frees nothing while the old one is kept (v0.10.0).
@@ -615,10 +615,17 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
                 needs_conversion=bool(row["needs_conversion"]) or bool(row.get("disc_type")),
                 force_reencode=payload.force_reencode or "video" in problems,
                 cleanup_only=payload.cleanup_only,
-                language_remux=remux_fix,
+                language_remux=payload.language_remux,
                 has_audio_work=has_audio_work,
                 skip_conversion=skip_conversion,
             )
+            # A direct-play fix with no conversion (the file doesn't need one,
+            # or a rule, a filter, Ignore or Cleanup only keeps it from one) is
+            # a remux. A file that's converted gets its fixes in the conversion
+            # (the job's direct_play), as the estimate says — the remux used to
+            # win, so a Blu-ray ISO or an AVC remux with DTS was only remuxed.
+            if job_type not in ("convert", "combined") and problems and "video" not in problems:
+                job_type = "audio"
             if job_type is None and dovi.remux_outcome(row.get("hdr_format")) == "removed":
                 job_type = "audio"  # the clean-up drops its Dolby Vision ("Convert to HDR10", v0.10.0)
             if job_type is None:

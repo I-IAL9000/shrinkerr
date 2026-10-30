@@ -354,3 +354,21 @@ async def test_a_vmaf_rejection_keeps_its_reason(test_db, tmp_path, monkeypatch)
     async with aiosqlite.connect(test_db) as db:
         async with db.execute("SELECT status, error_log, error_key FROM jobs WHERE id = ?", (job_id,)) as cur:
             assert tuple(await cur.fetchone()) == ("completed", "VMAF below threshold", "errors.vmafBelowThreshold")
+
+
+@needs_media
+@pytest.mark.asyncio
+async def test_a_file_that_needs_converting_is_converted_with_its_fixes(library):
+    """Fix for direct play used to win over the conversion: a Blu-ray ISO or
+    an AVC remux with DTS was queued as a remux (an ISO can't even be
+    remuxed) while Add to Queue's estimate said "converted". Now a file that
+    needs converting is converted, its fixes in the conversion."""
+    from backend.routes.jobs import BulkQueueFromScanRequest, EstimateRequest, _estimate_jobs_impl, add_jobs_from_scan
+    f = library.films
+    paths = [f["dts"], f["avi"], f["hi10"]]
+    estimate = await _estimate_jobs_impl(EstimateRequest(file_paths=paths, direct_play=True))
+    await add_jobs_from_scan(BulkQueueFromScanRequest(file_paths=paths, direct_play=True))
+    jobs = await _jobs(library.db)
+    assert {p: (jobs[p]["job_type"], jobs[p]["direct_play"]) for p in paths} == {
+        f["dts"]: ("convert", "audio"), f["avi"]: ("convert", "container"), f["hi10"]: ("convert", "audio,video")}
+    assert {k: n for k, n in estimate["by_type"].items() if n} == {"convert": 3}
