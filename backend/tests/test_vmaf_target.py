@@ -228,7 +228,9 @@ async def test_a_conversion_uses_it(test_db, quick, monkeypatch):
     stats = result["encoding_stats"]
     [found] = searched
     keys = ("target", "cq", "vmaf", "min", "reached", "rounds", "samples", "seconds")
-    assert stats["vmaf_target"] == {k: found[k] for k in keys}
+    assert {k: stats["vmaf_target"][k] for k in keys} == {k: found[k] for k in keys}
+    # the finished file is checked though VMAF analysis is off (test_vmaf_target_reencode.py)
+    assert stats["vmaf_target"]["checked_score"] == result["vmaf_score"] is not None
     assert stats["crf"] == found["cq"] + 2  # libx265's CRF, from the CQ found — not the job's 30
     assert 28 in found["scores"]  # the search started from the job's quality (CRF 30)
     rounds = [s for s in said if s.get("step_key") == "steps.vmafTargetRound"]  # each round names itself
