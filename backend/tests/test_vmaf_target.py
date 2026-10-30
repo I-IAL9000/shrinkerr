@@ -218,6 +218,15 @@ async def test_a_conversion_uses_it(test_db, quick, monkeypatch):
         searched.append(result := await real(*a, **kw))
         return result
     monkeypatch.setattr(vmaf_target, "find_quality", spy)
+    import backend.converter as converter
+    real_pass = converter._run_libvmaf_pass
+
+    async def check(**kw):  # the finished file holds the target: no re-encode (test_vmaf_target_reencode.py)
+        if kw["step_label"] != "VMAF analysis":
+            return await real_pass(**kw)  # the search's samples
+        return {"score": 91.0, "min": 91.0, "max": 91.0, "harmonic_mean": 91.0, "error": None, "stderr_tail": [],
+                "seek": kw["seek"]}
+    monkeypatch.setattr(converter, "_run_libvmaf_pass", check)
     said = []
 
     async def progress(**kw):
@@ -230,7 +239,7 @@ async def test_a_conversion_uses_it(test_db, quick, monkeypatch):
     keys = ("target", "cq", "vmaf", "min", "reached", "rounds", "samples", "seconds")
     assert {k: stats["vmaf_target"][k] for k in keys} == {k: found[k] for k in keys}
     # the finished file is checked though VMAF analysis is off (test_vmaf_target_reencode.py)
-    assert stats["vmaf_target"]["checked_score"] == result["vmaf_score"] is not None
+    assert stats["vmaf_target"]["checked_score"] == result["vmaf_score"] == 91.0
     assert stats["crf"] == found["cq"] + 2  # libx265's CRF, from the CQ found — not the job's 30
     assert 28 in found["scores"]  # the search started from the job's quality (CRF 30)
     rounds = [s for s in said if s.get("step_key") == "steps.vmafTargetRound"]  # each round names itself

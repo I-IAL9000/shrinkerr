@@ -397,6 +397,14 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
     def on_proc(proc):
         nonlocal active_proc
         active_proc = proc
+        # Cancelled before this ffmpeg started — e.g. during the VMAF pass,
+        # before the VMAF target's re-encode: killed at once (v0.10.0). The
+        # cancel only kills the ffmpeg running when it arrives.
+        if cancel_flag:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
 
     # Throttle outbound report-progress HTTP requests to ~once per 2 seconds
     # per job. The server-side WebSocket already throttles broadcasts to

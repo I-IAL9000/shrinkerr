@@ -19,6 +19,7 @@
     "convertingSubtitles": "convirtiendo subtítulos",
     "vmafTargetSearch": "Buscando la calidad para el objetivo VMAF…",
     "vmafTargetRound": "Objetivo VMAF: CQ {{cq}} (ronda {{round}})",
+    "vmafTargetReencode": "Recodificando para el objetivo VMAF (CQ {{cq}})",
     "fixingDirectPlay": "Arreglando para reproducción directa",
     "removingDolbyVision": "Quitando Dolby Vision"
   },

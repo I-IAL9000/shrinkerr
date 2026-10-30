@@ -2781,6 +2781,14 @@ class QueueWorker:
 
             def on_proc(proc):
                 self._active_procs[job_id] = proc
+                # Cancelled before this ffmpeg started — e.g. during the VMAF
+                # pass, before the VMAF target's re-encode: killed at once,
+                # as a health check's is (v0.10.0).
+                if job_id in self._cancel_flags:
+                    try:
+                        proc.kill()
+                    except ProcessLookupError:
+                        pass
 
             # Pass per-job encoding overrides (None means use global settings).
             # For combined jobs, pass audio/subtitle removal lists so they're applied

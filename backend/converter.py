@@ -3006,19 +3006,28 @@ def _hold_output(temp: Path, final_path: str) -> Path:
     return review_path
 
 
-def _target_retry_cq(vmaf_target: dict, score: float, half_steps: bool) -> float:
+def _target_retry_cq(vmaf_target: dict, score: float, half_steps: bool,
+                     setting: Callable[[float], object] = lambda cq: cq) -> float:
     """The CQ the VMAF target's one re-encode uses (v0.10.0), for a finished
     file that scored `score` though the search found `vmaf_target["cq"]`
     holds the target on samples. The samples overrated it by the shortfall:
     the highest CQ searched at least a step lower whose samples scored the
     target plus the shortfall; else a step lower per point short (at least
-    one). Never better than CQ_BEST; whole steps unless `half_steps`."""
+    one). Never better than CQ_BEST; whole steps unless `half_steps`.
+    `setting(cq)` is what the encoder is given: a CQ sharing the first
+    encode's (VideoToolbox gives every CQ from 29 up one -q:v) isn't lower,
+    so it steps on down to the next setting — CQ_BEST at most, which the
+    caller checks."""
     from backend.vmaf_target import CQ_BEST
     cq, target = vmaf_target["cq"], vmaf_target["target"]
-    short = target - score
-    curve = [c for c, s in (vmaf_target.get("scores") or {}).items() if c <= cq - 1 and s["mean"] >= target + short]
+    short, first = target - score, setting(cq)
+    curve = [c for c, s in (vmaf_target.get("scores") or {}).items()
+             if c <= cq - 1 and setting(c) != first and s["mean"] >= target + short]
     new = max(max(curve) if curve else cq - max(1, math.ceil(short)), CQ_BEST)
-    return new if half_steps else math.floor(new)
+    new = new if half_steps else math.floor(new)
+    while new > CQ_BEST and setting(new) == first:
+        new = max(new - 1, CQ_BEST)
+    return new
 
 
 def _set_aside(temp: Path, input_path: str) -> Optional[Path]:
@@ -3253,9 +3262,9 @@ async def convert_file(
     steps ("-cq 32.5") — the search tries them for NVENC and libx265.
 
     `_target_retry` (internal, v0.10.0): set on the VMAF target's one
-    re-encode of a finished file that missed the target — the search's
-    result and the first encode's CQ and score. That call doesn't search,
-    doesn't hold a larger output for Keep anyway, and never re-encodes.
+    re-encode of a finished file that missed the target — {"search": the
+    search's result}. That call doesn't search, doesn't hold a larger
+    output for Keep anyway, and never re-encodes; the first call reports it.
 
     `external_subs` / `delete_merged_subs` (v0.10.0): sidecar subtitles to
     merge and whether to delete them afterwards, from the caller — a remote
@@ -3696,15 +3705,14 @@ async def convert_file(
     # v0.10.0: VMAF target quality — this title's own quality, found on a few
     # encoded samples (vmaf_target). Replaces the job's; not for discs.
     vmaf_target = None
-    # What the job report says about the target's check: "reencoded" (on
-    # the re-encode), "first_kept" (the re-encode rejected or failed).
+    # What the job report says about the target's check, when the finished
+    # file was re-encoded: "retry", "reencoded", "first_kept" (below).
     target_notes: dict = {}
     from backend.vmaf_target import effective_target
     target = effective_target(live_settings)
     if _target_retry:
         # The VMAF target's re-encode: at the quality it's given, no search.
         vmaf_target = _target_retry["search"]
-        target_notes["reencoded"] = {"from_cq": _target_retry["from_cq"], "from_vmaf": _target_retry["from_vmaf"]}
     elif target is not None and not command_only and not disc_type:
         from backend.encoding_estimates import _CRF_OFFSET, quality_settings
         from backend.vmaf_target import find_quality
@@ -5028,28 +5036,54 @@ async def convert_file(
     # point under the target (within one is measurement noise), and the
     # score not in doubt, it's encoded once more, a step lower per point
     # short (_target_retry_cq) — not when the search already ended at the
-    # floor. The re-encode is kept whatever it scores unless it's rejected
-    # (larger than the original, under the minimum) or fails: then this
-    # first encode is kept when it passes both, and otherwise the original.
-    # A Cancel (the re-encode's ffmpeg killed) places nothing.
+    # floor, nor when no lower quality setting is left. The re-encode is
+    # kept whatever it scores unless it's rejected (larger than the
+    # original, under the minimum) or fails: then this first encode is kept
+    # when it passes both, and otherwise the original. A Cancel (the
+    # re-encode's ffmpeg killed) places nothing. Every result after a
+    # re-encode reports both (_target_stats: "retry").
     # ------------------------------------------------------------------
-    retry_cq = None
+    def _target_stats() -> Optional[dict]:
+        """encoding_stats' "vmaf_target": the search's result, this (the
+        first) encode's checked score, and what the check did."""
+        if not vmaf_target:
+            return None
+        return {**{k: vmaf_target[k] for k in ("target", "cq", "vmaf", "min", "reached", "rounds", "samples",
+                                               "seconds")},
+                "checked_score": vmaf_score, **target_notes}
+
+    retry_cq, held = None, None
     if (vmaf_target and not _target_retry and vmaf_score is not None and not vmaf_uncertain
             and vmaf_score < vmaf_target["target"] - 1.0):
-        from backend.vmaf_target import fractional_steps
-        retry_cq = _target_retry_cq(vmaf_target, vmaf_score, fractional_steps(encoder, output_codec))
-    held = _set_aside(temp, input_path) if retry_cq is not None and retry_cq < cq else None
-    if held is not None:
         from backend.encoding_estimates import quality_settings
+        from backend.vmaf_target import fractional_steps
+
+        def setting(c: float) -> dict:  # what the encoder is given for a CQ
+            return quality_settings(encoder, c)
+        retry_cq = _target_retry_cq(vmaf_target, vmaf_score, fractional_steps(encoder, output_codec), setting)
+        if retry_cq < cq and setting(retry_cq) != setting(cq):
+            held = _set_aside(temp, input_path)
+        else:
+            print(f"[CONVERT] VMAF {vmaf_score} misses the target {vmaf_target['target']:g}, with no lower "
+                  f"quality setting to encode again at", flush=True)
+    if held is not None:
         print(f"[CONVERT] VMAF {vmaf_score} misses the target {vmaf_target['target']:g}: encoding again "
               f"at CQ {retry_cq} (was CQ {cq})", flush=True)
         first_ok = not (vmaf_min_score > 0 and vmaf_score < vmaf_min_score)
         retry_procs: list = []
 
-        def _track(proc) -> None:  # the re-encode's ffmpeg: killed, it was a Cancel (or a timeout)
+        def _track(proc) -> None:  # the re-encode's ffmpeg: SIGKILLed by a Cancel, nothing is placed
             retry_procs.append(proc)
             if proc_callback:
                 proc_callback(proc)
+        # The re-encode's own encode reports no step: labelled as the
+        # re-encode by key (its step stays None, so its fps is recorded).
+        reencoding = {"step_key": "steps.vmafTargetReencode", "step_params": {"cq": retry_cq}}
+
+        async def _progress(**kw) -> None:
+            await progress_callback(**(kw if kw.get("step") or kw.get("step_key") else {**kw, **reencoding}))
+        if progress_callback:
+            await progress_callback(progress=0, fps=0, eta_seconds=None, **reencoding)
 
         def _discard(path) -> None:
             try:
@@ -5058,10 +5092,13 @@ async def convert_file(
                 pass
         before = _source_mark(input_path, final_path)
         try:
+            # Its settings are this call's: a change in Settings meanwhile
+            # can't make it encode or be judged differently.
             retry = await convert_file(**{
-                **_call_args, "proc_callback": _track, "override_cq": retry_cq,
+                **_call_args, "pre_settings": live_settings, "proc_callback": _track,
+                "progress_callback": _progress if progress_callback else None, "override_cq": retry_cq,
                 "override_crf": quality_settings("libx265", retry_cq)["libx265_crf"],
-                "_target_retry": {"search": vmaf_target, "from_cq": cq, "from_vmaf": vmaf_score}})
+                "_target_retry": {"search": vmaf_target}})
         except BaseException as exc:
             # Raised before placing anything: as a failed re-encode. After
             # placing its output, or cancelled: raised on, nothing placed.
@@ -5069,21 +5106,34 @@ async def convert_file(
                 _discard(held)
                 raise
             print(f"[CONVERT] The VMAF target's re-encode failed: {type(exc).__name__}: {exc}", flush=True)
-            retry = {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}
+            retry = {"success": False, "output_path": None, "space_saved": 0,
+                     "error": f"{type(exc).__name__}: {exc}"}
         placed = retry.get("success") and not (retry.get("error") or retry.get("vmaf_rejected")
                                                or retry.get("skipped_larger"))
-        stopped = any((proc.returncode or 0) < 0 for proc in retry_procs)
-        if not placed:
+        # Only a Cancel stops here (the queue's and the worker's kill: SIGKILL,
+        # reported as ffmpeg's exit). A crash, a timeout or a progress error
+        # is a failed re-encode: the first encode is kept.
+        stopped = (not placed and retry.get("error_key") == "errors.ffmpegExited"
+                   and any(proc.returncode == -9 for proc in retry_procs))
+        outcome = ("placed" if placed else "rejected" if retry.get("vmaf_rejected")
+                   else "larger" if retry.get("skipped_larger") else "failed")
+        why = (retry.get("error") or "").strip().splitlines()
+        target_notes["retry"] = {"cq": retry_cq, "vmaf": retry.get("vmaf_score"), "outcome": outcome,
+                                 "error": why[0][:200] if outcome == "failed" and why else None}
+        if placed:
+            target_notes["reencoded"] = {"from_cq": cq, "from_vmaf": vmaf_score}
+        else:
             _discard(temp_path)  # anything the re-encode left there
         if placed or stopped or (retry.get("success") and not first_ok):
             # The re-encode's result stands: placed (or held for review),
             # stopped, or rejected with the first encode under the minimum
-            # too — the original kept.
+            # too — the original kept. It reports both encodes.
             _discard(held)
             if prestrip_path:
                 _discard(prestrip_path)
             _drop_ocr_dir()
-            return retry
+            return {**retry,
+                    "encoding_stats": {**(retry.get("encoding_stats") or {}), "vmaf_target": _target_stats()}}
         # The first encode back at the temp name, which the re-encode left
         # free — or placed from where it's held: never renamed onto a file.
         try:
@@ -5095,7 +5145,7 @@ async def convert_file(
         if first_ok:
             target_notes["first_kept"] = True
             print(f"[CONVERT] Keeping the first encode (VMAF {vmaf_score}): the re-encode "
-                  f"{'was rejected' if retry.get('success') else 'failed'}", flush=True)
+                  f"{'was ' + outcome if retry.get('success') else 'failed'}", flush=True)
 
     # ------------------------------------------------------------------
     # VMAF threshold enforcement: if the user configured a minimum acceptable
@@ -5160,6 +5210,7 @@ async def convert_file(
                 "input_size": original_size,
                 "output_size": output_size,
                 "encode_seconds": time.monotonic() - encode_start_time,
+                "vmaf_target": _target_stats(),  # v0.10.0: and the re-encode, if one was tried
             },
         }
 
@@ -5206,11 +5257,8 @@ async def convert_file(
             "target_resolution": target_resolution,
             "output_codec": output_codec or "hevc",  # v0.10.0
             # v0.10.0: the quality the VMAF target search chose, and why; the
-            # finished file's score, and what its check did (target_notes).
-            "vmaf_target": ({**{k: vmaf_target[k] for k in ("target", "cq", "vmaf", "min", "reached", "rounds",
-                                                            "samples", "seconds")},
-                             "checked_score": vmaf_score, **target_notes}
-                            if vmaf_target else None),
+            # finished file's score, and what its check did (_target_stats).
+            "vmaf_target": _target_stats(),
             "input_size": original_size,
             "output_size": output_size,
             # v0.10.0: what the savings estimate learns from (savings_model)
