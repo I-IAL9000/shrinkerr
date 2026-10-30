@@ -104,6 +104,18 @@ async def test_target_off_says_nothing(library):
 
 
 @pytest.mark.asyncio
+async def test_no_target_files_no_search_time_lookup(library):
+    """The recorded searches are only read when a file is searched: the
+    lookup walks the job history, and most estimates have no target."""
+    await _search_job(library, 100, "2026-10-01")
+    await _setting(library, vmaf_target_enabled="false")
+    async with aiosqlite.connect(library) as db:
+        await db.execute("DELETE FROM encoding_rules")
+        await db.commit()
+    assert (await _estimate())["vmaf_target_search_seconds"] == 180.0  # the default: nothing was read
+
+
+@pytest.mark.asyncio
 async def test_a_rules_score_searches_even_with_settings_off(library):
     """The rule's own score applies whether or not Settings' target is on;
     files that follow Settings aren't searched. A rule's Off is "fixed by

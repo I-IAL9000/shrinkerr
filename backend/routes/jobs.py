@@ -2426,20 +2426,22 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
 
         # The VMAF target's search, once per file it runs on: the median of
         # the last 20 recorded (jobs.encoding_stats), else 3 minutes (v0.10.0).
+        # Looked up only when a file is searched: it walks the job history.
         import statistics
         search_seconds = 180.0
-        try:
-            async with db.execute(
-                "SELECT CASE WHEN json_valid(encoding_stats) "
-                "THEN json_extract(encoding_stats, '$.vmaf_target.seconds') END AS seconds "
-                "FROM jobs WHERE status = 'completed' AND seconds IS NOT NULL "
-                "ORDER BY completed_at DESC LIMIT 20"
-            ) as cur:
-                recorded = [float(r["seconds"]) for r in await cur.fetchall()]
-            if recorded:
-                search_seconds = float(statistics.median(recorded))
-        except Exception as exc:
-            print(f"[ESTIMATE] VMAF target search time query failed (using the default): {exc}", flush=True)
+        if vmaf_targets:
+            try:
+                async with db.execute(
+                    "SELECT CASE WHEN json_valid(encoding_stats) "
+                    "THEN json_extract(encoding_stats, '$.vmaf_target.seconds') END AS seconds "
+                    "FROM jobs WHERE status = 'completed' AND seconds IS NOT NULL "
+                    "ORDER BY completed_at DESC LIMIT 20"
+                ) as cur:
+                    recorded = [float(r["seconds"]) for r in await cur.fetchall()]
+                if recorded:
+                    search_seconds = float(statistics.median(recorded))
+            except Exception as exc:
+                print(f"[ESTIMATE] VMAF target search time query failed (using the default): {exc}", flush=True)
         total_est_time += sum(vmaf_targets.values()) * search_seconds
 
         # Per-file estimates summed above; divide by parallel for wall-clock estimate
