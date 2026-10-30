@@ -185,3 +185,17 @@ def test_title_metadata_is_loaded_only_when_asked_for():
     assert parse_filter(adv(("genre", "eq", "drama"))).needs_titles
     assert not parse_filter(adv(("video_codec", "eq", "h264"), ("media_type", "eq", "tv"))).needs_titles
     assert not parse_filter("needs_conversion,res_4k").needs_titles
+
+
+@pytest.mark.asyncio
+async def test_title_conditions_suggest_the_librarys_values():
+    """Genre offered only its example, "Documentary" (v0.10.0): a title
+    condition names the Scanner's list of its values, for the suggestions."""
+    from backend.routes.search import list_properties
+    from backend.scan_filters import FACETS
+    props = await list_properties()
+    lists = {k: (p["facet"], p["facet_search"]) for k, p in props.items() if p.get("facet")}
+    assert lists == {"genre": ("genre", False), "network": ("network", False), "country": ("country", False),
+                     "plex_label": ("plabel", False), "actor": ("actor", True), "director": ("director", True),
+                     "studio": ("studio", True)}
+    assert all(facet in FACETS and FACETS[facet].searched == searched for facet, searched in lists.values())

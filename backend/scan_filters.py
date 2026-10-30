@@ -953,25 +953,26 @@ ADVANCED_PROPERTIES: dict[str, dict] = {
                          "examples": [18]},
 
     # Title: the Poster grid's metadata (TMDB / IMDb, the media server's
-    # genres) and the year in the folder name (v0.10.0)
+    # genres) and the year in the folder name (v0.10.0). "facet": the
+    # Scanner's list of the values, which the modal suggests.
     "year":          {"kind": "title_number", "field": "year", "type": "number", "ops": ["eq", "gt", "gte", "lt", "lte", "between", "exists"], "label": "Year", "group": "Title",
                       "examples": [2010]},
     "rating":        {"kind": "title_number", "field": "rating", "type": "number", "ops": ["gt", "gte", "lt", "lte", "between", "exists"], "label": "Rating (IMDb / TMDB)", "group": "Title",
                       "examples": [6.5]},
-    "genre":         {"kind": "title_genre", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "Genre", "group": "Title",
+    "genre":         {"kind": "title_genre", "facet": "genre", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "Genre", "group": "Title",
                       "examples": ["Documentary"]},
-    "network":       {"kind": "title_text", "field": "network", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "TV network", "group": "Title",
+    "network":       {"kind": "title_text", "field": "network", "facet": "network", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "TV network", "group": "Title",
                       "examples": ["HBO"]},
     # The Title lists' other values (v0.10.0): any of the title's.
-    "country":       {"kind": "title_list", "field": "countries", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "Country", "group": "Title",
+    "country":       {"kind": "title_list", "field": "countries", "facet": "country", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "Country", "group": "Title",
                       "examples": ["United Kingdom"]},
-    "actor":         {"kind": "title_list", "field": "actor", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "Actor", "group": "Title",
+    "actor":         {"kind": "title_list", "field": "actor", "facet": "actor", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "Actor", "group": "Title",
                       "examples": ["Tom Hanks"]},
-    "director":      {"kind": "title_list", "field": "director", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "Director / creator", "group": "Title",
+    "director":      {"kind": "title_list", "field": "director", "facet": "director", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "Director / creator", "group": "Title",
                       "examples": ["Christopher Nolan"]},
-    "studio":        {"kind": "title_list", "field": "studio", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "Studio", "group": "Title",
+    "studio":        {"kind": "title_list", "field": "studio", "facet": "studio", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "Studio", "group": "Title",
                       "examples": ["A24"]},
-    "plex_label":    {"kind": "title_list", "field": "labels", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "Plex label", "group": "Title",
+    "plex_label":    {"kind": "title_list", "field": "labels", "facet": "plabel", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "Plex label", "group": "Title",
                       "examples": ["Keep 4K"]},
     "show_status":   {"kind": "title_text", "field": "status", "type": "enum", "ops": ["eq", "ne", "in"], "label": "Show status", "group": "Title",
                       "options": ["returning", "ended", "canceled", "in_production"],

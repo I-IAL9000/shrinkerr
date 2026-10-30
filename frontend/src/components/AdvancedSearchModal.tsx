@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDialog } from "../useDialog";
 import { useTranslation } from "react-i18next";
-import { advancedSearch, getSearchProperties, type SearchProperty, type SearchPredicate } from "../api";
+import { advancedSearch, getFacetValues, getSearchProperties, type SearchProperty, type SearchPredicate } from "../api";
+import { facetValueLabel } from "../facetLabels";
 import { serverText } from "../i18n/server";
 import type { AdvancedSpec } from "../advancedSearch";
 
@@ -38,6 +39,11 @@ const groupLabel = (group: string) =>
 const optionLabel = (propKey: string, p: SearchProperty, value: string) =>
   serverText("serverSearch", `properties.${propKey}.options.${value}`, null, p.option_labels?.[value] ?? value);
 
+// What a condition's suggestions are asked for: its Scanner list, and for a
+// searched list (actors…) what's typed (v0.10.0).
+const listAsk = (p: SearchProperty | undefined, value: unknown): string | null =>
+  !p?.facet ? null : p.facet_search ? `${p.facet}\n${String(value ?? "").trim()}` : p.facet;
+
 interface Props {
   initial: AdvancedSpec | null;
   /** The filter token for the conditions, and how many files match. */
@@ -60,6 +66,27 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
   useEffect(() => {
     getSearchProperties().then(setProps).catch(() => setProps({}));
   }, []);
+
+  // A title condition suggests the library's values from the Scanner's lists
+  // (v0.10.0): Genre offered only its example, "Documentary". Until the
+  // filter index is ready (values null) the example stays.
+  const [suggestions, setSuggestions] = useState<Record<string, string[]>>({});
+  const asks = useMemo(() => Array.from(new Set(
+    predicates.map(p => listAsk(props[p.property], p.value)).filter((a): a is string => a !== null),
+  )), [predicates, props]);
+  useEffect(() => {
+    const missing = asks.filter(a => !(a in suggestions));
+    if (!missing.length) return;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => missing.forEach(ask => {
+      const [facet, q] = ask.split("\n");
+      getFacetValues(facet, "all", ctrl.signal, q || undefined).then(r => {
+        if (r.values) setSuggestions(s => ({ ...s, [ask]: r.values!.map(v => facetValueLabel(facet, v.value, t, v.label)) }));
+      }).catch(() => {});
+    }), 250);
+    return () => { clearTimeout(timer); ctrl.abort(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asks]);
 
   // Group properties for the dropdown
   const grouped = useMemo(() => {
@@ -217,7 +244,7 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
         value={pred.value ?? ""}
         onChange={e => updatePred(i, { value: e.target.value })}
         aria-label={prop.examples?.[0] != null ? t("scannerModals:search.example", { example: prop.examples[0] }) : ""} placeholder={prop.examples?.[0] != null ? t("scannerModals:search.example", { example: prop.examples[0] }) : ""}
-        list={`prop-examples-${pred.property}`}
+        list={`prop-values-${i}`}
         style={{ ...inputStyle, minWidth: 140 }}
       />
     );
@@ -261,11 +288,15 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
                   {(prop?.ops || []).map(op => <option key={op} value={op}>{OP_SYMBOLS[op] ?? (OP_WORDS.has(op) ? t(`scannerModals:operators.${op}`) : op)}</option>)}
                 </select>
                 {renderValueInput(pred, i)}
-                {prop?.examples && prop.examples.length > 0 && (
-                  <datalist id={`prop-examples-${pred.property}`}>
-                    {prop.examples.map(ex => <option key={String(ex)} value={String(ex)} />)}
-                  </datalist>
-                )}
+                {(() => {
+                  const ask = listAsk(prop, pred.value);
+                  const values = (ask && suggestions[ask]) || (prop?.examples ?? []).map(String);
+                  return values.length > 0 && (
+                    <datalist id={`prop-values-${i}`}>
+                      {values.map(v => <option key={v} value={v} />)}
+                    </datalist>
+                  );
+                })()}
                 <button aria-label={t("common:actions.remove")} onClick={() => removeRow(i)} title={t("common:actions.remove")} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14 }}>&times;</button>
               </div>
             );

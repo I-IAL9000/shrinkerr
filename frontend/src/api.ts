@@ -255,6 +255,8 @@ export interface SearchProperty {
   examples?: any[];
   options?: any[];
   option_labels?: Record<string, string>;
+  facet?: string | null;       // the Scanner's list of its values (v0.10.0)
+  facet_search?: boolean;      // asked with what's typed, not in full
 }
 export interface SearchPredicate {
   property: string;

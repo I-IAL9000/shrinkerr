@@ -24,7 +24,10 @@ PROPERTIES = ADVANCED_PROPERTIES
 
 @router.get("/search/properties")
 async def list_properties():
-    """Return the property catalog for the UI."""
+    """Return the property catalog for the UI. "facet": the Scanner's list
+    of the property's values (/scan/facet-values), "facet_search": a list
+    asked with what's typed (actors…) rather than in full (v0.10.0)."""
+    from backend.scan_filters import FACETS
     out = {}
     for key, p in PROPERTIES.items():
         out[key] = {
@@ -35,6 +38,8 @@ async def list_properties():
             "examples": p.get("examples"),
             "options": p.get("options"),
             "option_labels": p.get("option_labels"),
+            "facet": p.get("facet"),
+            "facet_search": FACETS[p["facet"]].searched if p.get("facet") else False,
         }
     return out
 
