@@ -33,6 +33,34 @@ async def test_the_ceiling_is_42():
 
 
 @pytest.mark.asyncio
+async def test_the_steps_grow_from_a_far_start():  # 2, 4, 8, 16 … from the start
+    async def easy(cq):
+        return [99.0, 99.0]
+    r = await vmaf_target.search(easy, 93, start=14)
+    assert (r["cq"], r["reached"]) == (42, True) and r["rounds"] <= 6
+
+    asked = []
+
+    async def score(cq):  # the answer is CQ 18
+        asked.append(cq)
+        return [111.0 - cq] * 2
+    for start in (14, 16):  # below the answer: step up until one fails, then bisect
+        asked.clear()
+        r = await vmaf_target.search(score, 93, start=start)
+        assert (r["cq"], r["reached"]) == (18, True)
+        assert len(asked) == len(set(asked)) == r["rounds"] <= 6
+    asked.clear()  # above it: the mirror, 42 40 36 28 14 then bisect 21 17 19 18
+    r = await vmaf_target.search(score, 93, start=42)
+    assert (r["cq"], r["reached"]) == (18, True)
+    assert len(asked) == len(set(asked)) == r["rounds"] <= 9
+
+    async def hopeless(cq):
+        return [80.0, 80.0]
+    r = await vmaf_target.search(hopeless, 93, start=42)  # the steps end at the floor, which is scored
+    assert (r["cq"], r["reached"], r["rounds"]) == (14, False, 5)
+
+
+@pytest.mark.asyncio
 async def test_out_of_reach_uses_the_floor():
     async def score(cq):
         return [80.0, 80.0]
@@ -76,6 +104,13 @@ async def test_a_half_step():
         return [100.6 - cq * 0.4] * 2  # 19.0 → 93.0, 19.5 → 92.8 fails; 19 kept
     assert (await vmaf_target.search(flat, 93, start=20, half_steps=True))["cq"] == 19.0
 
+    async def fine(cq):
+        return [111.7 - cq * 1.0] * 2  # 18.0 → 93.7, 18.5 → 93.2 passes, 19.0 → 92.7 fails
+    r = await vmaf_target.search(fine, 93, start=20, half_steps=True)
+    assert (r["cq"], r["reached"], r["vmaf"]) == (18.5, True, 93.2) and 18.5 in r["scores"]
+    assert (await vmaf_target.search(fine, 93, start=20))["cq"] == 18  # whole steps: no 18.5
+    assert (await vmaf_target.search(fine, 93, start=18.5, half_steps=True))["cq"] == 18.5  # a remembered half step
+
 
 @pytest.mark.asyncio
 async def test_one_scoring_per_encoder_setting():  # VideoToolbox: CQ ≥ 29 is all q40
@@ -86,7 +121,7 @@ async def test_one_scoring_per_encoder_setting():  # VideoToolbox: CQ ≥ 29 is 
         return [99.0, 99.0]
     r = await vmaf_target.search(score, 93, start=30, setting_key=lambda cq: min(cq, 29))
     assert len([cq for cq in asked if cq >= 29]) == 1 and r["rounds"] == 1
-    assert r["cq"] == 42 and set(r["scores"]) == {30, 32, 34, 36, 38, 40, 42}
+    assert r["cq"] == 42 and set(r["scores"]) == {30, 32, 36, 42}  # every CQ the steps reached
 
 
 def test_sample_points():

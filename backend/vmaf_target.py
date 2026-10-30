@@ -58,8 +58,10 @@ async def search(score: Callable[[float], Awaitable[list[float]]], target: float
                  setting_key: Callable[[float], object] = lambda cq: cq) -> dict:
     """Find the highest CQ in [best, worst] whose samples pass `target`,
     starting from `start` (the job's own quality, or where the last search
-    in the folder landed). Steps by 2 from `start` until a CQ passes and the
-    next fails, then bisects between them; with `half_steps` tries the CQ
+    in the folder landed). Steps from `start` towards the answer, by 2, then
+    4, 8, 16 … (clamped to the range), until a CQ passes and the next fails
+    or the range ends, so a far start still takes few rounds; then bisects
+    between the last pass and the first fail; with `half_steps` tries the CQ
     found + 0.5. Assumes the score falls as CQ rises. `score(cq)` returns
     the per-sample VMAF values. `setting_key` maps a CQ to the encoder's
     actual setting: CQs sharing a key are scored once.
@@ -80,17 +82,21 @@ async def search(score: Callable[[float], Awaitable[list[float]]], target: float
     lo, hi = best - 1, worst + 1  # the last CQ that passed, and that failed; the ends are untried
     cq = min(max(round(start), best), worst)  # a remembered start can be a half step
     if await at(cq):
-        lo = cq
-        while lo + 2 <= worst and await at(lo + 2):
-            lo += 2
-        if lo + 2 <= worst:
-            hi = lo + 2
+        lo, step = cq, 2
+        while lo < worst:
+            nxt = min(lo + step, worst)
+            if not await at(nxt):
+                hi = nxt
+                break
+            lo, step = nxt, step * 2
     else:
-        hi = cq
-        while hi - 2 >= best and not await at(hi - 2):
-            hi -= 2
-        if hi - 2 >= best:
-            lo = hi - 2
+        hi, step = cq, 2
+        while hi > best:
+            nxt = max(hi - step, best)
+            if await at(nxt):
+                lo = nxt
+                break
+            hi, step = nxt, step * 2
     while hi - lo > 1:
         mid = (lo + hi) // 2
         if await at(mid):
