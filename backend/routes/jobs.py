@@ -2354,7 +2354,8 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                 if file_target is not None:
                     key = f"{file_target:g}"
                     vmaf_targets[key] = vmaf_targets.get(key, 0) + 1
-                elif rule_target is not None and float(rule_target) == 0:
+                elif target_settings["vmaf_target_enabled"] and rule_target is not None and float(rule_target) == 0:
+                    # a rule's Off overriding Settings' target (with Settings' off there's nothing to override)
                     vmaf_fixed_by_rule += 1
 
             # Smart CQ per file for savings estimation

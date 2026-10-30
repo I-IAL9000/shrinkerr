@@ -106,10 +106,14 @@ async def test_target_off_says_nothing(library):
 @pytest.mark.asyncio
 async def test_a_rules_score_searches_even_with_settings_off(library):
     """The rule's own score applies whether or not Settings' target is on;
-    files that follow Settings aren't searched."""
+    files that follow Settings aren't searched. A rule's Off is "fixed by
+    rule" only where it overrides Settings' target: with that off there is
+    nothing to override."""
     await _setting(library, vmaf_target_enabled="false")
     got = await _estimate()
-    assert got["vmaf_target"] == {"targets": {"95": 1}, "fixed_by_rule": 1}
+    assert got["vmaf_target"] == {"targets": {"95": 1}, "fixed_by_rule": 0}
+    await _setting(library, vmaf_target_enabled="true")
+    assert (await _estimate())["vmaf_target"] == {"targets": {"93": 2, "95": 1}, "fixed_by_rule": 1}
 
 
 @pytest.mark.asyncio
