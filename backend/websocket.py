@@ -38,8 +38,6 @@ STEP_KEYS: dict[str, str] = {
     "Quality cross-check": "steps.qualityCrossCheck",
     "VMAF analysis": "steps.vmafAnalysis",
     "VMAF retry": "steps.vmafRetry",
-    "VMAF remeasure": "steps.vmafRemeasure",
-    "VMAF remeasure (retry)": "steps.vmafRemeasureRetry",
     "Reading image subtitles (OCR)…": "steps.readingImageSubs",
     "converting subtitles": "steps.convertingSubtitles",
     "fixing for direct play": "steps.fixingDirectPlay",

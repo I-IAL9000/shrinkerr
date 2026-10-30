@@ -10,8 +10,6 @@
     "qualityCrossCheck": "Quality cross-check",
     "vmafAnalysis": "VMAF analysis",
     "vmafRetry": "VMAF retry",
-    "vmafRemeasure": "VMAF remeasure",
-    "vmafRemeasureRetry": "VMAF remeasure (retry)",
     "healthCheckMode": "health-check ($t(serverJobs:labels.healthMode.{{mode}}))",
     "healthCheckStatus": "health-check ($t(serverJobs:labels.healthStatus.{{status}}))",
     "healthCheckInline": "health check ($t(serverJobs:labels.healthMode.{{mode}}))",

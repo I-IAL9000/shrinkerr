@@ -2408,116 +2408,6 @@ async def _run_libvmaf_pass(
         }
 
 
-async def remeasure_vmaf(
-    source_path: str,
-    encoded_path: str,
-    *,
-    duration_hint: float | None = None,
-    progress_callback=None,
-) -> dict:
-    """Re-run VMAF analysis against an existing source/encoded pair.
-
-    Used by the "Re-measure suspect VMAF scores" workflow (v0.3.32+) to
-    refresh scores on completed jobs without re-encoding. Goes through the
-    same bimodal-retry path as `convert_file` so a previously-bogus score
-    can land on a clean second-seek result.
-
-    Returns:
-        {
-            "score": float | None,
-            "uncertain": bool,        # True iff every pass came back bimodal
-            "error": str | None,
-            "min": float | None,
-            "max": float | None,
-        }
-
-    Both files must exist on disk; if either is missing returns
-    `{"score": None, "uncertain": False, "error": "...source/encoded missing..."}`.
-    """
-    if not Path(source_path).exists():
-        return {"score": None, "uncertain": False, "error": f"source missing: {source_path}", "min": None, "max": None}
-    if not Path(encoded_path).exists():
-        return {"score": None, "uncertain": False, "error": f"encoded missing: {encoded_path}", "min": None, "max": None}
-
-    # Probe duration from the source if not provided.
-    duration = duration_hint or 0.0
-    src_info = await _probe_vmaf_stream(source_path)
-    dst_info = await _probe_vmaf_stream(encoded_path)
-    if duration <= 0:
-        try:
-            duration = float(src_info.get("duration") or 0)
-        except (TypeError, ValueError):
-            duration = 0.0
-
-    # Pick sampling window — 30s at 33% of file (matches convert_file's
-    # heuristic), or whole file when very short.
-    if duration > 30:
-        primary_seek = max(0.0, duration * 0.33)
-        window_dur = 30.0
-    elif duration > 0:
-        primary_seek = 0.0
-        window_dur = duration
-    else:
-        primary_seek = 0.0
-        window_dur = 30.0
-
-    # The same normalisation pipeline convert_file uses.
-    ref_pipeline, dist_pipeline, target_fps = _vmaf_pipelines(src_info, dst_info)
-
-    fps_for_progress = target_fps or 24.0
-    vmaf_dir = Path("/tmp/shrinkerr_vmaf")
-    vmaf_dir.mkdir(parents=True, exist_ok=True)
-    import re as _re_rm
-    import uuid as _uuid_rm
-    safe_stem = _re_rm.sub(r"[^A-Za-z0-9._-]", "_", Path(source_path).stem)[:20]
-    json_paths_to_cleanup: list[Path] = []
-
-    async def _one_pass(seek: float, label: str) -> dict:
-        jp = vmaf_dir / f"{safe_stem}_{_uuid_rm.uuid4().hex[:8]}_vmaf.json"
-        json_paths_to_cleanup.append(jp)
-        return await _run_libvmaf_pass(
-            input_path=source_path,
-            temp_path=encoded_path,
-            seek=seek,
-            duration=window_dur,
-            ref_pipeline=ref_pipeline,
-            dist_pipeline=dist_pipeline,
-            json_path=jp,
-            fps_for_progress=fps_for_progress,
-            progress_callback=progress_callback,
-            step_label=label,
-        )
-
-    primary = await _one_pass(primary_seek, "VMAF remeasure")
-    runs = [primary]
-    if _is_bimodal_vmaf(primary) and duration > 90 and window_dur > 0:
-        alt_pct = 0.66 if primary_seek < duration * 0.5 else 0.33
-        alt_seek = max(0.0, min(duration - window_dur, duration * alt_pct))
-        if abs(alt_seek - primary_seek) >= 60:
-            runs.append(await _one_pass(alt_seek, "VMAF remeasure (retry)"))
-
-    # Cleanup JSON tempfiles unconditionally — score is already parsed.
-    for jp in json_paths_to_cleanup:
-        try:
-            Path(jp).unlink(missing_ok=True)
-        except OSError:
-            pass
-
-    scored = [r for r in runs if r.get("score") is not None]
-    if not scored:
-        first_error = next((r.get("error") for r in runs if r.get("error")), "VMAF returned no score")
-        return {"score": None, "uncertain": False, "error": first_error, "min": None, "max": None}
-
-    best = max(scored, key=lambda r: r["score"])
-    return {
-        "score": best["score"],
-        "uncertain": _is_bimodal_vmaf(best),
-        "error": None,
-        "min": best.get("min"),
-        "max": best.get("max"),
-    }
-
-
 def _output_is_full_length(source_duration: Optional[float],
                            output_duration: Optional[float],
                            tol: float = 0.98) -> bool:
@@ -4899,8 +4789,8 @@ async def convert_file(
                         print(
                             "[CONVERT] All VMAF passes returned bimodal distributions — "
                             "flagging score as measurement-uncertain. The encode is "
-                            "almost certainly visually fine; consider re-measuring "
-                            "from Settings or trusting the SSIM/PSNR cross-check below.",
+                            "almost certainly visually fine; trust the SSIM/PSNR "
+                            "cross-check below.",
                             flush=True,
                         )
                     elif _min is not None and _max is not None and vmaf_score < 80 and _max >= 90:

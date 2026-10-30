@@ -427,13 +427,6 @@ function LoginScreen({ onLogin, passwordLogin }: { onLogin: () => void; password
   );
 }
 
-// VMAF re-measure progress shape. The pass runs as a detached async
-// task in the FastAPI process and broadcasts per-file progress +
-// a final complete event. App-level banner shows progress only;
-// completion summary is rendered inline next to the Settings →
-// VMAF button (see VmafRemeasureRow in SettingsPage). v0.3.107+.
-type VmafRemeasureState = { phase: "running"; done: number; total: number; current: string };
-
 function AppContent() {
   const { t } = useTranslation(["nav", "common"]);
   const [authChecked, setAuthChecked] = useState(false);
@@ -442,7 +435,6 @@ function AppContent() {
   const [demo, setDemo] = useState(false);  // v0.10.0: demo mode
   const [passwordLogin, setPasswordLogin] = useState(true);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
-  const [vmafRemeasure, setVmafRemeasure] = useState<VmafRemeasureState | null>(null);
   const [tmdbConfigured, setTmdbConfigured] = useState(true);  // default true → no banner flash before the check
   const { toasts, addToast, dismiss: dismissToast } = useToastState();
   // Theme: System (follows the OS), Light or Dark (v0.10.0). A browser with
@@ -544,22 +536,6 @@ function AppContent() {
     // within seconds, so a reconnect starts from an empty map.
     if (msg.type === "ws_reconnected") jobProgressStore.clear();
     if (msg.type === "job_complete") jobProgressStore.delete((msg as any).job_id);
-    if (msg.type === "vmaf_remeasure_progress") {
-      const m = msg as any;
-      setVmafRemeasure({
-        phase: "running",
-        done: m.done ?? 0,
-        total: m.total ?? 0,
-        current: m.current_file || "",
-      });
-    }
-    if (msg.type === "vmaf_remeasure_complete") {
-      // Banner is progress-only. The inline outcome on Settings →
-      // VMAF (VmafRemeasureRow) shows the rescued/unchanged/skipped
-      // breakdown next to the button where the user clicked, which
-      // is where they're looking. v0.3.107+.
-      setVmafRemeasure(null);
-    }
   }, []);
 
   useWebSocket(handleWS);
@@ -648,54 +624,6 @@ function AppContent() {
         </header>
 
         <main className="main-content">
-          {/* Global VMAF re-measure progress banner. Visible from any
-              page so users know a remeasure pass started from Settings
-              is still running. Disappears once the pass completes —
-              the outcome summary lives inline next to the button on
-              Settings → VMAF instead of duplicating up here. */}
-          {vmafRemeasure && (
-            <div style={{
-              background: "var(--bg-card)",
-              border: "1px solid var(--border)",
-              borderRadius: 6,
-              padding: "10px 14px",
-              marginBottom: 12,
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              fontSize: 12,
-            }}>
-              <div className="spinner" style={{ width: 14, height: 14, flexShrink: 0 }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ color: "var(--text-secondary)", fontWeight: 600, marginBottom: 2 }}>
-                  {t("nav:banner.vmafRemeasuring", { done: vmafRemeasure.done, total: vmafRemeasure.total })}
-                </div>
-                <div style={{
-                  color: "var(--text-muted)",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }} title={vmafRemeasure.current}>
-                  {vmafRemeasure.current || t("nav:banner.vmafStarting")}
-                </div>
-              </div>
-              <div style={{
-                width: 120,
-                height: 4,
-                background: "var(--bg-primary)",
-                borderRadius: 2,
-                overflow: "hidden",
-                flexShrink: 0,
-              }}>
-                <div style={{
-                  width: `${vmafRemeasure.total > 0 ? (vmafRemeasure.done / vmafRemeasure.total) * 100 : 0}%`,
-                  height: "100%",
-                  background: "var(--accent)",
-                  transition: "width 0.3s",
-                }} />
-              </div>
-            </div>
-          )}
           {/* v0.9.110: surface a missing TMDB key so self-built images (which
               ship without the bundled key) make it obvious why nothing matches. */}
           {/* v0.10.0: demo mode (backend/demo.py) */}

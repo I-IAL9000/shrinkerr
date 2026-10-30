@@ -377,12 +377,6 @@ export const startTestEncode = (filePath: string, encoder?: string, cq?: number,
   apiFetch<any>("/jobs/test-encode", { method: "POST", body: JSON.stringify({ file_path: filePath, encoder, cq, preset }) });
 export const getVmafStatus = () =>
   apiFetch<{ vmaf_available: boolean }>("/jobs/vmaf-status");
-export const getVmafRemeasureStatus = () =>
-  apiFetch<{ running: boolean; started_at: string | null; candidates: number }>("/jobs/vmaf-remeasure/status");
-export const startVmafRemeasure = () =>
-  apiFetch<{ started: boolean; total: number; message?: string }>(
-    "/jobs/vmaf-remeasure", { method: "POST" }
-  );
 export const getSystemMetrics = () =>
   apiFetch<any>("/stats/system");
 export const resolvePosterMetadata = (paths: string[]) =>
@@ -1053,7 +1047,7 @@ export function useWebSocket(onMessage: (msg: WSMessage) => void) {
           onMessageRef.current(JSON.parse(event.data) as WSMessage);
         } catch {}
         // Re-broadcast on a window event so components that need specific WS
-        // message types (e.g. vmaf_remeasure_progress) can subscribe without
+        // message types can subscribe without
         // wiring bespoke callbacks through the App tree. `data` is the raw JSON.
         window.dispatchEvent(new MessageEvent("ws-message", { data: event.data }));
       };

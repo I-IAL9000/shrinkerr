@@ -10,8 +10,6 @@
     "qualityCrossCheck": "Verificación cruzada de calidad",
     "vmafAnalysis": "Análisis VMAF",
     "vmafRetry": "Reintento de VMAF",
-    "vmafRemeasure": "Nueva medición de VMAF",
-    "vmafRemeasureRetry": "Nueva medición de VMAF (reintento)",
     "healthCheckMode": "comprobación de estado ($t(serverJobs:labels.healthMode.{{mode}}))",
     "healthCheckStatus": "comprobación de estado ($t(serverJobs:labels.healthStatus.{{status}}))",
     "healthCheckInline": "comprobación de estado ($t(serverJobs:labels.healthMode.{{mode}}))",

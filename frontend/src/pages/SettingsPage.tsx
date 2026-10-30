@@ -1,6 +1,5 @@
 import { Fragment, useState, useEffect, useRef } from "react";
 import { useBlocker, useLocation, useNavigate } from "react-router-dom";
-import { useVisibleInterval } from "../useVisibleInterval";
 import { useRangeFill } from "../useRangeFill";
 import FolderBrowser from "../components/FolderBrowser";
 import RenamingSettings, { type SaveBarPart } from "../components/RenamingSettings";
@@ -18,7 +17,6 @@ import {
   plexAuthStart, plexAuthCheck, plexAuthResources, plexAuthSave,
   plexAuthDisconnect, plexAuthStatus,
   getVersion, getChangelog, shortVersion, type VersionInfo,
-  getVmafRemeasureStatus, startVmafRemeasure,
   getEncoderCaps, regenerateApiKey, getQualityPresets, type QualityPreset,
   getBackups, deleteBackups, clearPendingHealthChecks,
   type PlexAuthStatus, type PlexServer, type ChangelogEntry,
@@ -116,130 +114,6 @@ const VT_GUIDE_ROWS: [string, string, string][] = [
   ["70+", "overkill", "≤ 0%"],
 ];
 const sectionStyle = { background: "var(--bg-card)", padding: 20, borderRadius: 6, marginBottom: 12 };
-
-
-/**
- * Re-measure suspect VMAF scores. Sub-component used inside the VMAF
- * settings panel. Polls the status endpoint to know whether a remeasure
- * pass is in flight + how many candidates are queued, exposes a button
- * that POSTs the start endpoint, and listens to websocket events for
- * live progress.
- */
-function VmafRemeasureRow() {
-  const toast = useToast();
-  const { t } = useTranslation(["settingsMedia", "common"]);
-  const [status, setStatus] = useState<{ running: boolean; candidates: number } | null>(null);
-  const [progress, setProgress] = useState<{ done: number; total: number; current: string } | null>(null);
-  const [outcome, setOutcome] = useState<{ rescued: number; unchanged: number; skipped: number } | null>(null);
-
-  // Initial status fetch — poll every 5s while a pass is running so the
-  // candidate count refreshes without needing a manual reload. (v0.10.0,
-  // FE#14: it polled always, hidden tabs included.)
-  const tick = async () => {
-    try {
-      const s = await getVmafRemeasureStatus();
-      setStatus({ running: s.running, candidates: s.candidates });
-    } catch {
-      // ignore — endpoint may be unavailable transiently
-    }
-  };
-  useEffect(() => { tick(); }, []);
-  useVisibleInterval(tick, status?.running ? 5000 : null);
-
-  // Listen to websocket progress events from the running task. The
-  // SettingsPage doesn't currently subscribe to its own WS connection,
-  // so we hook the global one via a small bus.
-  useEffect(() => {
-    const handler = (ev: MessageEvent) => {
-      try {
-        const data = JSON.parse(ev.data);
-        if (data.type === "vmaf_remeasure_progress") {
-          setProgress({ done: data.done, total: data.total, current: data.current_file || "" });
-        } else if (data.type === "vmaf_remeasure_complete") {
-          setProgress(null);
-          setOutcome({
-            rescued: data.rescued || 0,
-            unchanged: data.unchanged || 0,
-            skipped: data.skipped || 0,
-          });
-          // Refresh the running flag + candidate count
-          getVmafRemeasureStatus().then(s => setStatus({ running: s.running, candidates: s.candidates })).catch(() => {});
-        }
-      } catch {
-        /* not JSON or not ours */
-      }
-    };
-    // Subscribe to all WebSocket connections opened by the app — useWebSocket
-    // multiplexes onto a single one, but we don't have direct access here.
-    // Instead we install a window-level message listener and the existing
-    // ws hook re-broadcasts via window.dispatchEvent.
-    window.addEventListener("ws-message", handler as EventListener);
-    return () => window.removeEventListener("ws-message", handler as EventListener);
-  }, []);
-
-  const start = async () => {
-    try {
-      const r = await startVmafRemeasure();
-      if (r.started) {
-        toast(t("settingsMedia:video.vmafRemeasure.startedToast", { count: r.total }), "success");
-        setStatus(s => s ? { ...s, running: true } : { running: true, candidates: r.total });
-        setOutcome(null);
-      } else {
-        toast(r.message || t("settingsMedia:video.vmafRemeasure.noCandidatesToast"), "info");
-      }
-    } catch (e: any) {
-      toast(t("settingsMedia:video.vmafRemeasure.startFailed", { error: e?.message || t("settingsMedia:video.vmafRemeasure.unknownError") }), "error");
-    }
-  };
-
-  if (!status) return null;
-  const showCandidates = status.candidates > 0;
-  return (
-    <div style={{ marginTop: 16, padding: 12, background: "var(--bg-primary)", borderRadius: 4 }}>
-      <div style={{ ...labelStyle, marginBottom: 4 }}>{t("settingsMedia:video.vmafRemeasure.title")}</div>
-      <div style={{ ...helpStyle, marginBottom: 10, marginTop: 0 }}>
-        {t("settingsMedia:video.vmafRemeasure.help")}
-      </div>
-      {progress && progress.total > 0 ? (
-        <div>
-          <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6 }}>
-            {t("settingsMedia:video.vmafRemeasure.progress", { done: progress.done, total: progress.total })} {progress.current ? `— ${progress.current}` : ""}
-          </div>
-          <div style={{ height: 6, background: "var(--bg-card)", borderRadius: 3, overflow: "hidden" }}>
-            <div style={{
-              width: `${(progress.done / progress.total) * 100}%`,
-              height: "100%", background: "var(--accent)",
-              transition: "width 0.4s ease",
-            }} />
-          </div>
-        </div>
-      ) : (
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button
-            className="btn btn-sm btn-secondary"
-            disabled={status.running || !showCandidates}
-            onClick={start}
-          >
-            {status.running ? t("settingsMedia:video.vmafRemeasure.running") : t("settingsMedia:video.vmafRemeasure.button", { count: status.candidates })}
-          </button>
-          {!showCandidates && (
-            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-              {t("settingsMedia:video.vmafRemeasure.noCandidates")}
-            </span>
-          )}
-          {outcome && (
-            <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-              <Trans i18nKey="settingsMedia:video.vmafRemeasure.lastPass" count={outcome.rescued}
-                components={{ b: <strong style={{ color: "var(--success)" }} /> }} />
-              {outcome.unchanged > 0 && t("settingsMedia:video.vmafRemeasure.unchanged", { count: outcome.unchanged })}
-              {outcome.skipped > 0 && t("settingsMedia:video.vmafRemeasure.skipped", { count: outcome.skipped })}
-            </span>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 
 export default function SettingsPage({ themePref, onThemeChange }: { themePref: ThemePref; onThemeChange: (pref: ThemePref) => void }) {
@@ -1730,15 +1604,6 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         </div>
                       );
                     })()}
-
-                    {/* Re-measure suspect VMAF scores (v0.3.32+).
-                        Iterates completed jobs whose recorded score is either
-                        flagged uncertain or dropped below the Excellent tier,
-                        and re-runs VMAF — using the same bimodal-aware retry
-                        path as fresh encodes. Skips jobs whose original
-                        pre-rename source no longer exists on disk (typical when
-                        "delete original after conversion" is on). */}
-                    <VmafRemeasureRow />
 
                     {/* Resolution-Aware CQ Toggle + Table */}
                     <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, marginBottom: 8, cursor: "pointer" }}>

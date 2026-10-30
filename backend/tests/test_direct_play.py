@@ -246,7 +246,9 @@ async def test_conversions_fix_for_direct_play_when_the_setting_is_on(test_db, m
     jobs = await _jobs(test_db)
     assert {p[3:]: j["direct_play"] for p, j in jobs.items()} == {
         "a.mkv": None, "b.mkv": None, "c.mkv": 1, "d.mkv": None, "e.mkv": 1, "f.mkv": None}
-    assert settings_overrides(jobs["/m/c.mkv"]) == {"image_subs_to_srt": True, "compat_for_direct_play": True}
+    # (and the VMAF target it was queued with: off)
+    assert settings_overrides(jobs["/m/c.mkv"]) == {"image_subs_to_srt": True, "compat_for_direct_play": True,
+                                                    "vmaf_target_enabled": False}
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmpeg")

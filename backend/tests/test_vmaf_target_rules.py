@@ -94,14 +94,15 @@ async def test_a_rule_target_without_the_global_setting(library):
 
 @pytest.mark.asyncio
 async def test_no_rule_follows_settings(library):
+    """Settings' target as the job is queued (it keeps it: test_vmaf_target_queued.py)."""
     await _settings(library, vmaf_target_enabled="true", vmaf_target_score=93)
     await _rule("Reality", "/m/Reality", vmaf_target=0)
     jobs = await _queued(library, PLAIN, REALITY)
-    assert jobs[PLAIN]["vmaf_target"] is None and jobs[REALITY]["vmaf_target"] == 0
-    assert not [k for k in settings_overrides(jobs[PLAIN]) if k.startswith("vmaf_target")]
+    assert jobs[PLAIN]["vmaf_target"] == 93 and jobs[REALITY]["vmaf_target"] == 0
+    assert settings_overrides(jobs[PLAIN])["vmaf_target_score"] == 93
     await _rule("No target", "/m/Films", nvenc_cq=30)  # a rule that says nothing about it
     job = (await _queued(library, FILM))[FILM]
-    assert job["vmaf_target"] is None and not [k for k in settings_overrides(job) if k.startswith("vmaf_target")]
+    assert job["vmaf_target"] == 93
 
 
 async def _refused(call, code):
@@ -230,7 +231,8 @@ async def test_an_older_worker_gets_off_as_disabled(test_db, monkeypatch):
     assert await assigned("false", 0) == (False, 93.0)
     assert await assigned("false", 95) == (True, 95.0)  # a rule's score, with the setting off
     assert await assigned("true", 95) == (True, 95.0)
-    assert await assigned("true", None) == (True, 93.0)  # no rule: Settings'
+    # Queued before jobs kept their target (v0.10.0): their own quality.
+    assert await assigned("true", None) == (False, 93.0)
     assert await assigned("false", None) == (False, 93.0)
 
 

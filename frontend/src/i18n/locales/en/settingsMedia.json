@@ -206,25 +206,6 @@
       "compareFrames": "Keep before / after frames",
       "compareFramesHelp": "Each conversion grabs three moments from the original and the converted file, to compare in the job's details (Queue → Completed). The last 100 jobs keep theirs, about 0.5 MB each."
     },
-    "vmafRemeasure": {
-      "title": "Re-measure suspect VMAF scores",
-      "help": "Re-runs VMAF on completed jobs whose recorded score landed below \"Excellent\" or got flagged measurement-suspect (libvmaf can de-sync mid-window and return artificially low scores on visually-fine encodes). Skips jobs where the original pre-rename file no longer exists. Uses the same bimodal-aware retry path as fresh encodes.",
-      "startedToast_one": "Re-measuring {{count}} VMAF score...",
-      "startedToast_other": "Re-measuring {{count}} VMAF scores...",
-      "noCandidatesToast": "No remeasure candidates.",
-      "startFailed": "VMAF re-measure failed to start: {{error}}",
-      "unknownError": "unknown error",
-      "progress": "Re-measuring: {{done}} / {{total}}",
-      "running": "Re-measuring...",
-      "button_one": "Re-measure {{count}} score",
-      "button_other": "Re-measure {{count}} scores",
-      "noCandidates": "No candidates — every completed job is at \"Excellent\" or has no comparable source.",
-      "lastPass_one": "Last pass: <b>{{count}} rescued</b>",
-      "lastPass_other": "Last pass: <b>{{count}} rescued</b>",
-      "unchanged": ", {{count}} unchanged",
-      "skipped_one": ", {{count}} skipped (source missing)",
-      "skipped_other": ", {{count}} skipped (source missing)"
-    },
     "timeouts": {
       "title": "Timeouts",
       "ffmpeg": "ffmpeg timeout (hours)",
