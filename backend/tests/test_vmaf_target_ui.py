@@ -81,3 +81,14 @@ def test_jobs_from_before_searches_were_timed_read_without_the_search_part():
     src = (Path(__file__).resolve().parents[2] / "frontend/src/components/JobListItem.tsx").read_text()
     assert 'context: vt.rounds == null ? "untimed" : undefined' in src
     assert 'search: vt.rounds == null ? "" : t("queue:item.stats.vmafTargetSearch"' in src
+
+
+def test_the_report_says_when_no_quality_could_be_tested():
+    """A search that couldn't test anything (a disc that can't be sampled, a
+    sample that couldn't be cut) used to leave no trace in the report."""
+    for lang in ("en", "es"):
+        assert all(p == {"target"} for p in _placeholders(lang, "queue:item.stats.vmafTargetUntested")), lang
+    src = (Path(__file__).resolve().parents[2] / "frontend/src/components/JobListItem.tsx").read_text()
+    assert "logData.encoding_stats.vmaf_target_untested != null" in src
+    assert re.search(r'"queue:item\.stats\.vmafTargetUntested",\s*\{\s*target: logData\.encoding_stats\.vmaf_target_untested',
+                     src)

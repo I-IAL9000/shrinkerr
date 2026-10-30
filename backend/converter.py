@@ -3716,18 +3716,78 @@ async def convert_file(
     # filename reflects the downscaled resolution. The same resolved
     # value flows through to the encoder below.
 
+    # What the encoder reads from — a disc's main title (concat: / bluray:),
+    # resolved before the VMAF target's search, which samples it too; swapped
+    # for the pre-stripped copy further down.
+    encode_input_path = input_path  # what the encoder reads from (gets swapped after pre-strip)
+    # v0.7.0: extra ffmpeg input args (e.g. `-f dvdvideo` for DVD ISO)
+    # that must be emitted BEFORE `-i` in the encode cmd. Spliced in
+    # below after _build_ffmpeg_cmd_impl returns. Empty for folder discs
+    # and regular files.
+    ffmpeg_input_args: list[str] = []
+    # v0.6.0: disc-folder input — encode reads from ffmpeg's dvd:/ or
+    # bluray:/ protocol with the disc-root folder (parent of VIDEO_TS/
+    # or BDMV/). Prestrip never fires for disc inputs (no sub-removal
+    # against a virtual title set), so the protocol path stays through
+    # the encode without further swaps.
+    # v0.7.0: ISO file input — ffmpeg accepts the ISO directly via
+    # libdvdread (DVD, needs `-f dvdvideo`) or libbluray (BD, via the
+    # `bluray:` protocol on the .iso path). No mount, no extraction.
+    if disc_type:
+        _disc_p = Path(input_path)
+        if _disc_p.is_file() and _disc_p.suffix.lower() == ".iso":
+            if disc_type == "dvd":
+                # v0.9.152: main-title VOBs read straight out of the ISO
+                # (see disc_metadata.dvd_iso_concat_input); dvdvideo fallback.
+                from backend.disc_metadata import dvd_iso_concat_input
+                encode_input_path = await asyncio.to_thread(dvd_iso_concat_input, _disc_p)
+                if not encode_input_path:
+                    encode_input_path = str(_disc_p)
+                    ffmpeg_input_args = ["-f", "dvdvideo"]
+            else:  # bdmv
+                encode_input_path = f"bluray:{_disc_p}"
+            print(
+                f"[CONVERT] Disc input detected ({disc_type}, iso); "
+                f"input={encode_input_path}",
+                flush=True,
+            )
+        else:
+            disc_root = _disc_p.parent.parent
+            if disc_type == "dvd":
+                # v0.6.2: DVD encode reads through ffmpeg's `concat:` protocol
+                # over the main-feature VOBs. The v0.6.0 `dvd:/` protocol was
+                # fictional; see scanner._dvd_concat_input docstring.
+                from backend.scanner import _dvd_concat_input
+                encode_input_path = _dvd_concat_input(disc_root)
+                if encode_input_path is None:
+                    raise RuntimeError(
+                        f"DVD encode failed: no main-feature VOBs in {disc_root}/VIDEO_TS/"
+                    )
+            else:  # bdmv
+                encode_input_path = f"bluray:{disc_root}"
+            print(f"[CONVERT] Disc input detected ({disc_type}, folder); using {disc_type}-concat over disc_root={disc_root.name}", flush=True)
     # v0.10.0: VMAF target quality — this title's own quality, found on a few
-    # encoded samples (vmaf_target). Replaces the job's; not for discs.
+    # encoded samples (vmaf_target). Replaces the job's. A disc's samples are
+    # cut from its main title, by position (vmaf_target._cut_samples).
     vmaf_target = None
     # What the job report says about the target's check, when the finished
     # file was re-encoded: "retry", "reencoded", "first_kept" (below).
     target_notes: dict = {}
-    from backend.vmaf_target import effective_target
+    # The target applied, but no quality could be tested (a sample couldn't
+    # be cut or scored, or a disc can't be sampled): the report says so.
+    target_untested: Optional[float] = None
+    from backend.vmaf_target import MIN_DURATION, effective_target
     target = effective_target(live_settings)
+    search_duration = float((probe_data or {}).get("duration") or duration or 0)
     if _target_retry:
         # The VMAF target's re-encode: at the quality it's given, no search.
         vmaf_target = _target_retry["search"]
-    elif target is not None and not command_only and not disc_type:
+    elif target is not None and not command_only and search_duration >= MIN_DURATION and ffmpeg_input_args:
+        # A DVD ISO read by ffmpeg's dvdvideo demuxer (its VOBs weren't found
+        # in the ISO) has no byte stream to cut samples from.
+        print("[VMAF-TARGET] This disc can't be sampled — keeping the job's quality", flush=True)
+        target_untested = target
+    elif target is not None and not command_only:
         from backend.encoding_estimates import _CRF_OFFSET, quality_label, quality_settings
         from backend.vmaf_target import find_quality
         # The step names the round being scored ("VMAF target: CQ 32 (round 3)"),
@@ -3745,12 +3805,16 @@ async def convert_file(
         if search_start is None:
             search_start = crf - _CRF_OFFSET if encoder == "libx265" else cq
         vmaf_target = await _with_step(progress_callback, said, find_quality(
-            input_path, encoder, float((probe_data or {}).get("duration") or duration or 0), target,
+            input_path, encoder, search_duration, target,
             start=search_start,
             convert_kwargs={"override_preset": override_preset, "override_libx265_preset": override_libx265_preset,
                             "override_target_resolution": override_target_resolution, "pre_settings": live_settings},
-            output_codec=output_codec, on_round=say_round, on_proc=proc_callback))
-        if vmaf_target:
+            output_codec=output_codec, on_round=say_round, on_proc=proc_callback,
+            disc_input=encode_input_path if disc_type else None))
+        if not vmaf_target:
+            # Files under MIN_DURATION are never searched; not "untested".
+            target_untested = target if search_duration >= MIN_DURATION else None
+        else:
             cq = vmaf_target["cq"]
             crf = quality_settings("libx265", cq)["libx265_crf"]
             qsv_cq = quality_settings("qsv", cq)["qsv_cq"]
@@ -3801,59 +3865,12 @@ async def convert_file(
     # encoder slowdown does turn up. v0.3.55+.
     _PRESTRIP_SUB_THRESHOLD = 9999
     prestrip_path: str | None = None
-    encode_input_path = input_path  # what the encoder reads from (gets swapped after pre-strip)
     # v0.10.0 (SC-24): encode the stream the scanner chose as the video, by
     # index, so a cover image listed first isn't encoded as the film. A disc
     # is read through concat:/bluray:, whose stream numbers differ from the
     # probe's, so it keeps the first non-picture video stream.
     _video_index = (probe_data or {}).get("video_stream_index")
     video_map = f"0:{_video_index}" if _video_index is not None and not disc_type else "0:V:0"
-    # v0.7.0: extra ffmpeg input args (e.g. `-f dvdvideo` for DVD ISO)
-    # that must be emitted BEFORE `-i` in the encode cmd. Spliced in
-    # below after _build_ffmpeg_cmd_impl returns. Empty for folder discs
-    # and regular files.
-    ffmpeg_input_args: list[str] = []
-    # v0.6.0: disc-folder input — encode reads from ffmpeg's dvd:/ or
-    # bluray:/ protocol with the disc-root folder (parent of VIDEO_TS/
-    # or BDMV/). Prestrip never fires for disc inputs (no sub-removal
-    # against a virtual title set), so the protocol path stays through
-    # the encode without further swaps.
-    # v0.7.0: ISO file input — ffmpeg accepts the ISO directly via
-    # libdvdread (DVD, needs `-f dvdvideo`) or libbluray (BD, via the
-    # `bluray:` protocol on the .iso path). No mount, no extraction.
-    if disc_type:
-        _disc_p = Path(input_path)
-        if _disc_p.is_file() and _disc_p.suffix.lower() == ".iso":
-            if disc_type == "dvd":
-                # v0.9.152: main-title VOBs read straight out of the ISO
-                # (see disc_metadata.dvd_iso_concat_input); dvdvideo fallback.
-                from backend.disc_metadata import dvd_iso_concat_input
-                encode_input_path = await asyncio.to_thread(dvd_iso_concat_input, _disc_p)
-                if not encode_input_path:
-                    encode_input_path = str(_disc_p)
-                    ffmpeg_input_args = ["-f", "dvdvideo"]
-            else:  # bdmv
-                encode_input_path = f"bluray:{_disc_p}"
-            print(
-                f"[CONVERT] Disc input detected ({disc_type}, iso); "
-                f"input={encode_input_path}",
-                flush=True,
-            )
-        else:
-            disc_root = _disc_p.parent.parent
-            if disc_type == "dvd":
-                # v0.6.2: DVD encode reads through ffmpeg's `concat:` protocol
-                # over the main-feature VOBs. The v0.6.0 `dvd:/` protocol was
-                # fictional; see scanner._dvd_concat_input docstring.
-                from backend.scanner import _dvd_concat_input
-                encode_input_path = _dvd_concat_input(disc_root)
-                if encode_input_path is None:
-                    raise RuntimeError(
-                        f"DVD encode failed: no main-feature VOBs in {disc_root}/VIDEO_TS/"
-                    )
-            else:  # bdmv
-                encode_input_path = f"bluray:{disc_root}"
-            print(f"[CONVERT] Disc input detected ({disc_type}, folder); using {disc_type}-concat over disc_root={disc_root.name}", flush=True)
     if len(sub_remove_set) >= _PRESTRIP_SUB_THRESHOLD and subtitle_streams:
         prestrip_path = await _prestrip_subtitles(
             input_path=input_path,
@@ -4675,6 +4692,7 @@ async def convert_file(
                 "skipped_larger": True,
                 "had_track_removal": had_track_removal,
                 "vmaf_target": _target_stats(None),  # v0.10.0: the quality the search chose
+                "vmaf_target_untested": target_untested,
             },
         }
         if held_state:
@@ -5235,6 +5253,7 @@ async def convert_file(
                 "output_codec": output_codec or "hevc",  # v0.10.0
                 "encode_seconds": time.monotonic() - encode_start_time,
                 "vmaf_target": _target_stats(vmaf_score),  # v0.10.0: and the re-encode, if one was tried
+                "vmaf_target_untested": target_untested,
             },
         }
 
@@ -5283,6 +5302,7 @@ async def convert_file(
             # v0.10.0: the quality the VMAF target search chose, and why; the
             # finished file's score, and what its check did (_target_stats).
             "vmaf_target": _target_stats(vmaf_score),
+            "vmaf_target_untested": target_untested,  # the target applied but nothing could be tested
             "input_size": original_size,
             "output_size": output_size,
             # v0.10.0: what the savings estimate learns from (savings_model)

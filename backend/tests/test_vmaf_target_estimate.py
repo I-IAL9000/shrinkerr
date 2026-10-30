@@ -146,19 +146,20 @@ async def test_targets_are_raised_to_the_minimum(library):
 
 @pytest.mark.asyncio
 async def test_only_files_the_search_runs_on_are_counted(library):
-    """Not a file that's only cleaned up, a disc, or a file under two
-    minutes (none is searched); one whose length isn't known is."""
+    """Not a file that's only cleaned up or under two minutes (neither is
+    searched); one whose length isn't known is, and so is a disc (samples
+    cut from its main title, v0.10.0)."""
     async with aiosqlite.connect(library) as db:
         await db.execute("UPDATE scan_results SET needs_conversion = 0 WHERE file_path = ?", (A,))
         await db.execute("UPDATE scan_results SET disc_type = 'bluray' WHERE file_path = ?", (C,))
         await db.execute("UPDATE scan_results SET duration = 60 WHERE file_path = ?", (D,))
         await db.commit()
     got = await _estimate()
-    assert got["vmaf_target"] == {"targets": {}, "fixed_by_rule": 1}
+    assert got["vmaf_target"] == {"targets": {"95": 1}, "fixed_by_rule": 1}
     async with aiosqlite.connect(library) as db:
         await db.execute("UPDATE scan_results SET duration = NULL WHERE file_path = ?", (D,))
         await db.commit()
-    assert (await _estimate())["vmaf_target"] == {"targets": {"93": 1}, "fixed_by_rule": 1}
+    assert (await _estimate())["vmaf_target"] == {"targets": {"93": 1, "95": 1}, "fixed_by_rule": 1}
 
 
 @pytest.mark.asyncio

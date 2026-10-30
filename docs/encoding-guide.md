@@ -315,8 +315,8 @@ works.
   (CQ 32.5). If even CQ 14 misses the target, CQ 14 is used.
 - **It replaces** the quality from presets, rules and content type for
   that file. The job's details show the quality chosen, the samples'
-  score and the lowest sample ("VMAF target: CQ 25: samples scored 93.4
-  (target 93)").
+  score, how long the search took and the lowest sample ("VMAF target:
+  CQ 25: samples scored 93.4 (target 93; 5 rounds, 4 min)").
 - **A miss is re-encoded once.** The finished file is scored against the
   target, even with VMAF quality analysis off. If it comes out more than a
   point under, it's encoded again at a lower quality; never a third time.
@@ -325,9 +325,13 @@ works.
 - **Cost:** a few minutes per file on a GPU encoder, longer for a film
   (more samples); more on libx265, which encodes every sample at your
   preset each round. Add to Queue's time estimate includes the search.
-- **Not searched:** files under two minutes, discs, and ffmpeg builds
-  without libvmaf — they keep the job's quality. A failed sample also
-  falls back to it.
+- **Discs:** Blu-ray and DVD folders and ISOs are searched too. Their
+  samples are cut from the main title by position, since a DVD's
+  timestamps restart in every VOB. A DVD ISO whose files Shrinkerr can't
+  locate (it's read through ffmpeg's DVD reader instead) can't be sampled.
+- **Not searched:** files under two minutes and ffmpeg builds without
+  libvmaf — they keep the job's quality. A sample that can't be cut or
+  scored also falls back to it, and the job's details say so.
 - The **minimum score** still rejects a file below it, when VMAF quality
   analysis is on.
 - Remote workers run the search themselves.

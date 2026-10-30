@@ -2344,10 +2344,10 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                 per_file_seconds = avg_seconds
             total_est_time += per_file_seconds
 
-            # The search runs on conversions, not on discs or files under two
-            # minutes (convert_file, vmaf_target.find_quality); a file whose
+            # The search runs on conversions, discs too, but not on files under
+            # two minutes (convert_file, vmaf_target.find_quality); a file whose
             # length isn't known yet is counted.
-            if jt in ("convert", "combined") and not row.get("disc_type") and not 0 < file_dur < MIN_DURATION:
+            if jt in ("convert", "combined") and not 0 < file_dur < MIN_DURATION:
                 rule_target = rule.get("vmaf_target") if rule else None
                 file_target = effective_target({**target_settings, **settings_overrides(
                     {"vmaf_target": rule_target, "vmaf_min_score": rule.get("vmaf_min_score") if rule else None})})

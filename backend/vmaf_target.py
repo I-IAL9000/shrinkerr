@@ -34,6 +34,9 @@ SECONDS_PER_SAMPLE, MIN_SAMPLES, MAX_SAMPLES = 480, 3, 6
 MAX_SAMPLE_DIP = 2.0
 # Where a search landed is trusted for this long (remembered_cq).
 MEMORY_DAYS = 90
+# A disc's samples start on a Blu-ray aligned unit (32 transport packets of
+# 192 bytes), which is also a whole number of DVD sectors (2048).
+DISC_ALIGN = 6144
 
 
 def sample_points(duration: float) -> list[float]:
@@ -42,6 +45,12 @@ def sample_points(duration: float) -> list[float]:
     n = min(max(round(duration / SECONDS_PER_SAMPLE), MIN_SAMPLES), MAX_SAMPLES)
     return [max(0.0, min(duration * (i + 0.5) / n - SAMPLE_SECONDS / 2, duration - SAMPLE_SECONDS))
             for i in range(n)]
+
+
+def disc_sample_offsets(size: int, duration: float) -> list[int]:
+    """Where a disc's samples start, in bytes of its main title (`size`
+    bytes long): the sample points' share of `duration`, aligned down."""
+    return [int(size * start / duration) // DISC_ALIGN * DISC_ALIGN for start in sample_points(duration)]
 
 
 def passes(values: list[float], target: float) -> bool:
@@ -194,6 +203,67 @@ async def _run(cmd: list[str], timeout: int, on_proc: Callable | None = None) ->
     return proc.returncode == 0
 
 
+async def _input_size(src: str) -> int | None:
+    """The size in bytes of what ffmpeg reads from `src` — a disc's main
+    title through concat: / bluray: — or None."""
+    proc = await asyncio.create_subprocess_exec(
+        "ffprobe", "-v", "error", "-show_entries", "format=size", "-of", "csv=p=0", "-i", src,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=180)  # a disc over SMB opens slowly
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        return None
+    try:
+        return int(out.decode().strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return None
+
+
+def _sample_fingerprint(path: str) -> tuple[int, bytes]:
+    with open(path, "rb") as f:
+        return os.path.getsize(path), f.read(4 << 20)
+
+
+async def _cut_samples(input_path: str, duration: float, work: str, *, disc_input: str | None = None,
+                       on_proc: Callable | None = None) -> list[str] | None:
+    """The video of each sample point, copied into `work`; None when one
+    can't be cut. A file is cut by time. A disc (`disc_input`, its main
+    title as the encode reads it) is cut by position, since a DVD's
+    timestamps restart in every VOB; libbluray moves each seek to the nearest
+    entry point. Its samples are MPEG-TS, which carries VC-1 as Blu-rays do."""
+    if not disc_input:
+        samples = []
+        for n, start_s in enumerate(sample_points(duration)):
+            sample = os.path.join(work, f"sample{n}.mkv")
+            if not await _run(["ffmpeg", "-v", "error", "-y", "-ss", f"{start_s:.3f}", "-t", str(SAMPLE_SECONDS),
+                               "-i", input_path, "-map", "0:V:0", "-c", "copy", sample], 600, on_proc):
+                return None
+            samples.append(sample)
+        return samples
+    size = await _input_size(disc_input)
+    if not size:
+        print("[VMAF-TARGET] The disc's size couldn't be read — keeping the job's quality", flush=True)
+        return None
+    samples = []
+    for n, offset in enumerate(disc_sample_offsets(size, duration)):
+        sample = os.path.join(work, f"sample{n}.ts")
+        # +genpts: a DVD cut mid-stream can start on a frame with no timestamp.
+        if not await _run(["ffmpeg", "-v", "error", "-y", "-fflags", "+genpts", "-skip_initial_bytes", str(offset),
+                           "-probesize", "50M", "-analyzeduration", "30M", "-i", disc_input,
+                           "-t", str(SAMPLE_SECONDS), "-map", "0:V:0", "-c", "copy", "-f", "mpegts", sample],
+                          600, on_proc):
+            return None
+        samples.append(sample)
+    # A seek that fails quietly reads from the start every time.
+    prints = [await asyncio.to_thread(_sample_fingerprint, s) for s in samples]
+    if len(set(prints)) < len(prints):
+        print("[VMAF-TARGET] The disc's samples came out the same — keeping the job's quality", flush=True)
+        return None
+    return samples
+
+
 async def _vmaf(reference: str, encoded: str, seconds: float, json_path: str) -> float | None:
     from backend.converter import _probe_vmaf_stream, _run_libvmaf_pass, _vmaf_pipelines
     ref_pipeline, dist_pipeline, fps = _vmaf_pipelines(await _probe_vmaf_stream(reference),
@@ -208,7 +278,7 @@ async def _vmaf(reference: str, encoded: str, seconds: float, json_path: str) ->
 async def find_quality(input_path: str, encoder: str, duration: float, target: float, start: float,
                        convert_kwargs: dict | None = None, *, output_codec: str | None = None,
                        on_round: Callable[[float, int], Awaitable[None]] | None = None,
-                       on_proc: Callable | None = None) -> dict | None:
+                       on_proc: Callable | None = None, disc_input: str | None = None) -> dict | None:
     """The CQ to encode `input_path` at for VMAF `target` (search's dict,
     plus "target", "samples" and "seconds", the search's wall time), or None
     when the file is too short, VMAF isn't available or a sample fails — the
@@ -220,7 +290,8 @@ async def find_quality(input_path: str, encoder: str, duration: float, target: f
     awaited as each CQ's samples start (n counts the CQs scored).
     `on_proc(proc)` is given each ffmpeg cutting or encoding a sample, as
     convert_file's `proc_callback` is: a Cancel kills it, which fails the
-    sample, so the search ends (None)."""
+    sample, so the search ends (None). `disc_input`: a disc's main title as
+    the encode reads it (concat: / bluray:), to cut the samples from."""
     from backend.converter import convert_file
     from backend.encoding_estimates import quality_settings
     from backend.test_encode import check_vmaf_available
@@ -229,13 +300,9 @@ async def find_quality(input_path: str, encoder: str, duration: float, target: f
     work = tempfile.mkdtemp(prefix="shrinkerr_vmaf_target_")
     began = time.monotonic()
     try:
-        samples = []
-        for n, start_s in enumerate(sample_points(duration)):
-            sample = os.path.join(work, f"sample{n}.mkv")
-            if not await _run(["ffmpeg", "-v", "error", "-y", "-ss", f"{start_s:.3f}", "-t", str(SAMPLE_SECONDS),
-                               "-i", input_path, "-map", "0:V:0", "-c", "copy", sample], 600, on_proc):
-                return None
-            samples.append(sample)
+        samples = await _cut_samples(input_path, duration, work, disc_input=disc_input, on_proc=on_proc)
+        if not samples:
+            return None
 
         class _Failed(Exception):
             pass
