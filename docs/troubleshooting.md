@@ -14,6 +14,7 @@ excerpts when opening an issue.
 - [Plex library refresh does nothing](#plex-library-refresh-does-nothing)
 - [Encoded file is larger than original](#encoded-file-is-larger-than-original)
 - [Queue is "running" but nothing happens](#queue-is-running-but-nothing-happens)
+- [Locked out after setting an API key](#locked-out-after-setting-an-api-key)
 - [Lost / broken database](#lost--broken-database)
 - [Reading the logs](#reading-the-logs)
 
@@ -216,6 +217,28 @@ but idle.
 Previously (pre-v0.3.16) the UI would show a phantom "Starting..."
 card in this case. Fixed: capacity is now summed across available
 nodes.
+
+## Locked out after setting an API key
+
+With an API key set and no username and password, Shrinkerr asks every
+browser for the API key. Enter it on the sign-in page. Before v0.9.159
+the page asked for a username and password instead; type the key in the
+Password field there.
+
+Lost the key? Print it from the database (the default location is
+`/app/data/shrinkerr.db`):
+```bash
+docker compose exec shrinkerr python3 -c "import sqlite3; print(sqlite3.connect('/app/data/shrinkerr.db').execute(\"SELECT value FROM settings WHERE key = 'api_key'\").fetchone()[0])"
+```
+
+Or remove it, so Shrinkerr opens without signing in until you set a
+username and password, then restart the container:
+```bash
+docker compose exec shrinkerr python3 -c "import sqlite3; c = sqlite3.connect('/app/data/shrinkerr.db'); c.execute(\"UPDATE settings SET value = '' WHERE key = 'api_key'\"); c.commit()"
+docker compose restart shrinkerr
+```
+NZBGet / SABnzbd scripts and remote workers stop working until you set a
+new key and update them.
 
 ## Lost / broken database
 

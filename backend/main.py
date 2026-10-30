@@ -673,24 +673,27 @@ async def auth_check(request: Request):
 
     configured_api_key = (settings.get("api_key") or "").strip()
     password_auth_on = bool(settings.get("auth_enabled"))
+    # v0.9.159: whether there's a username and password to ask for — with an
+    # API key and no password login, the sign-in page asks for the key.
+    extra = {"password_login": password_auth_on}
 
     # No auth configured at all — treat as "nothing required".
     if not configured_api_key and not password_auth_on:
-        return {"auth_required": False, "authenticated": True, "method": None}
+        return {"auth_required": False, "authenticated": True, "method": None, **extra}
 
     # Check API key (constant-time; old `==` comparison was an online
     # timing oracle against this unauthenticated endpoint).
     supplied_key = request.headers.get("X-Api-Key") or request.query_params.get("api_key") or ""
     if supplied_key and configured_api_key and hmac.compare_digest(supplied_key, configured_api_key):
-        return {"auth_required": True, "authenticated": True, "method": "api_key"}
+        return {"auth_required": True, "authenticated": True, "method": "api_key", **extra}
 
     # Check session cookie — only when password auth is enabled.
     if password_auth_on:
         session = request.cookies.get("shrinkerr_session")
         if session and _validate_session(session, settings):
-            return {"auth_required": True, "authenticated": True, "method": "session"}
+            return {"auth_required": True, "authenticated": True, "method": "session", **extra}
 
-    return {"auth_required": True, "authenticated": False, "method": None}
+    return {"auth_required": True, "authenticated": False, "method": None, **extra}
 
 
 @app.post("/api/auth/login")
@@ -834,18 +837,26 @@ async def get_logs(
 
 
 async def _check_ws_auth(websocket: WebSocket) -> bool:
-    """Check authentication for WebSocket connections via query param or cookie."""
+    """Check authentication for WebSocket connections via query param or cookie,
+    on the same terms as the HTTP API (v0.9.159): open only when neither an
+    API key nor password login is set up. It used to be open whenever
+    password login was off, even with an API key."""
     auth_settings = _get_auth_settings_sync()
-    if not auth_settings.get("auth_enabled"):
+    if auth_settings is None:
+        return False  # can't read the settings: fail closed, as the HTTP middleware does
+    configured_api_key = (auth_settings.get("api_key") or "").strip()
+    password_auth_on = bool(auth_settings.get("auth_enabled"))
+    if not configured_api_key and not password_auth_on:
         return True
     # Check API key in query param
     provided = websocket.query_params.get("api_key", "")
-    if provided and provided == auth_settings.get("api_key"):
+    if provided and configured_api_key and hmac.compare_digest(provided, configured_api_key):
         return True
     # Check session cookie
-    session = websocket.cookies.get("shrinkerr_session")
-    if session and _validate_session(session, auth_settings):
-        return True
+    if password_auth_on:
+        session = websocket.cookies.get("shrinkerr_session")
+        if session and _validate_session(session, auth_settings):
+            return True
     return False
 
 

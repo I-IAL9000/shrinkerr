@@ -284,7 +284,9 @@ function KeyboardShortcuts({ onToggleQueue }: { onToggleQueue: () => void }) {
   return null;
 }
 
-function LoginScreen({ onLogin }: { onLogin: () => void }) {
+// `passwordLogin` false: there's no username and password, only the API key
+// (v0.9.159 — the page used to ask for credentials that didn't exist).
+function LoginScreen({ onLogin, passwordLogin }: { onLogin: () => void; passwordLogin: boolean }) {
   const { t } = useTranslation(["nav", "common"]);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -333,8 +335,8 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "var(--bg-primary)" }}>
       <div style={{ background: "var(--bg-card)", padding: 32, borderRadius: 8, textAlign: "center", maxWidth: 360, width: "100%" }}>
         <img src="/shrinkerr-logo.svg" alt="Shrinkerr" height="32" style={{ marginBottom: 16 }} />
-        <div style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: 20 }}>{t("nav:login.subtitle")}</div>
-        <input
+        <div style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: 20 }}>{t(passwordLogin ? "nav:login.subtitle" : "nav:login.apiKeySubtitle")}</div>
+        {passwordLogin && <input
           type="text"
           placeholder={t("nav:login.username")}
           value={username}
@@ -347,11 +349,11 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
             fontSize: 14, outline: "none", boxSizing: "border-box",
           }}
           autoFocus
-        />
+        />}
         <input
           id="sq-pw"
           type="password"
-          placeholder={t("nav:login.password")}
+          placeholder={t(passwordLogin ? "nav:login.password" : "nav:login.apiKey")}
           value={password}
           onChange={e => { setPassword(e.target.value); setError(""); }}
           onKeyDown={e => { if (e.key === "Enter") handleLogin(); }}
@@ -361,12 +363,20 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
             border: error ? "1px solid #e94560" : "1px solid var(--border)", borderRadius: 6,
             fontSize: 14, outline: "none", boxSizing: "border-box",
           }}
+          autoFocus={!passwordLogin}
         />
         {error && <div style={{ color: "#e94560", fontSize: 12, marginBottom: 8 }}>{error}</div>}
         <button className="btn btn-primary" style={{ width: "100%", opacity: loading ? 0.6 : 1 }}
           onClick={handleLogin} disabled={loading}>
           {loading ? t("nav:login.signingIn") : t("nav:login.signIn")}
         </button>
+        {!passwordLogin && (
+          <div style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 14, lineHeight: 1.5 }}>
+            {t("nav:login.apiKeyHelp")}{" "}
+            <a href="https://github.com/I-IAL9000/shrinkerr/blob/main/docs/troubleshooting.md#locked-out-after-setting-an-api-key"
+              target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}>{t("nav:login.apiKeyLost")}</a>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -383,6 +393,7 @@ export default function App() {
   const { t } = useTranslation(["nav", "common"]);
   const [authChecked, setAuthChecked] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
+  const [passwordLogin, setPasswordLogin] = useState(true);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [jobProgressMap, setJobProgressMap] = useState<Map<number, JobProgress>>(new Map());
   const [vmafRemeasure, setVmafRemeasure] = useState<VmafRemeasureState | null>(null);
@@ -472,6 +483,7 @@ export default function App() {
   useEffect(() => {
     checkAuth().then(r => {
       setAuthenticated(!r.auth_required || r.authenticated);
+      setPasswordLogin(r.password_login ?? true);
       setAuthChecked(true);
     }).catch(() => { setAuthenticated(true); setAuthChecked(true); });
   }, []);
@@ -489,7 +501,7 @@ export default function App() {
   }
 
   if (!authenticated) {
-    return <LoginScreen onLogin={() => setAuthenticated(true)} />;
+    return <LoginScreen onLogin={() => setAuthenticated(true)} passwordLogin={passwordLogin} />;
   }
 
   return (

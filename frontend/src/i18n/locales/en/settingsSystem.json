@@ -105,7 +105,7 @@
     "reveal": "Reveal",
     "copy": "Copy to clipboard",
     "regenerate": "Regenerate API key (server-side; takes effect immediately)",
-    "apiKeyHelp": "Used by NZBGet, SABnzbd, remote workers, and other external integrations. Not required for browser login. Shown masked — click 👁 to reveal or ⧉ to copy the full key.",
+    "apiKeyHelp": "Used by NZBGet, SABnzbd, remote workers, and other external integrations. With no username and password set, browsers sign in with it too — keep a copy. Shown masked — click 👁 to reveal or ⧉ to copy the full key.",
     "save": "Save Authentication"
   },
   "notifications": {

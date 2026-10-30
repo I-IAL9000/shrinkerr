@@ -107,7 +107,7 @@
     "reveal": "Mostrar",
     "copy": "Copiar al portapapeles",
     "regenerate": "Regenerar la clave de API (en el servidor; se aplica de inmediato)",
-    "apiKeyHelp": "La usan NZBGet, SABnzbd, los workers remotos y otras integraciones externas. No es necesaria para iniciar sesión en el navegador. Se muestra enmascarada: pulsa 👁 para mostrarla o ⧉ para copiar la clave completa.",
+    "apiKeyHelp": "La usan NZBGet, SABnzbd, los workers remotos y otras integraciones externas. Si no hay usuario ni contraseña, los navegadores también inician sesión con ella: guarda una copia. Se muestra enmascarada: pulsa 👁 para mostrarla o ⧉ para copiar la clave completa.",
     "save": "Guardar autenticación"
   },
   "notifications": {

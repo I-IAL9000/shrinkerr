@@ -14,7 +14,7 @@ import {
   plexAuthDisconnect, plexAuthStatus,
   getVersion, getChangelog,
   getVmafRemeasureStatus, startVmafRemeasure,
-  getEncoderCaps, regenerateApiKey,
+  getEncoderCaps, regenerateApiKey, checkAuth, setStoredApiKey,
   type PlexAuthStatus, type PlexServer, type ChangelogEntry,
   type EncoderCaps,
 } from "../api";
@@ -4340,8 +4340,13 @@ volumes:
                     // randomUUID is undefined, AND lost on page refresh
                     // even when it did work. v0.3.75+.
                     try {
+                      // v0.9.159: a browser that didn't sign in with the
+                      // password needs the new key from now on — keep this
+                      // one signed in instead of locking it out.
+                      const signedInWithPassword = (await checkAuth()).method === "session";
                       const r = await regenerateApiKey();
                       if (r?.api_key) {
+                        if (!signedInWithPassword) setStoredApiKey(r.api_key);
                         setEncoding({ ...encoding, api_key: r.api_key });
                         toast(t("settingsSystem:toasts.apiKeyRegenerated"), "success");
                       } else {
@@ -4372,7 +4377,14 @@ volumes:
                 if (encoding?.auth_username) data.auth_username = encoding.auth_username;
                 if (encoding?.auth_password) data.auth_password = encoding.auth_password;
                 if (encoding?.api_key !== undefined) data.api_key = encoding.api_key;
+                // v0.9.159: with the password login switched off, an API key
+                // is what browsers sign in with — keep this one signed in.
+                let keepKey = "";
+                if (!encoding?.auth_enabled && (await checkAuth()).method === "session") {
+                  keepKey = (await getApiKey().catch(() => ({ api_key: "" }))).api_key;
+                }
                 await updateEncodingSettings(data);
+                if (keepKey) setStoredApiKey(keepKey);
                 // Clear the password field after saving
                 setEncoding({ ...encoding, auth_password: "" });
                 toast(t("settingsSystem:toasts.authSaved"), "success");

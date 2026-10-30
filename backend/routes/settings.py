@@ -469,6 +469,9 @@ async def regenerate_api_key():
         await db.commit()
     finally:
         await db.close()
+    # The auth settings are cached for a minute; the old key stops working now.
+    from backend.main import _auth_cache
+    _auth_cache["checked_at"] = 0
     return {"api_key": new_key}
 
 

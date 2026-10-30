@@ -66,7 +66,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 export const checkAuth = () =>
   fetch("/api/auth/check", {
     headers: getStoredApiKey() ? { "X-Api-Key": getStoredApiKey() } : {},
-  }).then(r => r.json()) as Promise<{ auth_required: boolean; authenticated: boolean; method: string | null }>;
+  }).then(r => r.json()) as Promise<{ auth_required: boolean; authenticated: boolean; method: string | null; password_login?: boolean }>;
 
 export const login = (username: string, password: string) =>
   fetch("/api/auth/login", {
