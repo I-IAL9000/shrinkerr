@@ -273,11 +273,29 @@ async def test_a_larger_reencode_keeps_the_first(run):
 
 @needs_vmaf
 @pytest.mark.asyncio
+async def test_a_larger_first_encode_reports_the_search(run):
+    """The quality the search chose made the file larger: the report says
+    so (and of the output held for Keep anyway)."""
+    result = await run(found={"cq": 14, "scores": {}}, source_crf=28, backup_original_days=1)
+    assert run.seen.crfs == [16] and result["skipped_larger"]
+    stats = result["encoding_stats"]["vmaf_target"]
+    assert {k: stats[k] for k in ("target", "cq", "rounds")} == {"target": 93.0, "cq": 14, "rounds": 3}
+    assert stats["checked_score"] is None  # discarded unchecked
+    assert result["held"]["result"]["encoding_stats"]["vmaf_target"] == stats
+
+
+@needs_vmaf
+@pytest.mark.asyncio
 async def test_a_larger_reencode_with_the_first_under_the_minimum(run):
+    """The minimum rejects the first encode, as without the target: a VMAF
+    rejection (retried with other settings), not a file ignored as larger
+    — a CQ-14 re-encode being larger says nothing of the qualities between."""
     result = await run(65.0, found={"cq": 42, "scores": {}}, source_crf=28,
                        vmaf_analysis_enabled="true", vmaf_min_score=70)
     assert run.seen.crfs == [44, 16]
-    assert result["success"] and result["skipped_larger"] and result["output_path"] == str(run.seen.src)
+    assert result["success"] and result["vmaf_rejected"] and not result.get("skipped_larger")
+    assert result["vmaf_score"] == 65.0 and result["output_path"] == str(run.seen.src)  # the first's score
+    assert result["encoding_stats"]["output_codec"] == "hevc"  # where the folder's memory keeps the landing
     stats = result["encoding_stats"]["vmaf_target"]  # both encodes reported
     assert stats["checked_score"] == 65.0 and stats["retry"] == _retry(14, None, "larger")
     assert "first_kept" not in stats and run.seen.src.read_bytes() == run.seen.before
@@ -369,6 +387,7 @@ async def test_a_failed_reencode_keeps_the_first(run, monkeypatch, how):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("code, key", [(-11, "errors.ffmpegExited"),  # crashed (SIGSEGV)
                                        (-9, "errors.ffmpegTimedOut"),  # killed by its own timeout
+                                       (-9, "errors.sourceDamaged"),  # timed out on a damaged source
                                        (-9, None)])  # killed on a progress error
 async def test_a_crashed_or_timed_out_reencode_keeps_the_first(run, monkeypatch, code, key):
     async def outcome(**kw):
@@ -376,10 +395,37 @@ async def test_a_crashed_or_timed_out_reencode_keeps_the_first(run, monkeypatch,
         return {"success": False, "output_path": None, "space_saved": 0, "error": f"ffmpeg ended ({code})",
                 **({"error_key": key} if key else {})}
     _intercept_retry(monkeypatch, outcome)
+    run.kwargs = {"proc_callback": lambda proc: None, "is_cancelled": lambda: False}  # the job wasn't cancelled
     result = await run(90.0)
     assert result["success"] and result["encoding_stats"]["vmaf_target"]["first_kept"] is True
     assert result["encoding_stats"]["vmaf_target"]["retry"] == _retry(27, None, "failed", f"ffmpeg ended ({code})")
     assert _left(run.seen.src.parent) == ["Film (2020) x265.mkv"]
+
+
+@needs_vmaf
+@pytest.mark.asyncio
+@pytest.mark.parametrize("minimum", [None, 95])
+async def test_a_first_encode_that_cant_be_set_aside_is_reported(run, monkeypatch, minimum):
+    """No re-encode when the first encode can't be moved out of its way: the
+    report says it failed and why, and the first is judged as after a failed
+    re-encode — kept when it passes the minimum."""
+    real = os.rename
+
+    def rename(src, dst, *a, **kw):
+        if ".vmaf-first-" in str(dst):
+            raise PermissionError(13, "Permission denied")
+        return real(src, dst, *a, **kw)
+    monkeypatch.setattr(os, "rename", rename)
+    result = await run(90.0, **({"vmaf_analysis_enabled": "true", "vmaf_min_score": minimum} if minimum else {}))
+    assert result["success"] and run.seen.crfs == [32]  # no re-encode
+    stats = result["encoding_stats"]["vmaf_target"]
+    assert stats["retry"] == _retry(27, None, "failed", "Couldn't set the first encode aside: [Errno 13] Permission denied")
+    if minimum:
+        assert result["vmaf_rejected"] and "first_kept" not in stats
+        assert _left(run.seen.src.parent) == ["Film (2020) x264.mkv"]
+    else:
+        assert stats["first_kept"] is True and not result.get("vmaf_rejected")
+        assert _left(run.seen.src.parent) == ["Film (2020) x265.mkv"]
 
 
 @needs_vmaf
@@ -425,19 +471,25 @@ async def test_a_failed_reencode_leaves_the_minimum_to_judge_the_first(run, monk
 
 @needs_vmaf
 @pytest.mark.asyncio
-async def test_a_cancelled_reencode_places_nothing(run, monkeypatch):
+@pytest.mark.parametrize("key", ["errors.ffmpegExited",
+                                 "errors.sourceDamaged"])  # killed on a source with decode errors
+async def test_a_cancelled_reencode_places_nothing(run, monkeypatch, key):
     """A Cancel kills the re-encode's ffmpeg (SIGKILL): the job stops there,
-    the original kept — the first encode isn't placed instead."""
+    the original kept — the first encode isn't placed instead. The job's
+    cancel decides, not what the killed encode's failure is called."""
+    cancelled = []
+
     async def outcome(**kw):
+        cancelled.append(True)  # Cancel, while it runs
         kw["proc_callback"](SimpleNamespace(returncode=-9))  # registered, then killed
         return {"success": False, "output_path": None, "space_saved": 0, "error": "ffmpeg exited with code -9",
-                "error_key": "errors.ffmpegExited", "error_params": {"code": "-9"}}
+                "error_key": key, "error_params": {"code": "-9"}}
     _intercept_retry(monkeypatch, outcome)
     procs = []
-    run.kwargs = {"proc_callback": procs.append}
+    run.kwargs = {"proc_callback": procs.append, "is_cancelled": lambda: bool(cancelled)}
     result = await run(90.0)
     assert not result["success"] and procs[-1].returncode == -9  # the queue's callback got it too
-    assert result["error_key"] == "errors.ffmpegExited"  # the queue reads it as the Cancel
+    assert result["error_key"] == key  # the queue reads it as the Cancel (its cancel flag)
     assert result["encoding_stats"]["vmaf_target"]["retry"] == _retry(27, None, "failed", "ffmpeg exited with code -9")
     assert run.seen.src.read_bytes() == run.seen.before
     assert _left(run.seen.src.parent) == ["Film (2020) x264.mkv"]
@@ -510,8 +562,10 @@ async def test_the_queue_kills_an_ffmpeg_started_after_a_cancel(test_db, tmp_pat
     job_id = await queue.add_job(str(src), "convert", encoder="libx265")
 
     async def convert(**kw):
+        assert not kw["is_cancelled"]()
         second, result = await _two_encodes(kw["proc_callback"], lambda: worker.cancel_current(job_id))
         killed.append(second.returncode)
+        assert kw["is_cancelled"]()  # the job's cancel, for the VMAF target's re-encode
         return result
     monkeypatch.setattr(converter, "convert_file", convert)
     job = next(j for j in await queue.get_all_jobs() if j["id"] == job_id)
@@ -547,8 +601,10 @@ async def test_a_remote_worker_kills_an_ffmpeg_started_after_a_cancel(tmp_path, 
     async def convert(**kw):
         async def cancel():  # the next progress report hears of it
             await kw["progress_callback"](progress=50.0, step="VMAF analysis")
+        assert not kw["is_cancelled"]()
         second, result = await _two_encodes(kw["proc_callback"], cancel)
         killed.append(second.returncode)
+        assert kw["is_cancelled"]()  # the job's cancel, for the VMAF target's re-encode
         return result
     monkeypatch.setattr(converter, "convert_file", convert)
     client = Client()

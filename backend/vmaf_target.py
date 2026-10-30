@@ -169,16 +169,19 @@ async def remember(db, file_path: str, target: float, encoder: str, output_codec
 async def remember_landing(db, file_path: str, encoding_stats: dict | None) -> None:
     """remember() where the search an encode reports in its `encoding_stats`
     landed (convert_file's "vmaf_target", under the encoder and output codec
-    it encoded with); nothing when it didn't search."""
+    it encoded with); nothing when it didn't search, or doesn't say which
+    encoder it searched with (a cancelled re-encode's result)."""
     landed = (encoding_stats or {}).get("vmaf_target")
-    if landed:
-        await remember(db, file_path, landed["target"], encoding_stats.get("encoder") or "nvenc",
+    if landed and encoding_stats.get("encoder"):
+        await remember(db, file_path, landed["target"], encoding_stats["encoder"],
                        encoding_stats.get("output_codec") or "hevc", landed["cq"])
 
 
-async def _run(cmd: list[str], timeout: int) -> bool:
+async def _run(cmd: list[str], timeout: int, on_proc: Callable | None = None) -> bool:
     proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.DEVNULL,
                                                 stderr=asyncio.subprocess.PIPE)
+    if on_proc:  # the job's: a Cancel kills it, and the search ends there
+        on_proc(proc)
     try:
         _, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
@@ -204,7 +207,8 @@ async def _vmaf(reference: str, encoded: str, seconds: float, json_path: str) ->
 
 async def find_quality(input_path: str, encoder: str, duration: float, target: float, start: float,
                        convert_kwargs: dict | None = None, *, output_codec: str | None = None,
-                       on_round: Callable[[float, int], Awaitable[None]] | None = None) -> dict | None:
+                       on_round: Callable[[float, int], Awaitable[None]] | None = None,
+                       on_proc: Callable | None = None) -> dict | None:
     """The CQ to encode `input_path` at for VMAF `target` (search's dict,
     plus "target", "samples" and "seconds", the search's wall time), or None
     when the file is too short, VMAF isn't available or a sample fails — the
@@ -213,7 +217,10 @@ async def find_quality(input_path: str, encoder: str, duration: float, target: f
     `convert_kwargs`: the job's convert_file overrides (preset, resolution,
     settings) so samples encode exactly as the job will; `output_codec` the
     codec it resolved (AV1 takes whole steps only). `on_round(cq, n)` is
-    awaited as each CQ's samples start (n counts the CQs scored)."""
+    awaited as each CQ's samples start (n counts the CQs scored).
+    `on_proc(proc)` is given each ffmpeg cutting or encoding a sample, as
+    convert_file's `proc_callback` is: a Cancel kills it, which fails the
+    sample, so the search ends (None)."""
     from backend.converter import convert_file
     from backend.encoding_estimates import quality_settings
     from backend.test_encode import check_vmaf_available
@@ -226,7 +233,7 @@ async def find_quality(input_path: str, encoder: str, duration: float, target: f
         for n, start_s in enumerate(sample_points(duration)):
             sample = os.path.join(work, f"sample{n}.mkv")
             if not await _run(["ffmpeg", "-v", "error", "-y", "-ss", f"{start_s:.3f}", "-t", str(SAMPLE_SECONDS),
-                               "-i", input_path, "-map", "0:V:0", "-c", "copy", sample], 600):
+                               "-i", input_path, "-map", "0:V:0", "-c", "copy", sample], 600, on_proc):
                 return None
             samples.append(sample)
 
@@ -246,7 +253,7 @@ async def find_quality(input_path: str, encoder: str, duration: float, target: f
                     sample, encoder, SAMPLE_SECONDS, command_only=True, override_cq=cq,
                     override_crf=quality_settings("libx265", cq)["libx265_crf"] if encoder == "libx265" else None,
                     output_codec=output_codec, **(convert_kwargs or {}))
-                if not plan.get("command") or not await _run(list(plan["command"]), 1800):
+                if not plan.get("command") or not await _run(list(plan["command"]), 1800, on_proc):
                     raise _Failed
                 value = await _vmaf(sample, plan["output_path"], SAMPLE_SECONDS,
                                     os.path.join(work, f"vmaf{n}_{cq}.json"))

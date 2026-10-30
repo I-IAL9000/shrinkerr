@@ -266,6 +266,75 @@ async def test_the_remembered_start(test_db, quick, monkeypatch):
     assert starts == [26]  # not the job's own (CRF 30 is CQ 28)
 
 
+def _endless_samples(monkeypatch, sampling):
+    """The search's sample encodes run a minute (sleep 60); `sampling()` is
+    called as each one starts."""
+    import backend.converter as converter
+    real = converter.convert_file
+
+    async def convert(*a, **kw):
+        if not kw.get("command_only"):
+            return await real(*a, **kw)
+        plan = await real(*a, **kw)
+        sampling()
+        return {**plan, "command": ["sleep", "60"]}
+    monkeypatch.setattr(converter, "convert_file", convert)
+
+
+@needs_vmaf
+@pytest.mark.asyncio
+async def test_a_cancel_stops_the_search(test_db, quick, monkeypatch):
+    """A Cancel kills the sample being encoded: the search ends there, and
+    the encode it'd have led to is killed as it starts — the job doesn't
+    wait out the search's rounds."""
+    import asyncio
+    import sys
+
+    from backend.queue import JobQueue, QueueWorker
+    for name, module in list(sys.modules.items()):
+        if name.startswith("backend.") and isinstance(getattr(module, "DB_PATH", None), str):
+            monkeypatch.setattr(module, "DB_PATH", test_db)
+    # the queue's cancel path asks backend.main's node manager: a stand-in
+    monkeypatch.setitem(sys.modules, "backend.main", SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace())))
+    async with aiosqlite.connect(test_db) as db:
+        for k, v in (("vmaf_target_enabled", "true"), ("vmaf_target_score", "90"), ("vmaf_analysis_enabled", "false")):
+            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (k, v))
+        await db.commit()
+    queue, worker = JobQueue(test_db), QueueWorker(test_db)
+    job_id = await queue.add_job(str(quick), "convert", encoder="libx265")
+    loop = asyncio.get_running_loop()
+    _endless_samples(monkeypatch, lambda: loop.call_later(
+        0.5, lambda: asyncio.ensure_future(worker.cancel_current(job_id))))
+    job = next(j for j in await queue.get_all_jobs() if j["id"] == job_id)
+    await asyncio.wait_for(worker._process_job(job), timeout=30)
+    async with aiosqlite.connect(test_db) as db:
+        async with db.execute("SELECT status FROM jobs WHERE id = ?", (job_id,)) as cur:
+            assert (await cur.fetchone())[0] == "cancelled"
+    assert [p.name for p in quick.parent.glob("*.mkv")] == [quick.name]  # nothing placed or left
+
+
+@needs_vmaf
+@pytest.mark.asyncio
+async def test_a_remote_workers_cancel_stops_the_search(quick, monkeypatch):
+    import asyncio
+
+    from backend import worker_mode
+    state = SimpleNamespace(sampling=False, completed=[])
+
+    class Client:
+        async def report_progress(self, *a, **kw):
+            return state.sampling  # cancelled once a sample is being encoded
+
+        async def report_complete(self, node_id, job_id, success, **kw):
+            state.completed.append((success, kw.get("error_key")))
+    _endless_samples(monkeypatch, lambda: setattr(state, "sampling", True))
+    job = {"id": 7, "file_path": str(quick), "job_type": "convert", "encoder": "libx265",
+           "libx265_preset": "ultrafast", "vmaf_target_enabled": True, "vmaf_target_score": 90.0}
+    await asyncio.wait_for(worker_mode.execute_job(Client(), "node-1", job, ["libx265"]), timeout=30)
+    assert state.completed == [(False, "errors.cancelledByUser")]
+    assert [p.name for p in quick.parent.glob("*.mkv")] == [quick.name]  # nothing placed or left
+
+
 @pytest.mark.asyncio
 async def test_remote_workers_get_the_settings(test_db, monkeypatch):
     import backend.nodes as nodes

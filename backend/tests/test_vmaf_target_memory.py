@@ -64,6 +64,18 @@ async def test_what_expired_is_cleared_when_something_new_is_remembered(test_db)
             assert [r[0] for r in await cur.fetchall()] == ["/m/Film (2020)"]
 
 
+@pytest.mark.asyncio
+async def test_a_landing_is_kept_under_the_encoder_that_searched(test_db):
+    """A result that doesn't say which encoder searched (a cancelled
+    re-encode's) isn't remembered under a guessed one."""
+    landed = {"target": 93.0, "cq": 31.0}
+    async with aiosqlite.connect(test_db) as db:
+        await vmaf_target.remember_landing(db, f"{SEASON}/E01.mkv", {"vmaf_target": landed})
+        assert await (await db.execute("SELECT COUNT(*) FROM vmaf_target_memory")).fetchone() == (0,)
+        await vmaf_target.remember_landing(db, f"{SEASON}/E01.mkv", {"encoder": "libx265", "vmaf_target": landed})
+    assert await _recall(test_db, f"{SEASON}/E02.mkv", encoder="libx265") == 31.0
+
+
 def test_the_target_a_job_searches_for():
     effective = vmaf_target.effective_target
     assert effective({}) is None

@@ -2832,6 +2832,7 @@ class QueueWorker:
                     output_codec=job.get("output_codec"),
                     pre_settings=job_settings,
                     vmaf_target_start_cq=start_cq,
+                    is_cancelled=lambda: job_id in self._cancel_flags,
                 )
                 await self._remember_target_cq(job, result)
             frames = result.pop("frames", None)  # before / after (v0.10.0): kept with the job

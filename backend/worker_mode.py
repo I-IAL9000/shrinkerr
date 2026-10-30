@@ -611,6 +611,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 delete_merged_subs=job.get("delete_external_subs_after_merge"),
                 output_codec=job.get("output_codec"),
                 vmaf_target_start_cq=job.get("vmaf_target_start_cq"),  # where the folder's last search landed
+                is_cancelled=lambda: cancel_flag,
             )
             frames = result.pop("frames", None)  # before / after (v0.10.0), sent with the result
 
