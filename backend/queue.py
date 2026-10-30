@@ -1790,6 +1790,26 @@ class QueueWorker:
             pass
         return len(orphans)
 
+    def _register_proc(self, job_id: int, proc) -> None:
+        """A job's ffmpeg, as it starts (its encode, or a VMAF target sample)."""
+        self._active_procs[job_id] = proc
+        # Cancelled before this ffmpeg started — e.g. during the VMAF
+        # pass, before the VMAF target's re-encode: killed at once,
+        # as a health check's is (v0.10.0).
+        if job_id in self._cancel_flags:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+        # A stream froze this job's previous ffmpeg (a VMAF target sample,
+        # say), which has since ended: this one waits for the stream too.
+        # The freeze loop skips jobs already marked paused (v0.10.0).
+        elif job_id in self._stream_paused_jobs:
+            try:
+                proc.send_signal(signal.SIGSTOP)
+            except (ProcessLookupError, OSError) as exc:
+                print(f"[WORKER] SIGSTOP failed for job {job_id}: {exc}", flush=True)
+
     def _freeze_active_procs(self, server_label: str) -> int:
         """Send SIGSTOP to every active ffmpeg subprocess, freezing them
         in place without losing work. Returns the number of procs newly
@@ -2780,15 +2800,7 @@ class QueueWorker:
                 )
 
             def on_proc(proc):
-                self._active_procs[job_id] = proc
-                # Cancelled before this ffmpeg started — e.g. during the VMAF
-                # pass, before the VMAF target's re-encode: killed at once,
-                # as a health check's is (v0.10.0).
-                if job_id in self._cancel_flags:
-                    try:
-                        proc.kill()
-                    except ProcessLookupError:
-                        pass
+                self._register_proc(job_id, proc)
 
             # Pass per-job encoding overrides (None means use global settings).
             # For combined jobs, pass audio/subtitle removal lists so they're applied
