@@ -167,6 +167,22 @@ def _utcnow() -> str:
 _DIRECT_PLAY_JOB_TYPES = ("convert", "combined")
 
 
+async def _target_when_queued(db) -> float:
+    """Settings' VMAF target as a conversion is queued — the job keeps it,
+    whatever Settings say later (0: off; v0.10.0)."""
+    from backend.vmaf_target import DEFAULT_TARGET
+    async with db.execute(
+        "SELECT key, value FROM settings WHERE key IN ('vmaf_target_enabled', 'vmaf_target_score')"
+    ) as cur:
+        values = {r[0]: r[1] for r in await cur.fetchall()}
+    if str(values.get("vmaf_target_enabled") or "").lower() != "true":
+        return 0.0
+    try:
+        return float(values.get("vmaf_target_score") or DEFAULT_TARGET)
+    except ValueError:
+        return float(DEFAULT_TARGET)
+
+
 async def _direct_play_by_default(db) -> bool:
     async with db.execute("SELECT value FROM settings WHERE key = 'direct_play_on_convert'") as cur:
         row = await cur.fetchone()
@@ -247,16 +263,17 @@ class JobQueue:
             sub_json = json.dumps(subtitle_tracks_to_remove or [])
             now = _utcnow()
             direct_play = 1 if job_type in _DIRECT_PLAY_JOB_TYPES and await _direct_play_by_default(db) else None
+            target = await _target_when_queued(db) if job_type in _DIRECT_PLAY_JOB_TYPES else None
             async with db.execute(
                 """INSERT INTO jobs
                    (file_path, job_type, status, encoder, audio_tracks_to_remove, subtitle_tracks_to_remove,
                     created_at, queue_order, original_size,
                     nvenc_preset, nvenc_cq, audio_codec, audio_bitrate, libx265_crf, libx265_preset, target_resolution, priority,
-                    direct_play)
-                   VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    direct_play, vmaf_target)
+                   VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (file_path, job_type, encoder, audio_json, sub_json, now, next_order,
                  original_size or 0, nvenc_preset, nvenc_cq, audio_codec, audio_bitrate,
-                 libx265_crf, libx265_preset, target_resolution, priority, direct_play),
+                 libx265_crf, libx265_preset, target_resolution, priority, direct_play, target),
             ) as cur:
                 job_id = cur.lastrowid
             await db.commit()
@@ -334,6 +351,9 @@ class JobQueue:
             # so two queue-adds of the same file don't insert twice.
             now = _utcnow()
             direct_play_default = await _direct_play_by_default(db)
+            # A conversion keeps the VMAF target it's queued with: a rule's own
+            # (0 = off), else Settings' now (v0.10.0).
+            target_default = await _target_when_queued(db)
             params_list: list[tuple] = []
             inserted_mask: list[bool] = []
             seen_in_batch: set[str] = set()
@@ -371,7 +391,8 @@ class JobQueue:
                     j.get("originals_policy"),
                     j.get("originals_days"),
                     j.get("vmaf_min_score"),
-                    j.get("vmaf_target"),
+                    j.get("vmaf_target") if j.get("vmaf_target") is not None
+                    else target_default if j["job_type"] in _DIRECT_PLAY_JOB_TYPES else None,
                     # The fixes Add to Queue chose ("" = none), else the setting's
                     (j["direct_play"] or None) if j.get("direct_play") is not None
                     else 1 if direct_play_default and j["job_type"] in _DIRECT_PLAY_JOB_TYPES else None,
@@ -2808,8 +2829,8 @@ class QueueWorker:
             use_nice = await self._should_use_nice()
             # A rule's originals policy and VMAF minimum (v0.10.0).
             from backend.converter import get_live_encoding_settings
-            from backend.rule_actions import settings_overrides
-            _job_settings = settings_overrides(job)
+            from backend.rule_actions import queued_settings
+            _job_settings = queued_settings(job)  # and the VMAF target it was queued with
             job_settings = {**await get_live_encoding_settings(), **_job_settings} if _job_settings else None
             review = json.loads(job["review_json"]) if job.get("review_approved") and job.get("review_json") else None
             if review:  # approved in review mode (v0.10.0): put the held output in place

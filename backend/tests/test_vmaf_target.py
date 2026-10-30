@@ -358,15 +358,25 @@ async def test_remote_workers_get_the_settings(test_db, monkeypatch):
         return None
     monkeypatch.setattr(nodes_route, "_require_node_token", no_token)
     request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(node_manager=nodes.NodeManager())))
-    await JobQueue(test_db).add_job("/m/Film/film.mkv", "convert", encoder="libx265")
+    queue = JobQueue(test_db)
+    await queue.add_job("/m/Film/before.mkv", "convert", encoder="libx265")  # queued with the target off
     async with aiosqlite.connect(test_db) as db:
         await db.execute("INSERT INTO worker_nodes (id, name, capabilities, status, registered_at) "
                          "VALUES ('n1', 'n1', '[\"libx265\"]', 'online', 'x')")
         for k, v in (("vmaf_target_enabled", "true"), ("vmaf_target_score", "93")):
             await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (k, v))
         await db.commit()
-    job = (await nodes_route.request_job(nodes_route.RequestJobBody(node_id="n1"), request))["job"]
-    assert (job["vmaf_target_enabled"], job["vmaf_target_score"]) == (True, 93.0)
+    await queue.add_job("/m/Film/after.mkv", "convert", encoder="libx265")
+    # A job runs with the target it was queued with (test_vmaf_target_queued.py)
+    got = {}
+    for _ in range(2):
+        job = (await nodes_route.request_job(nodes_route.RequestJobBody(node_id="n1"), request))["job"]
+        got[job["file_path"]] = (job["vmaf_target_enabled"], job["vmaf_target_score"])
+        async with aiosqlite.connect(test_db) as db:  # done, so the node takes the next
+            await db.execute("UPDATE jobs SET status = 'completed' WHERE id = ?", (job["id"],))
+            await db.execute("UPDATE worker_nodes SET current_job_id = NULL")
+            await db.commit()
+    assert got == {"/m/Film/before.mkv": (False, 93.0), "/m/Film/after.mkv": (True, 93.0)}
 
 
 @pytest.mark.asyncio

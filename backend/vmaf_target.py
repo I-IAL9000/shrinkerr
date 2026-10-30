@@ -278,6 +278,7 @@ async def _vmaf(reference: str, encoded: str, seconds: float, json_path: str) ->
 async def find_quality(input_path: str, encoder: str, duration: float, target: float, start: float,
                        convert_kwargs: dict | None = None, *, output_codec: str | None = None,
                        on_round: Callable[[float, int], Awaitable[None]] | None = None,
+                       on_sample: Callable[[int, int], Awaitable[None]] | None = None,
                        on_proc: Callable | None = None, disc_input: str | None = None) -> dict | None:
     """The CQ to encode `input_path` at for VMAF `target` (search's dict,
     plus "target", "samples" and "seconds", the search's wall time), or None
@@ -287,7 +288,8 @@ async def find_quality(input_path: str, encoder: str, duration: float, target: f
     `convert_kwargs`: the job's convert_file overrides (preset, resolution,
     settings) so samples encode exactly as the job will; `output_codec` the
     codec it resolved (AV1 takes whole steps only). `on_round(cq, n)` is
-    awaited as each CQ's samples start (n counts the CQs scored).
+    awaited as each CQ's samples start (n counts the CQs scored), and
+    `on_sample(n, of)` as each of its samples starts.
     `on_proc(proc)` is given each ffmpeg cutting or encoding a sample, as
     convert_file's `proc_callback` is: a Cancel kills it, which fails the
     sample, so the search ends (None). `disc_input`: a disc's main title as
@@ -316,6 +318,8 @@ async def find_quality(input_path: str, encoder: str, duration: float, target: f
                 await on_round(cq, rounds)
             values = []
             for n, sample in enumerate(samples):
+                if on_sample:  # the round's progress: sample n + 1 of them
+                    await on_sample(n + 1, len(samples))
                 plan = await convert_file(
                     sample, encoder, SAMPLE_SECONDS, command_only=True, override_cq=cq,
                     override_crf=quality_settings("libx265", cq)["libx265_crf"] if encoder == "libx265" else None,

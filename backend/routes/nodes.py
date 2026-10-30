@@ -400,8 +400,8 @@ async def request_job(req: RequestJobBody, request: Request):
 
     # Assign this job to the node
     assigned = await nm.assign_job_to_node(req.node_id, job)
-    from backend.rule_actions import settings_overrides
-    job_settings = settings_overrides(dict(assigned)) if assigned else {}  # before the server's fill the same keys
+    from backend.rule_actions import queued_settings
+    job_settings = queued_settings(dict(assigned)) if assigned else {}  # before the server's fill the same keys
     if assigned is None:
         return {"job": None}  # claimed elsewhere since the SELECT; the node polls again
     # Include the node's translate_encoder flag so the worker knows whether to

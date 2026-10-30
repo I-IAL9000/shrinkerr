@@ -142,6 +142,8 @@
     "noDetails": "No conversion details available",
     "noErrorDetails": "No error details available",
     "loadingLog": "Loading log…",
+    "vmafTargetBadge": "VMAF {{target}}",
+    "vmafTargetBadgeHelp": "Converted at the quality the VMAF target search finds for it",
     "stats": {
       "original": "Original",
       "cleaned": "Cleaned",

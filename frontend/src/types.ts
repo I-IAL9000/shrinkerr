@@ -105,6 +105,8 @@ export interface Job {
   // Fix for direct play: 1 (every fix the file needs), or the chosen ones
   // comma-separated; "" / null none (v0.10.0)
   direct_play?: number | string | null;
+  // v0.10.0: the VMAF target it was queued with (0: off; null: queued before jobs kept one)
+  vmaf_target?: number | null;
   progress: number;
   fps: number | null;
   eta_seconds: number | null;

@@ -92,3 +92,9 @@ def test_the_report_says_when_no_quality_could_be_tested():
     assert "logData.encoding_stats.vmaf_target_untested != null" in src
     assert re.search(r'"queue:item\.stats\.vmafTargetUntested",\s*\{\s*target: logData\.encoding_stats\.vmaf_target_untested',
                      src)
+
+
+def test_the_search_says_which_sample_it_is_scoring():
+    for lang in ("en", "es"):
+        assert all({"quality", "round", "sample", "samples"} <= p
+                   for p in _placeholders(lang, "serverJobs:steps.vmafTargetSample")), lang

@@ -113,3 +113,14 @@ def settings_overrides(job: dict) -> dict:
         if float(target) > 0:
             out["vmaf_target_score"] = float(target)
     return out
+
+
+def queued_settings(job: dict) -> dict:
+    """settings_overrides for a queued job about to run. Its VMAF target is
+    the one it was queued with (JobQueue takes Settings' then): turning the
+    target on or off later doesn't change jobs already queued. A job queued
+    before that (v0.10.0) has none, and keeps its own quality."""
+    out = settings_overrides(job)
+    if job.get("vmaf_target") is None:
+        out["vmaf_target_enabled"] = False
+    return out

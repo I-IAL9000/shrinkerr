@@ -296,9 +296,13 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
               stream-copy remux — don't imply a re-encode that isn't happening.
               Nor for a health check (v0.10.0), which encodes nothing; as the
               running card, conversions only. */}
+          {/* A job with a VMAF target (v0.10.0): its quality is the search's, not the preset's. */}
           {(job.job_type === "convert" || job.job_type === "combined") && (
-          <span style={{ fontSize: 10, padding: "1px 5px", borderRadius: 3, background: "var(--bg-tertiary)", color: "var(--text-secondary)", marginLeft: 4 }}>
-            {encoderSettingsLabel(job.encoder || encodingDefaults?.default_encoder, jobEncoderSettings(job, encodingDefaults))}
+          <span title={(job.vmaf_target ?? 0) > 0 ? t("queue:item.vmafTargetBadgeHelp") : undefined}
+            style={{ fontSize: 10, padding: "1px 5px", borderRadius: 3, background: "var(--bg-tertiary)", color: "var(--text-secondary)", marginLeft: 4 }}>
+            {(job.vmaf_target ?? 0) > 0
+              ? t("queue:item.vmafTargetBadge", { target: job.vmaf_target })
+              : encoderSettingsLabel(job.encoder || encodingDefaults?.default_encoder, jobEncoderSettings(job, encodingDefaults))}
           </span>
           )}
           <div style={{ display: "inline-flex", alignItems: "center", gap: 2, marginLeft: 6 }}>

@@ -3083,8 +3083,8 @@ async def _with_step(progress_callback: Optional[Callable], step: str | dict, co
     fields = step if isinstance(step, dict) else {"step": step}
 
     async def repeat() -> None:
-        while True:
-            await progress_callback(progress=0, fps=0, eta_seconds=None, **fields)
+        while True:  # `fields` may carry the step's own progress (the VMAF target's samples)
+            await progress_callback(**{"progress": 0, "fps": 0, "eta_seconds": None, **fields})
             await asyncio.sleep(_STEP_REPEAT_S)
     ticker = asyncio.create_task(repeat())
     try:
@@ -3797,9 +3797,18 @@ async def convert_file(
         async def say_round(round_cq: float, round_n: int) -> None:
             said.update(step=f"VMAF target: {quality_label(encoder, round_cq)} (round {round_n})",
                         step_key="steps.vmafTargetRound",
-                        step_params={**_quality_step(encoder, round_cq), "round": round_n})
+                        step_params={**_quality_step(encoder, round_cq), "round": round_n}, progress=0)
             if progress_callback:
-                await progress_callback(progress=0, fps=0, eta_seconds=None, **said)
+                await progress_callback(**{"fps": 0, "eta_seconds": None, **said})
+
+        # Each sample moves the bar through the round (it sat at 0% for minutes).
+        async def say_sample(n: int, of: int) -> None:
+            params = said.get("step_params") or {}
+            label = f"{quality_label(encoder, params.get('cq', cq))}, round {params.get('round', 1)}"
+            said.update(step=f"VMAF target: {label}, sample {n} of {of}", step_key="steps.vmafTargetSample",
+                        step_params={**params, "sample": n, "samples": of}, progress=round((n - 1) / of * 100, 1))
+            if progress_callback:
+                await progress_callback(**{"fps": 0, "eta_seconds": None, **said})
         # The folder's remembered CQ when there is one, else the job's own.
         search_start = vmaf_target_start_cq
         if search_start is None:
@@ -3809,7 +3818,7 @@ async def convert_file(
             start=search_start,
             convert_kwargs={"override_preset": override_preset, "override_libx265_preset": override_libx265_preset,
                             "override_target_resolution": override_target_resolution, "pre_settings": live_settings},
-            output_codec=output_codec, on_round=say_round, on_proc=proc_callback,
+            output_codec=output_codec, on_round=say_round, on_sample=say_sample, on_proc=proc_callback,
             disc_input=encode_input_path if disc_type else None))
         if not vmaf_target:
             # Files under MIN_DURATION are never searched; not "untested".

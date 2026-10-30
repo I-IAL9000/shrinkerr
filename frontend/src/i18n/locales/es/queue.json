@@ -162,6 +162,8 @@
     "noDetails": "No hay detalles de la conversión",
     "noErrorDetails": "No hay detalles del error",
     "loadingLog": "Cargando registro…",
+    "vmafTargetBadge": "VMAF {{target}}",
+    "vmafTargetBadgeHelp": "Se convierte con la calidad que encuentre la búsqueda del objetivo VMAF",
     "stats": {
       "original": "Original",
       "cleaned": "Limpio",
