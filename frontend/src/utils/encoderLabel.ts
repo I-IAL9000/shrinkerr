@@ -46,6 +46,25 @@ function vtQualityForCq(cq: number): number {
   return best[0];
 }
 
+/** The quality part of encoderSettingsLabel for a quality on NVENC's CQ scale,
+ *  as the encoder's own setting: "CQ 32.5", "CRF 34.5", "Q 32", "QP 32",
+ *  "q:v 40". The VMAF target's search works on that scale; `crfOffset` is how
+ *  far libx265's CRF runs above it (the job's own stats give it). */
+export function qualityLabelForCq(encoder: string | null | undefined, cq: number, crfOffset: number | null): string {
+  switch ((encoder || "nvenc").toLowerCase()) {
+    case "libx265":
+      return crfOffset != null ? `CRF ${cq + crfOffset}` : `CQ ${cq}`;
+    case "qsv":
+      return `Q ${cq}`;
+    case "vaapi":
+      return `QP ${cq}`;
+    case "videotoolbox":
+      return `q:v ${vtQualityForCq(cq)}`;
+    default:
+      return `CQ ${cq}`;
+  }
+}
+
 /** A job's own per-job overrides, falling back to the global defaults.
  *  The job's quality (rules / bulk edits) is on NVENC's CQ scale and reaches
  *  every encoder (v0.10.0): QSV and VAAPI share the scale, VideoToolbox maps

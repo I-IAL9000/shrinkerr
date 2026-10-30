@@ -8,7 +8,7 @@ import { vmafColor, vmafLabel } from "../utils/vmaf";
 import { jobErrorHeadline } from "../i18n/server";
 import { copyText } from "../utils/clipboard";
 import { fmtDateTime, fmtBytes, fmtDuration } from "../fmt";
-import { encoderSettingsLabel, jobEncoderSettings } from "../utils/encoderLabel";
+import { encoderSettingsLabel, jobEncoderSettings, qualityLabelForCq } from "../utils/encoderLabel";
 import { pressable } from "../utils/a11y";
 import PendingJobPlan from "./PendingJobPlan";
 import { useRequestReplacement } from "../useRequestReplacement";
@@ -444,16 +444,19 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
 
                 {/* v0.10.0: the quality the VMAF target search chose, its lowest
                     sample, and what became of a re-encode (retry / reencoded /
-                    first_kept in backend/converter.py's _target_stats). */}
+                    first_kept in backend/converter.py's _target_stats). Qualities
+                    are named as the "Settings:" line names them (encoderLabel). */}
                 {logData.encoding_stats.vmaf_target && (() => {
                   const vt = logData.encoding_stats.vmaf_target;
                   const stats = logData.encoding_stats;
-                  // libx265's CRF runs a fixed offset above the CQ the search
-                  // works on: read it off the encode that was kept.
-                  const crf = Number(stats.crf);
-                  const keptCq = vt.reencoded && vt.retry ? vt.retry.cq : vt.cq;
-                  const offset = (stats.encoder || "").toLowerCase() === "libx265" && Number.isFinite(crf) ? crf - keptCq : null;
-                  const quality = (cq: number) => offset != null ? `CRF ${cq + offset}` : `CQ ${cq}`;
+                  // The stats' own cq is the NVENC-scale quality of the encode they
+                  // describe, so libx265's CRF offset is crf - cq whichever encode
+                  // that is (the first, or the re-encode).
+                  const crfOffset = (stats.encoder || "").toLowerCase() === "libx265" && Number.isFinite(Number(stats.crf)) && Number.isFinite(Number(stats.cq))
+                    ? Number(stats.crf) - Number(stats.cq) : null;
+                  const quality = (cq: number) => qualityLabelForCq(stats.encoder, cq, crfOffset);
+                  const retry = vt.retry;
+                  const failed = retry?.outcome === "failed", larger = retry?.outcome === "larger";
                   return <>
                     <span style={{ color: "var(--text-muted)" }}>{t("queue:item.stats.vmafTarget")}</span>
                     <div style={{ color: "var(--text-secondary)", gridColumn: "2 / span 2" }}>
@@ -462,13 +465,20 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
                           { quality: quality(vt.cq), vmaf: vt.vmaf, target: vt.target })}
                       </div>
                       {vt.min != null && <div>{t("queue:item.stats.vmafTargetLowest", { min: vt.min })}</div>}
-                      {vt.reencoded && vt.retry && (
+                      {vt.reencoded && retry && (
                         <div>{t("queue:item.stats.vmafTargetReencoded",
-                          { quality: quality(vt.retry.cq), from: quality(vt.reencoded.from_cq), fromVmaf: vt.reencoded.from_vmaf })}</div>
+                          { quality: quality(retry.cq), from: quality(vt.reencoded.from_cq), fromVmaf: vt.reencoded.from_vmaf })}</div>
                       )}
-                      {vt.first_kept && (
-                        <div title={vt.retry?.outcome === "failed" ? vt.retry.error || undefined : undefined}>
-                          {t(vt.retry?.outcome === "failed" ? "queue:item.stats.vmafTargetReencodeFailed" : "queue:item.stats.vmafTargetFirstKept")}
+                      {/* A re-encode that wasn't kept: the first encode stands (first_kept),
+                          or both were rejected and the original is kept. */}
+                      {retry && !vt.reencoded && (
+                        <div title={failed ? retry.error || undefined : undefined}>
+                          {t(vt.first_kept
+                            ? (failed ? "queue:item.stats.vmafTargetReencodeFailed"
+                              : larger ? "queue:item.stats.vmafTargetFirstKeptLarger" : "queue:item.stats.vmafTargetFirstKept")
+                            : (failed ? "queue:item.stats.vmafTargetRetryFailed"
+                              : larger ? "queue:item.stats.vmafTargetRetryLarger" : "queue:item.stats.vmafTargetRetryRejected"),
+                          { quality: quality(retry.cq), vmaf: retry.vmaf })}
                         </div>
                       )}
                     </div>

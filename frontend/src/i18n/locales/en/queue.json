@@ -166,8 +166,12 @@
       "vmafTargetMissed": "{{quality}}, the best in range: samples scored {{vmaf}} (target {{target}})",
       "vmafTargetLowest": "Lowest sample scored {{min}}",
       "vmafTargetReencoded": "Re-encoded at {{quality}}: the first encode ({{from}}) scored {{fromVmaf}}",
-      "vmafTargetFirstKept": "Kept the first encode: the re-encode was rejected",
-      "vmafTargetReencodeFailed": "Re-encode failed: kept the first encode"
+      "vmafTargetFirstKept": "Kept the first encode: the re-encode ({{quality}}, scored {{vmaf}}) was rejected",
+      "vmafTargetFirstKeptLarger": "Kept the first encode: the re-encode ({{quality}}) was larger than the original",
+      "vmafTargetReencodeFailed": "Re-encode at {{quality}} failed: kept the first encode",
+      "vmafTargetRetryRejected": "Re-encoded at {{quality}}: scored {{vmaf}}, also rejected: the original was kept",
+      "vmafTargetRetryLarger": "Re-encoded at {{quality}}: larger than the original, also rejected: the original was kept",
+      "vmafTargetRetryFailed": "Re-encode at {{quality}} failed and the first encode was rejected: the original was kept"
     },
     "vmafBanner": {
       "title": "Encode rejected by VMAF threshold",

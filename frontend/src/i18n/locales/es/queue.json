@@ -187,8 +187,12 @@
       "vmafTargetMissed": "{{quality}}, la mejor del rango: las muestras puntuaron {{vmaf}} (objetivo {{target}})",
       "vmafTargetLowest": "La muestra más baja puntuó {{min}}",
       "vmafTargetReencoded": "Recodificado con {{quality}}: la primera codificación ({{from}}) puntuó {{fromVmaf}}",
-      "vmafTargetFirstKept": "Se conservó la primera codificación: la recodificación fue rechazada",
-      "vmafTargetReencodeFailed": "La recodificación falló: se conservó la primera codificación"
+      "vmafTargetFirstKept": "Se conservó la primera codificación: la recodificación ({{quality}}, puntuó {{vmaf}}) fue rechazada",
+      "vmafTargetFirstKeptLarger": "Se conservó la primera codificación: la recodificación ({{quality}}) era más grande que el original",
+      "vmafTargetReencodeFailed": "La recodificación con {{quality}} falló: se conservó la primera codificación",
+      "vmafTargetRetryRejected": "Recodificado con {{quality}}: puntuó {{vmaf}}, también rechazado: se conservó el original",
+      "vmafTargetRetryLarger": "Recodificado con {{quality}}: más grande que el original, también rechazado: se conservó el original",
+      "vmafTargetRetryFailed": "La recodificación con {{quality}} falló y la primera codificación fue rechazada: se conservó el original"
     },
     "vmafBanner": {
       "title": "Codificación rechazada por el umbral de VMAF",
