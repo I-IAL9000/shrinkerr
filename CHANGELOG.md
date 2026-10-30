@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.160] — 2026-10-30
+
+### Fixed
+- **Intel Arc and Flex GPUs**: both images now ship Intel's media driver 25.2.4 instead of the older one from Debian / Ubuntu, which failed to start on Arc and Flex cards. Older Intel GPUs (Broadwell and newer) keep working.
+
 ## [0.9.159] — 2026-10-30
 
 ### Security

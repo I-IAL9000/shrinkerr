@@ -177,6 +177,24 @@ RUN set -eux; \
         # user-installed and won't auto-remove them.
         apt-get purge -y build-essential cmake meson ninja-build pkg-config libdrm-dev libigdgmm-dev libpciaccess-dev bzip2; \
         apt-get autoremove -y; \
+        #
+        # === Intel media driver 25.2.4 (v0.9.160) ==========================
+        #
+        # Bookworm's iHD driver (23.1) is too old for Arc / Flex cards (DG2,
+        # ATS-M): vaInitialize fails with "iHD_drv_video.so init failed"
+        # (GitHub issue, Flex 170). Intel's own build from its Ubuntu 22.04
+        # repo needs only glibc 2.34, runs on bookworm, is built for libva
+        # 2.22 (the one above) and supports Broadwell through Battlemage.
+        # Pinned by version and hash; it replaces bookworm's driver + gmmlib.
+        INTEL_POOL=https://repositories.intel.com/gpu/ubuntu/pool/unified/i; \
+        curl -fsSL --retry 5 --retry-delay 3 -o /tmp/libigdgmm12.deb "${INTEL_POOL}/intel-gmmlib/libigdgmm12_22.7.2-1135~22.04_amd64.deb"; \
+        curl -fsSL --retry 5 --retry-delay 3 -o /tmp/intel-media.deb "${INTEL_POOL}/intel-media-driver-non-free/intel-media-va-driver-non-free_25.2.4-1146~22.04_amd64.deb"; \
+        printf '%s  %s\n' \
+            c8b3dfbc044735e9502fd4b8e9560f9118afd49755f8caa4d173b0a84044638d /tmp/libigdgmm12.deb \
+            fa22334f9431985f2b09748c365e61f54ff7b9b2a01a9c6d1cf24c1075a315fc /tmp/intel-media.deb \
+            | sha256sum -c -; \
+        apt-get install -y --no-install-recommends /tmp/libigdgmm12.deb /tmp/intel-media.deb; \
+        rm -f /tmp/libigdgmm12.deb /tmp/intel-media.deb; \
     else \
         echo "Skipping VA-API runtime on ${TARGETARCH} (amd64-only in this image)"; \
     fi; \
