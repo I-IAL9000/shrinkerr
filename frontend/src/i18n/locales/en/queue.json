@@ -164,6 +164,8 @@
       "vmafTarget": "VMAF target",
       "vmafTargetFound": "{{quality}}: samples scored {{vmaf}} (target {{target}}; {{search}})",
       "vmafTargetMissed": "{{quality}}, the best in range: samples scored {{vmaf}} (target {{target}}; {{search}})",
+      "vmafTargetFound_untimed": "{{quality}}: samples scored {{vmaf}} (target {{target}})",
+      "vmafTargetMissed_untimed": "{{quality}}, the best in range: samples scored {{vmaf}} (target {{target}})",
       "vmafTargetSearch_one": "{{count}} round, {{time}}",
       "vmafTargetSearch_other": "{{count}} rounds, {{time}}",
       "vmafTargetLowest": "Lowest sample scored {{min}}",

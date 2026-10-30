@@ -69,3 +69,15 @@ def test_the_live_step_names_the_quality_as_the_encoder_does():
             [names] = _placeholders(lang, f"serverJobs:steps.{key}")
             assert "quality" in names and "cq" not in names, (lang, key)
     assert "qualityLabelForCq(params.encoder" in _source("server.ts")
+
+
+def test_jobs_from_before_searches_were_timed_read_without_the_search_part():
+    """Completed jobs from earlier 0.10 builds have no rounds or seconds: the
+    line used to end in the raw key "item.stats.vmafTargetSearch"."""
+    for lang in ("en", "es"):
+        for key in ("vmafTargetFound_untimed", "vmafTargetMissed_untimed"):
+            assert _placeholders(lang, f"queue:item.stats.{key}") and all(
+                "search" not in p for p in _placeholders(lang, f"queue:item.stats.{key}")), (lang, key)
+    src = (Path(__file__).resolve().parents[2] / "frontend/src/components/JobListItem.tsx").read_text()
+    assert 'context: vt.rounds == null ? "untimed" : undefined' in src
+    assert 'search: vt.rounds == null ? "" : t("queue:item.stats.vmafTargetSearch"' in src

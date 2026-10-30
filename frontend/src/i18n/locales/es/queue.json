@@ -185,6 +185,8 @@
       "vmafTarget": "Objetivo VMAF",
       "vmafTargetFound": "{{quality}}: las muestras puntuaron {{vmaf}} (objetivo {{target}}; {{search}})",
       "vmafTargetMissed": "{{quality}}, la mejor del rango: las muestras puntuaron {{vmaf}} (objetivo {{target}}; {{search}})",
+      "vmafTargetFound_untimed": "{{quality}}: las muestras puntuaron {{vmaf}} (objetivo {{target}})",
+      "vmafTargetMissed_untimed": "{{quality}}, la mejor del rango: las muestras puntuaron {{vmaf}} (objetivo {{target}})",
       "vmafTargetSearch_one": "{{count}} ronda, {{time}}",
       "vmafTargetSearch_many": "{{count}} rondas, {{time}}",
       "vmafTargetSearch_other": "{{count}} rondas, {{time}}",
