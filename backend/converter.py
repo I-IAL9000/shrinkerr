@@ -3638,9 +3638,11 @@ async def convert_file(
     # v0.10.0: VMAF target quality — this title's own quality, found on a few
     # encoded samples (vmaf_target). Replaces the job's; not for discs.
     vmaf_target = None
-    if live_settings.get("vmaf_target_enabled") and not command_only and not disc_type:
+    from backend.vmaf_target import effective_target
+    target = effective_target(live_settings)
+    if target is not None and not command_only and not disc_type:
         from backend.encoding_estimates import _CRF_OFFSET, quality_settings
-        from backend.vmaf_target import DEFAULT_TARGET, active_minimum, find_quality
+        from backend.vmaf_target import find_quality
         # The step names the round being scored ("VMAF target: CQ 32 (round 3)").
         said = {"step": "Finding the quality for the VMAF target…"}
 
@@ -3653,9 +3655,6 @@ async def convert_file(
         search_start = vmaf_target_start_cq
         if search_start is None:
             search_start = crf - _CRF_OFFSET if encoder == "libx265" else cq
-        # The VMAF minimum is a floor under the target: a lower one would
-        # pass qualities the minimum then rejects.
-        target = max(float(live_settings.get("vmaf_target_score") or DEFAULT_TARGET), active_minimum(live_settings))
         vmaf_target = await _with_step(progress_callback, said, find_quality(
             input_path, encoder, float((probe_data or {}).get("duration") or duration or 0), target,
             start=search_start,

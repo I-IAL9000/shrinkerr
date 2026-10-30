@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from backend.database import connect_db
 from backend.websocket import ws_manager, step_code
 from backend.nodes import nvenc_reason_code
+from backend import vmaf_target
 from backend.vmaf_target import DEFAULT_TARGET as VMAF_TARGET_DEFAULT
 
 
@@ -515,6 +516,23 @@ async def request_job(req: RequestJobBody, request: Request):
     # The target goes as the job's resolved enabled / score, which workers
     # older than the rule's own target already understand: Off is disabled.
     assigned.update(job_settings)
+    # Where the last VMAF target search in this job's folder landed, for the
+    # worker's search to start from (v0.10.0). Looked up as the node will run
+    # the job (its encoder after translation); the server's path is the key.
+    assigned["vmaf_target_start_cq"] = None
+    target = vmaf_target.effective_target(assigned)
+    if target is not None:
+        from backend.encoder_caps import resolve_node_encoder
+        encoder = resolve_node_encoder(job.get("encoder"), capabilities, translate) or (job.get("encoder") or "nvenc")
+        try:  # best-effort: the job is assigned already, and this only moves the search's start
+            db = await connect_db()
+            try:
+                assigned["vmaf_target_start_cq"] = await vmaf_target.remembered_cq(
+                    db, job["file_path"], target, encoder, job.get("output_codec") or "hevc")
+            finally:
+                await db.close()
+        except Exception as exc:
+            print(f"[NODES] Couldn't look up where the VMAF target search starts (non-fatal): {exc}", flush=True)
     # libx265 defaults the CPU worker should use for an NVENC job:
     #   1. Explicit "NVENC→CPU fallback" (user intentionally tuned these)
     #   2. Main libx265 settings IF libx265 is the server's default encoder
@@ -777,6 +795,19 @@ async def _tell_arrs(path: str) -> None:
     schedule_rescan(path)
 
 
+async def _remember_target_cq(db, req: "CompletionReport") -> None:
+    """Remember where the worker's VMAF target search landed, for the next
+    search in the job's folder to start from (v0.10.0). Best-effort: the
+    completion is recorded whether or not this works."""
+    try:
+        async with db.execute("SELECT file_path FROM jobs WHERE id = ?", (req.job_id,)) as cur:
+            job = await cur.fetchone()
+        if job:
+            await vmaf_target.remember_landing(db, job["file_path"], req.encoding_stats)
+    except Exception as exc:
+        print(f"[NODES] Couldn't remember where the VMAF target search landed (non-fatal): {exc}", flush=True)
+
+
 @router.post("/report-complete")
 async def report_complete(req: CompletionReport, request: Request):
     """Worker reports job completion or failure."""
@@ -804,6 +835,8 @@ async def report_complete(req: CompletionReport, request: Request):
         if req.success and req.frames:
             from backend import frames as frames_mod
             await frames_mod.store(req.job_id, req.frames)
+        if req.success:
+            await _remember_target_cq(db, req)
         if req.success and req.review:
             return await _record_review(db, nm, req)
         if req.success:

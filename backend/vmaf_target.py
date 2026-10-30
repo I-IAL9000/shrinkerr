@@ -16,6 +16,7 @@ import os
 import shutil
 import tempfile
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable
 
 # The search range, on NVENC's CQ scale.
@@ -31,6 +32,8 @@ SECONDS_PER_SAMPLE, MIN_SAMPLES, MAX_SAMPLES = 480, 3, 6
 # A quality needs the mean of its samples at the target and no one sample
 # more than this below it, so a hard scene isn't averaged away.
 MAX_SAMPLE_DIP = 2.0
+# Where a search landed is trusted for this long (remembered_cq).
+MEMORY_DAYS = 90
 
 
 def sample_points(duration: float) -> list[float]:
@@ -58,6 +61,15 @@ def active_minimum(settings: dict) -> float:
         return max(0.0, float(settings.get("vmaf_min_score") or 0))
     except (TypeError, ValueError):
         return 0.0
+
+
+def effective_target(settings: dict) -> float | None:
+    """The VMAF the search holds a job to, from its settings (Settings', with a
+    rule's own over them): None when the target is off, else the score, but
+    never under the VMAF minimum in force (active_minimum)."""
+    if not settings.get("vmaf_target_enabled"):
+        return None
+    return max(float(settings.get("vmaf_target_score") or DEFAULT_TARGET), active_minimum(settings))
 
 
 def fractional_steps(encoder: str, output_codec: str | None) -> bool:
@@ -123,6 +135,45 @@ async def search(score: Callable[[float], Awaitable[list[float]]], target: float
     chosen = lo if found else best
     return {"cq": chosen, "vmaf": scores[chosen]["mean"], "min": scores[chosen]["min"], "reached": found,
             "rounds": len(scored), "scores": scores}
+
+
+async def remembered_cq(db, file_path: str, target: float, encoder: str, output_codec: str) -> float | None:
+    """Where the last search for `target` landed in `file_path`'s folder (a
+    season, a film's folder) with this encoder and output codec, or None —
+    nothing remembered, or nothing in the last MEMORY_DAYS. It's only a
+    starting point for the next search."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=MEMORY_DAYS)).isoformat()
+    async with db.execute(
+        "SELECT cq FROM vmaf_target_memory WHERE folder = ? AND target = ? AND encoder = ? "
+        "AND output_codec = ? AND updated_at >= ?",
+        (os.path.dirname(file_path), target, encoder, output_codec, cutoff),
+    ) as cur:
+        row = await cur.fetchone()
+    return float(row[0]) if row else None
+
+
+async def remember(db, file_path: str, target: float, encoder: str, output_codec: str, cq: float) -> None:
+    """Record that a search for `target` landed at `cq` in `file_path`'s
+    folder, replacing the last one; forgets what's older than MEMORY_DAYS."""
+    now = datetime.now(timezone.utc)
+    await db.execute("DELETE FROM vmaf_target_memory WHERE updated_at < ?",
+                     ((now - timedelta(days=MEMORY_DAYS)).isoformat(),))
+    await db.execute(
+        "INSERT INTO vmaf_target_memory (folder, target, encoder, output_codec, cq, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(folder, target, encoder, output_codec) "
+        "DO UPDATE SET cq = excluded.cq, updated_at = excluded.updated_at",
+        (os.path.dirname(file_path), target, encoder, output_codec, cq, now.isoformat()))
+    await db.commit()
+
+
+async def remember_landing(db, file_path: str, encoding_stats: dict | None) -> None:
+    """remember() where the search an encode reports in its `encoding_stats`
+    landed (convert_file's "vmaf_target", under the encoder and output codec
+    it encoded with); nothing when it didn't search."""
+    landed = (encoding_stats or {}).get("vmaf_target")
+    if landed:
+        await remember(db, file_path, landed["target"], encoding_stats.get("encoder") or "nvenc",
+                       encoding_stats.get("output_codec") or "hevc", landed["cq"])
 
 
 async def _run(cmd: list[str], timeout: int) -> bool:
