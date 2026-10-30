@@ -18,7 +18,7 @@ import tempfile
 from typing import Awaitable, Callable
 
 # The search range, on NVENC's CQ scale.
-CQ_BEST, CQ_WORST = 14, 34
+CQ_BEST, CQ_WORST = 14, 42
 # The default target: the score the app counts as transparent (the
 # Excellent tier; 95 before the setup wizard offered it as Automatic).
 DEFAULT_TARGET = 93
@@ -26,31 +26,83 @@ DEFAULT_TARGET = 93
 SAMPLE_AT = (0.2, 0.5, 0.8)
 SAMPLE_SECONDS = 10
 MIN_DURATION = 120
+# One sample per ~8 minutes of file, 3 to 6 of them (sample_points).
+SECONDS_PER_SAMPLE, MIN_SAMPLES, MAX_SAMPLES = 480, 3, 6
+# A quality needs the mean of its samples at the target and no one sample
+# more than this below it, so a hard scene isn't averaged away.
+MAX_SAMPLE_DIP = 2.0
 
 
-async def search(score: Callable[[int], Awaitable[float]], target: float, start: int,
-                 best: int = CQ_BEST, worst: int = CQ_WORST) -> dict:
-    """Binary search for the highest CQ in [best, worst] scoring at least
-    `target`, starting from `start` (the job's own quality, often close).
-    Assumes the score falls as CQ rises. {"cq", "vmaf", "reached", "scores"};
-    when no CQ reaches the target, the best one is used."""
-    scores: dict[int, float] = {}
+def sample_points(duration: float) -> list[float]:
+    """Start times (seconds) of the samples for a file of `duration`: each
+    SAMPLE_SECONDS sample centred on (i + 0.5) / n of the file."""
+    n = min(max(round(duration / SECONDS_PER_SAMPLE), MIN_SAMPLES), MAX_SAMPLES)
+    return [max(0.0, min(duration * (i + 0.5) / n - SAMPLE_SECONDS / 2, duration - SAMPLE_SECONDS))
+            for i in range(n)]
 
-    async def at(cq: int) -> float:
-        if cq not in scores:
-            scores[cq] = await score(cq)
-        return scores[cq]
 
-    lo, hi, found = best, worst, None
-    cq = min(max(start, best), worst)
-    while lo <= hi:
-        if await at(cq) >= target:
-            found, lo = cq, cq + 1
+def passes(values: list[float], target: float) -> bool:
+    """Whether a quality's sample scores hold `target`."""
+    return sum(values) / len(values) >= target and min(values) >= target - MAX_SAMPLE_DIP
+
+
+def fractional_steps(encoder: str, output_codec: str | None) -> bool:
+    """Whether the encoder's quality setting takes half steps: NVENC's -cq
+    and libx265's CRF are floats. QSV, VAAPI, VideoToolbox and AV1 output
+    use whole steps."""
+    return (encoder or "nvenc").lower() in ("nvenc", "libx265") and output_codec != "av1"
+
+
+async def search(score: Callable[[float], Awaitable[list[float]]], target: float, start: float, *,
+                 best: float = CQ_BEST, worst: float = CQ_WORST, half_steps: bool = False,
+                 setting_key: Callable[[float], object] = lambda cq: cq) -> dict:
+    """Find the highest CQ in [best, worst] whose samples pass `target`,
+    starting from `start` (the job's own quality, or where the last search
+    in the folder landed). Steps by 2 from `start` until a CQ passes and the
+    next fails, then bisects between them; with `half_steps` tries the CQ
+    found + 0.5. Assumes the score falls as CQ rises. `score(cq)` returns
+    the per-sample VMAF values. `setting_key` maps a CQ to the encoder's
+    actual setting: CQs sharing a key are scored once.
+    {"cq", "vmaf" (mean at cq), "min" (lowest sample at cq), "reached",
+    "rounds" (CQs scored), "scores": {cq: {"mean", "min"}}}; when no CQ
+    passes, the best one is used."""
+    scored: dict = {}  # setting key -> (mean, lowest sample, passes)
+    scores: dict = {}
+
+    async def at(cq: float) -> bool:
+        key = setting_key(cq)
+        if key not in scored:
+            values = await score(cq)
+            scored[key] = (round(sum(values) / len(values), 2), round(min(values), 2), passes(values, target))
+        scores[cq] = {"mean": scored[key][0], "min": scored[key][1]}
+        return scored[key][2]
+
+    lo, hi = best - 1, worst + 1  # the last CQ that passed, and that failed; the ends are untried
+    cq = min(max(round(start), best), worst)  # a remembered start can be a half step
+    if await at(cq):
+        lo = cq
+        while lo + 2 <= worst and await at(lo + 2):
+            lo += 2
+        if lo + 2 <= worst:
+            hi = lo + 2
+    else:
+        hi = cq
+        while hi - 2 >= best and not await at(hi - 2):
+            hi -= 2
+        if hi - 2 >= best:
+            lo = hi - 2
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if await at(mid):
+            lo = mid
         else:
-            hi = cq - 1
-        cq = (lo + hi) // 2
-    chosen = found if found is not None else best
-    return {"cq": chosen, "vmaf": await at(chosen), "reached": found is not None, "scores": scores}
+            hi = mid
+    found = lo >= best
+    if found and half_steps and lo + 0.5 <= worst and await at(lo + 0.5):
+        lo += 0.5
+    chosen = lo if found else best
+    return {"cq": chosen, "vmaf": scores[chosen]["mean"], "min": scores[chosen]["min"], "reached": found,
+            "rounds": len(scored), "scores": scores}
 
 
 async def _run(cmd: list[str], timeout: int) -> bool:
@@ -105,7 +157,7 @@ async def find_quality(input_path: str, encoder: str, duration: float, target: f
         class _Failed(Exception):
             pass
 
-        async def score(cq: int) -> float:
+        async def score(cq: int) -> list[float]:
             values = []
             for n, sample in enumerate(samples):
                 plan = await convert_file(
@@ -124,8 +176,9 @@ async def find_quality(input_path: str, encoder: str, duration: float, target: f
                     raise _Failed
                 values.append(value)
             mean = round(sum(values) / len(values), 2)
-            print(f"[VMAF-TARGET] CQ {cq}: VMAF {mean} on {len(values)} samples", flush=True)
-            return mean
+            print(f"[VMAF-TARGET] CQ {cq}: VMAF {mean} (lowest {round(min(values), 2)}) on {len(values)} samples",
+                  flush=True)
+            return values
 
         try:
             result = await search(score, target, start)

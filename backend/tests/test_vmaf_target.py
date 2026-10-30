@@ -12,18 +12,94 @@ from backend import vmaf_target
 
 
 @pytest.mark.asyncio
-async def test_the_search():
+async def test_bracket_then_bisect():
     asked = []
 
-    async def score(cq):  # one point of VMAF per CQ step
+    async def score(cq):  # one VMAF point per CQ step, samples ±0.5
         asked.append(cq)
-        return 110.0 - cq
-    result = await vmaf_target.search(score, 95, start=20)
-    assert (result["cq"], result["vmaf"], result["reached"]) == (15, 95.0, True)
-    assert asked[0] == 20 and len(asked) <= 6 and len(set(asked)) == len(asked)
-    assert (await vmaf_target.search(score, 99, start=20))["cq"] == 14  # out of reach: the best in range
-    assert not (await vmaf_target.search(score, 99, start=20))["reached"]
-    assert (await vmaf_target.search(score, 50, start=60))["cq"] == 34  # always reached: the smallest
+        return [111.0 - cq - 0.5, 111.0 - cq + 0.5]
+    r = await vmaf_target.search(score, 93, start=20)
+    assert (r["cq"], r["reached"]) == (18, True) and r["vmaf"] == 93.0 and r["min"] == 92.5
+    assert asked[0] == 20 and len(asked) == len(set(asked)) and r["rounds"] == len(asked) <= 6
+
+
+@pytest.mark.asyncio
+async def test_the_ceiling_is_42():
+    async def score(cq):
+        return [99.0, 99.0]
+    assert (await vmaf_target.search(score, 93, start=36))["cq"] == 42
+    assert (await vmaf_target.search(score, 93, start=60))["cq"] == 42  # a start past it is clamped
+    assert (await vmaf_target.search(score, 93, start=36, half_steps=True))["cq"] == 42  # no 42.5
+
+
+@pytest.mark.asyncio
+async def test_out_of_reach_uses_the_floor():
+    async def score(cq):
+        return [80.0, 80.0]
+    r = await vmaf_target.search(score, 93, start=30)
+    assert (r["cq"], r["reached"]) == (14, False)
+    asked = []
+
+    async def odd(cq):  # an odd start steps over CQ 14: the floor is still tried
+        asked.append(cq)
+        return [80.0, 80.0]
+    assert (await vmaf_target.search(odd, 93, start=29))["cq"] == 14 and 14 in asked
+
+
+@pytest.mark.asyncio
+async def test_the_floor_can_be_the_only_pass():
+    async def score(cq):
+        return [93.0, 93.0] if cq <= 14 else [80.0, 80.0]
+    r = await vmaf_target.search(score, 93, start=29)
+    assert (r["cq"], r["reached"]) == (14, True)
+
+
+@pytest.mark.asyncio
+async def test_a_hard_sample_fails_the_quality():
+    async def score(cq):
+        return [96.0, 96.0, 90.5]  # mean 94.2 but one sample 2.5 under
+    assert not (await vmaf_target.search(score, 93, start=30))["reached"]
+    assert vmaf_target.passes([95.0, 95.0, 91.0], 93) and not vmaf_target.passes([95.0, 95.0, 90.9], 93)
+
+
+@pytest.mark.asyncio
+async def test_a_half_step():
+    async def score(cq):
+        return [111.0 - cq * 1.0] * 2  # passes up to CQ 18.0; 18.5 → 92.5 fails
+    assert (await vmaf_target.search(score, 93, start=20, half_steps=True))["cq"] == 18.0
+
+    async def gentle(cq):
+        return [102.0 - cq * 0.5] * 2  # 18.0 → 93.0, 18.5 → 92.75: stays 18
+    assert (await vmaf_target.search(gentle, 93, start=20, half_steps=True))["cq"] == 18.0
+
+    async def flat(cq):
+        return [100.6 - cq * 0.4] * 2  # 19.0 → 93.0, 19.5 → 92.8 fails; 19 kept
+    assert (await vmaf_target.search(flat, 93, start=20, half_steps=True))["cq"] == 19.0
+
+
+@pytest.mark.asyncio
+async def test_one_scoring_per_encoder_setting():  # VideoToolbox: CQ ≥ 29 is all q40
+    asked = []
+
+    async def score(cq):
+        asked.append(cq)
+        return [99.0, 99.0]
+    r = await vmaf_target.search(score, 93, start=30, setting_key=lambda cq: min(cq, 29))
+    assert len([cq for cq in asked if cq >= 29]) == 1 and r["rounds"] == 1
+    assert r["cq"] == 42 and set(r["scores"]) == {30, 32, 34, 36, 38, 40, 42}
+
+
+def test_sample_points():
+    assert len(vmaf_target.sample_points(25 * 60)) == 3 and len(vmaf_target.sample_points(120 * 60)) == 6
+    assert len(vmaf_target.sample_points(50 * 60)) == 6 and len(vmaf_target.sample_points(150)) == 3
+    assert vmaf_target.sample_points(1500)[0] == pytest.approx(1500 / 6 - 5)  # centred on (i+0.5)/n
+    assert all(0 <= s <= 1500 - 10 for s in vmaf_target.sample_points(1500))
+
+
+def test_fractional_steps():
+    assert vmaf_target.fractional_steps("nvenc", None) and vmaf_target.fractional_steps("libx265", "hevc")
+    assert not any(vmaf_target.fractional_steps(e, None) for e in ("qsv", "vaapi", "videotoolbox"))
+    assert not vmaf_target.fractional_steps("nvenc", "av1")
 
 
 def _tools() -> bool:
@@ -58,8 +134,10 @@ async def test_the_quality_found(test_db, quick):
     scores = result["scores"]
     assert result["target"] == 90.0 and vmaf_target.CQ_BEST <= result["cq"] <= vmaf_target.CQ_WORST
     if result["reached"]:
-        assert scores[result["cq"]] >= 90 and scores.get(result["cq"] + 1, 0) < 90
-    assert scores[min(scores)] > scores[max(scores)]  # better quality, higher score
+        chosen, above = scores[result["cq"]], scores.get(result["cq"] + 1)
+        assert chosen["mean"] >= 90 and chosen["min"] >= 88
+        assert above is None or above["mean"] < 90 or above["min"] < 88
+    assert scores[min(scores)]["mean"] > scores[max(scores)]["mean"]  # better quality, higher score
     assert await vmaf_target.find_quality(str(quick), "libx265", 9.0, 90.0, start=24) is None  # too short
 
 
