@@ -267,6 +267,17 @@
         "days": "Days",
         "vmafMin": "Minimum VMAF",
         "vmafMinHelp": "Blank: the global minimum. 0: never reject.",
+        "vmafTarget": "VMAF target",
+        "vmafTargetSettings": "Settings: {{score}}",
+        "vmafTargetSettingsOff": "Settings: off",
+        "vmafTargetOff": "Off: this rule's quality",
+        "vmafTargetCustom": "Custom score",
+        "vmafTargetScore": "VMAF target score",
+        "vmafTargetHelp": {
+          "settings": "Follows Settings → Video. With a target, this rule's quality is where the search starts; without one, it's the quality used.",
+          "off": "No search: the files this rule matches are encoded at this rule's quality, even when Settings has a target.",
+          "custom": "Each file's quality is found for this score (80 to 99, not below the VMAF minimum); this rule's quality is where the search starts."
+        },
         "minSavings": "Skip if savings below (%)",
         "minSavingsHelp": "Leave the video alone when the estimated saving is smaller; track cleanup still runs.",
         "off": "Off",
@@ -280,7 +291,9 @@
           "originals_keep_other": "originals kept {{count}} days",
           "originals_trash": "originals to trash",
           "originals_delete": "originals deleted",
-          "minSavings": "≥ {{pct}}% savings"
+          "minSavings": "≥ {{pct}}% savings",
+          "vmafTarget": "VMAF target {{score}}",
+          "vmafTargetOff": "VMAF target off"
         }
       }
     },

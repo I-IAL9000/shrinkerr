@@ -340,6 +340,8 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
     // v0.10.0: per-rule actions
     audio_keep_languages?: string[]; sub_policy?: string; sub_keep_languages?: string[];
     originals_policy?: string; originals_days?: string; vmaf_min_score?: string; min_savings_pct?: string;
+    // v0.10.0: "" = Settings' VMAF target, "off", or a score (a blank "custom" while it's being typed)
+    vmaf_target?: string;
   }>({ name: "", match_mode: "any", conditions: [{ type: "directory", operator: "is", value: "" }], action: "encode", encoder: "", nvenc_preset: "", nvenc_cq: "", libx265_crf: "", libx265_preset: "", target_resolution: "", audio_codec: "", audio_bitrate: "", queue_priority: "" });
   const [condOpts, setCondOpts] = useState<any>({ sources: [], resolutions: [], video_codecs: [], audio_codecs: [], media_types: [], release_groups: [], arr_tags: [] });
   const [ruleSyncing, setRuleSyncing] = useState(false);
@@ -4192,6 +4194,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                 rule.sub_policy ? t(`settingsIntegrations:rules.form.more.badges.subs_${rule.sub_policy}`, { langs: rule.sub_keep_languages || "" }) : null,
                                 rule.action === "encode" && rule.originals_policy ? t(`settingsIntegrations:rules.form.more.badges.originals_${rule.originals_policy}`, { count: rule.originals_days || 7 }) : null,
                                 rule.action === "encode" && rule.vmaf_min_score != null ? `VMAF ≥ ${rule.vmaf_min_score}` : null,
+                                rule.action === "encode" && rule.vmaf_target != null
+                                  ? t(rule.vmaf_target === 0 ? "settingsIntegrations:rules.form.more.badges.vmafTargetOff" : "settingsIntegrations:rules.form.more.badges.vmafTarget", { score: rule.vmaf_target })
+                                  : null,
                                 rule.action === "encode" && rule.min_savings_pct ? t("settingsIntegrations:rules.form.more.badges.minSavings", { pct: rule.min_savings_pct }) : null,
                                 rule.audio_codec && rule.audio_codec !== "copy" ? `${rule.audio_codec.toUpperCase()}${rule.audio_bitrate ? ` ${rule.audio_bitrate}k` : ""}` : null,
                                 rule.queue_priority != null ? [t("settingsIntegrations:priorities.normal"), t("settingsIntegrations:priorities.high"), t("settingsIntegrations:priorities.highest")][rule.queue_priority] : null,
@@ -4223,6 +4228,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                   originals_policy: rule.originals_policy || "",
                                   originals_days: rule.originals_days != null ? String(rule.originals_days) : "",
                                   vmaf_min_score: rule.vmaf_min_score != null ? String(rule.vmaf_min_score) : "",
+                                  vmaf_target: rule.vmaf_target == null ? "" : rule.vmaf_target === 0 ? "off" : String(rule.vmaf_target),
                                   min_savings_pct: rule.min_savings_pct != null ? String(rule.min_savings_pct) : "",
                                   audio_codec: rule.audio_codec || "", audio_bitrate: rule.audio_bitrate ? String(rule.audio_bitrate) : "",
                                   queue_priority: rule.queue_priority != null ? String(rule.queue_priority) : "",
@@ -4683,7 +4689,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           VMAF minimum, minimum savings (backend/rule_actions.py). */}
                       {ruleForm.action !== "skip" && (
                         <details open={!!((ruleForm.audio_keep_languages || []).length || ruleForm.sub_policy || ruleForm.originals_policy
-                                          || ruleForm.vmaf_min_score || ruleForm.min_savings_pct)}>
+                                          || ruleForm.vmaf_min_score || ruleForm.vmaf_target || ruleForm.min_savings_pct)}>
                           <summary style={{ ...labelStyle, cursor: "pointer" }}>{t("settingsIntegrations:rules.form.more.title")}</summary>
                           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12, marginTop: 10 }}>
                             <div style={{ gridColumn: "1 / -1" }}>
@@ -4734,6 +4740,38 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                   value={ruleForm.vmaf_min_score || ""} onChange={e => setRuleForm({ ...ruleForm, vmaf_min_score: e.target.value })} />
                                 <div style={helpStyle}>{t("settingsIntegrations:rules.form.more.vmafMinHelp")}</div>
                               </div>
+                              {/* VMAF target (v0.10.0): Settings' (shown), Off — the rule's own
+                                  quality, no search — or this rule's score. The minimum check
+                                  (a target can't be below it) is the server's refusal. */}
+                              {(() => {
+                                const vt = ruleForm.vmaf_target || "";
+                                const mode = vt === "" ? "" : vt === "off" ? "off" : "custom";
+                                const settingsOn = encoding?.vmaf_target_enabled === true || encoding?.vmaf_target_enabled === "true";
+                                const settingsScore = Number(encoding?.vmaf_target_score ?? VMAF_EXCELLENT_MIN) || VMAF_EXCELLENT_MIN;
+                                return (
+                                  <div>
+                                    <label style={labelStyle}>{t("settingsIntegrations:rules.form.more.vmafTarget")}</label>
+                                    <div style={{ display: "flex", gap: 6 }}>
+                                      <select aria-label={t("settingsIntegrations:rules.form.more.vmafTarget")} style={{ ...inputStyle, width: "100%" }}
+                                        value={mode} onChange={e => setRuleForm({ ...ruleForm,
+                                          vmaf_target: e.target.value === "custom" ? String(settingsScore) : e.target.value })}>
+                                        <option value="">{settingsOn
+                                          ? t("settingsIntegrations:rules.form.more.vmafTargetSettings", { score: settingsScore })
+                                          : t("settingsIntegrations:rules.form.more.vmafTargetSettingsOff")}</option>
+                                        <option value="off">{t("settingsIntegrations:rules.form.more.vmafTargetOff")}</option>
+                                        <option value="custom">{t("settingsIntegrations:rules.form.more.vmafTargetCustom")}</option>
+                                      </select>
+                                      {mode === "custom" && (
+                                        <input type="number" min={80} max={99} step={1} style={{ ...inputStyle, width: 70 }}
+                                          aria-label={t("settingsIntegrations:rules.form.more.vmafTargetScore")}
+                                          value={Number.isFinite(parseFloat(vt)) ? vt : ""}
+                                          onChange={e => setRuleForm({ ...ruleForm, vmaf_target: e.target.value === "" ? "custom" : e.target.value })} />
+                                      )}
+                                    </div>
+                                    <div style={helpStyle}>{t(`settingsIntegrations:rules.form.more.vmafTargetHelp.${mode || "settings"}`)}</div>
+                                  </div>
+                                );
+                              })()}
                               <div>
                                 <label style={labelStyle}>{t("settingsIntegrations:rules.form.more.minSavings")}</label>
                                 <input type="number" min={0} max={100} style={{ ...inputStyle, width: "100%" }}
@@ -4764,6 +4802,14 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           if (emptyConditions.length > 0 && validConditions.length > 0) {
                             // Has some empty conditions — just skip them silently
                           }
+                          // A Custom VMAF target is a score of 80-99 (blank would
+                          // quietly become Settings'); the minimum check is the server's.
+                          const vmafTarget = parseFloat(ruleForm.vmaf_target || "");
+                          if (ruleForm.action === "encode" && ruleForm.vmaf_target && ruleForm.vmaf_target !== "off"
+                              && !(vmafTarget >= 80 && vmafTarget <= 99)) {
+                            toast(t("serverApi:rules.vmafTargetRange"));
+                            return;
+                          }
                           const data: any = {
                             name: ruleForm.name,
                             match_mode: ruleForm.match_mode,
@@ -4778,7 +4824,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             ? (ruleForm.sub_keep_languages || []).join(",") : null;
                           if (ruleForm.action !== "encode") {
                             data.originals_policy = null; data.originals_days = null;
-                            data.vmaf_min_score = null; data.min_savings_pct = null;
+                            data.vmaf_min_score = null; data.min_savings_pct = null; data.vmaf_target = null;
                           }
                           if (ruleForm.action === "encode") {
                             data.encoder = ruleForm.encoder || null;
@@ -4791,6 +4837,8 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             data.originals_policy = ruleForm.originals_policy || null;
                             data.originals_days = ruleForm.originals_policy === "keep" && ruleForm.originals_days ? parseInt(ruleForm.originals_days) : null;
                             data.vmaf_min_score = ruleForm.vmaf_min_score ? parseFloat(ruleForm.vmaf_min_score) : null;
+                            // v0.10.0: "" follows Settings (null), "off" is 0, otherwise the score
+                            data.vmaf_target = !ruleForm.vmaf_target ? null : ruleForm.vmaf_target === "off" ? 0 : vmafTarget;
                             data.min_savings_pct = ruleForm.min_savings_pct ? parseFloat(ruleForm.min_savings_pct) : null;
                             data.audio_codec = ruleForm.audio_codec || null;
                             data.audio_bitrate = ruleForm.audio_bitrate ? parseInt(ruleForm.audio_bitrate) : null;

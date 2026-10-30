@@ -212,6 +212,12 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
       .filter(outcome => (dv[outcome] || 0) > 0 && (outcome === "removed" || cleanupOnly))
       .map(outcome => t(`scannerModals:estimate.whatHappens.dolbyVision.${outcome}`,
         { count: dv[outcome], num: fmtNum(dv[outcome]) }));
+  // The VMAF target's files (v0.10.0): how many convert with a search, per
+  // target, and how many a rule's Off keeps at a fixed quality. Both keys are
+  // missing from the estimate's error fallback.
+  const vmafTargets: [string, number][] = Object.entries((estimate?.vmaf_target?.targets || {}) as Record<string, number>)
+    .filter(([, n]) => n > 0).sort(([a], [b]) => Number(a) - Number(b));
+  const vmafFixed: number = estimate?.vmaf_target?.fixed_by_rule || 0;
 
   return (
     <div style={{
@@ -394,6 +400,8 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                     ? t("scannerModals:estimate.whatHappens.originalsTrash")
                     : t("scannerModals:estimate.whatHappens.originalsDelete"),
               ];
+              for (const [target, n] of vmafTargets) rows.push(t("scannerModals:estimate.whatHappens.vmafTarget", { target, count: n, num: fmtNum(n) }));
+              if (vmafFixed > 0) rows.push(t("scannerModals:estimate.whatHappens.vmafFixed", { count: vmafFixed, num: fmtNum(vmafFixed) }));
               // SRT copies take the place of the image subtitles they're read
               // from, unless those are kept (v0.10.0: "no tracks are removed"
               // read beside them).
@@ -538,7 +546,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       global settings (Settings → Encoding). Per-batch QSV/VAAPI
                       overrides aren't surfaced in v0.3.69; could add later if
                       requested. */}
-                  {!isHwHevc && (
+                  {!isHwHevc && <>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.quality", { mode: isCpu ? "CRF" : "CQ" })}</label>
                     <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
@@ -560,7 +568,13 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       )}
                     </div>
                   </div>
+                  {/* With a VMAF target the quality only starts the search (v0.10.0). */}
+                  {vmafTargets.length > 0 && (
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "0 0 0 90px" }}>
+                      {t("scannerModals:overrides.qualityStartsSearch")}
+                    </div>
                   )}
+                  </>}
 
                   {/* Preset — hidden for QSV/VAAPI for the same reason as
                       Quality above. */}

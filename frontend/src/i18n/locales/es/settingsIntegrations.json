@@ -275,6 +275,17 @@
         "days": "Días",
         "vmafMin": "VMAF mínimo",
         "vmafMinHelp": "En blanco: el mínimo global. 0: no rechazar nunca.",
+        "vmafTarget": "Objetivo VMAF",
+        "vmafTargetSettings": "Ajustes: {{score}}",
+        "vmafTargetSettingsOff": "Ajustes: desactivado",
+        "vmafTargetOff": "Desactivado: la calidad de la regla",
+        "vmafTargetCustom": "Puntuación propia",
+        "vmafTargetScore": "Puntuación del objetivo VMAF",
+        "vmafTargetHelp": {
+          "settings": "Sigue Ajustes → Vídeo. Con un objetivo, la calidad de esta regla es el punto de partida de la búsqueda; sin él, es la calidad que se usa.",
+          "off": "Sin búsqueda: los archivos de esta regla se codifican con la calidad de la regla, aunque Ajustes tenga un objetivo.",
+          "custom": "La calidad de cada archivo se busca para esta puntuación (de 80 a 99, sin bajar del VMAF mínimo); la calidad de esta regla es el punto de partida de la búsqueda."
+        },
         "minSavings": "Omitir si el ahorro es menor de (%)",
         "minSavingsHelp": "No toca el vídeo cuando el ahorro estimado es menor; la limpieza de pistas se hace igualmente.",
         "off": "Desactivado",
@@ -289,7 +300,9 @@
           "originals_keep_other": "originales conservados {{count}} días",
           "originals_trash": "originales a la papelera",
           "originals_delete": "originales eliminados",
-          "minSavings": "≥ {{pct}} % de ahorro"
+          "minSavings": "≥ {{pct}} % de ahorro",
+          "vmafTarget": "objetivo VMAF {{score}}",
+          "vmafTargetOff": "objetivo VMAF desactivado"
         }
       }
     },

@@ -442,17 +442,36 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
                   </span>
                 </>}
 
-                {/* v0.10.0: the quality the VMAF target search chose. */}
+                {/* v0.10.0: the quality the VMAF target search chose, its lowest
+                    sample, and what became of a re-encode (retry / reencoded /
+                    first_kept in backend/converter.py's _target_stats). */}
                 {logData.encoding_stats.vmaf_target && (() => {
                   const vt = logData.encoding_stats.vmaf_target;
-                  const quality = (logData.encoding_stats.encoder || "").toLowerCase() === "libx265"
-                    ? `CRF ${logData.encoding_stats.crf}` : `CQ ${vt.cq}`;
+                  const stats = logData.encoding_stats;
+                  // libx265's CRF runs a fixed offset above the CQ the search
+                  // works on: read it off the encode that was kept.
+                  const crf = Number(stats.crf);
+                  const keptCq = vt.reencoded && vt.retry ? vt.retry.cq : vt.cq;
+                  const offset = (stats.encoder || "").toLowerCase() === "libx265" && Number.isFinite(crf) ? crf - keptCq : null;
+                  const quality = (cq: number) => offset != null ? `CRF ${cq + offset}` : `CQ ${cq}`;
                   return <>
                     <span style={{ color: "var(--text-muted)" }}>{t("queue:item.stats.vmafTarget")}</span>
-                    <span style={{ color: "var(--text-secondary)", gridColumn: "2 / span 2" }}>
-                      {t(vt.reached ? "queue:item.stats.vmafTargetFound" : "queue:item.stats.vmafTargetMissed",
-                        { quality, vmaf: vt.vmaf, target: vt.target })}
-                    </span>
+                    <div style={{ color: "var(--text-secondary)", gridColumn: "2 / span 2" }}>
+                      <div>
+                        {t(vt.reached ? "queue:item.stats.vmafTargetFound" : "queue:item.stats.vmafTargetMissed",
+                          { quality: quality(vt.cq), vmaf: vt.vmaf, target: vt.target })}
+                      </div>
+                      {vt.min != null && <div>{t("queue:item.stats.vmafTargetLowest", { min: vt.min })}</div>}
+                      {vt.reencoded && vt.retry && (
+                        <div>{t("queue:item.stats.vmafTargetReencoded",
+                          { quality: quality(vt.retry.cq), from: quality(vt.reencoded.from_cq), fromVmaf: vt.reencoded.from_vmaf })}</div>
+                      )}
+                      {vt.first_kept && (
+                        <div title={vt.retry?.outcome === "failed" ? vt.retry.error || undefined : undefined}>
+                          {t(vt.retry?.outcome === "failed" ? "queue:item.stats.vmafTargetReencodeFailed" : "queue:item.stats.vmafTargetFirstKept")}
+                        </div>
+                      )}
+                    </div>
                   </>;
                 })()}
 
