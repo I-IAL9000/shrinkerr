@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **HDR and Dolby Vision**: HDR10 and HLG stay HDR, and Dolby Vision profiles 7 and 8 keep their Dolby Vision (dovi_tool, in both images; profile 7 becomes 8.1). Profile 5, resized or AV1 encodes, Quick Sync / VAAPI and discs keep a Dolby Vision file's video as it is: the job still does its other work (track clean-up, Fix for direct play) and says why. Settings → Video → **Dolby Vision** can drop it instead and convert the HDR10 under it, when it can't be kept or always.
 - **Remove Dolby Vision without re-encoding**: with Settings → Video → Dolby Vision on "Convert to HDR10", a clean-up removes a profile 7 or 8 file's Dolby Vision and copies the HDR10 and HDR10+ under it as they are (for players that won't play Dolby Vision with HDR10+). Filter the Scanner to Dolby Vision and Add to Queue with Cleanup only: "What will happen" counts the files it's removed from, and says why the others keep it.
 - **VMAF target quality**: each title gets its own quality — samples are encoded and scored, and the file is encoded at the lowest quality that still reaches your target score (93 by default, which looks the same as the original). The setup wizard recommends it as **Automatic**. And **before / after frames** of every conversion, compared with a slider.
+- **VMAF target per rule, and a search that holds it**: a rule can set its own VMAF target or switch it off (its files keep the rule's quality), and Add to Queue says which files search for which target and counts the search in its time estimate.
 - **AV1 per rule**: a rule's output codec can be AV1 (SVT-AV1 on the CPU, NVENC on an RTX 40 or later, Quick Sync on Intel Arc); HEVC stays the default.
 - **Review before replace**: converted files wait in Queue → Review, the original untouched, until you approve or reject them; a file Sonarr / Radarr replaced meanwhile isn't overwritten.
 - **Hardlink-aware**: files a torrent client still seeds are left out of the queue — converting them uses more space, not less. On for new installs.
@@ -56,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Content type and resolution set the job's quality** (they only changed the estimate before), with an editable table per content type; anime, animation, grain and remuxes get slightly more quality than everyday content.
 - **Add to Queue shows what will happen** — the encoder that will run, what becomes of the originals, the tracks removed — and **Add & start** queues and starts in one go.
 - **Update notices follow your channel** (`:develop` builds hear about develop builds), show it, and can be turned off.
+- **The VMAF target is held, not just aimed at**: the search reaches CQ 42 (was 34) and checks three to six samples with none more than 2 points under, and a finished file more than a point under the target is re-encoded once.
 
 ### Security
 - The API key works only in the `X-Api-Key` header, not in URLs, where it ended up in logs and browser history; live updates use one-time tickets.
