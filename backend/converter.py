@@ -3030,6 +3030,17 @@ def _target_retry_cq(vmaf_target: dict, score: float, half_steps: bool,
     return new
 
 
+def _quality_step(encoder: str, cq: float) -> dict:
+    """A VMAF target step's quality parameters (v0.10.0): the CQ, and what
+    the Queue needs to name it as the encoder does (encoderLabel.ts
+    qualityLabelForCq: VideoToolbox's q:v, libx265's CRF)."""
+    from backend.encoding_estimates import quality_settings
+    step = {"cq": cq, "encoder": encoder}
+    if (encoder or "").lower() == "libx265":
+        step["crf"] = quality_settings("libx265", cq)["libx265_crf"]
+    return step
+
+
 def _set_aside(temp: Path, input_path: str) -> Path:
     """Move the first encode out of the temp name while the VMAF target's
     re-encode writes there (v0.10.0): to a new, free name beside it — never
@@ -3717,14 +3728,16 @@ async def convert_file(
         # The VMAF target's re-encode: at the quality it's given, no search.
         vmaf_target = _target_retry["search"]
     elif target is not None and not command_only and not disc_type:
-        from backend.encoding_estimates import _CRF_OFFSET, quality_settings
+        from backend.encoding_estimates import _CRF_OFFSET, quality_label, quality_settings
         from backend.vmaf_target import find_quality
-        # The step names the round being scored ("VMAF target: CQ 32 (round 3)").
+        # The step names the round being scored ("VMAF target: CQ 32 (round 3)"),
+        # its quality as the encoder names it ("q:v 40", "CRF 34").
         said = {"step": "Finding the quality for the VMAF target…"}
 
         async def say_round(round_cq: float, round_n: int) -> None:
-            said.update(step=f"VMAF target: CQ {round_cq} (round {round_n})", step_key="steps.vmafTargetRound",
-                        step_params={"cq": round_cq, "round": round_n})
+            said.update(step=f"VMAF target: {quality_label(encoder, round_cq)} (round {round_n})",
+                        step_key="steps.vmafTargetRound",
+                        step_params={**_quality_step(encoder, round_cq), "round": round_n})
             if progress_callback:
                 await progress_callback(progress=0, fps=0, eta_seconds=None, **said)
         # The folder's remembered CQ when there is one, else the job's own.
@@ -5087,7 +5100,7 @@ async def convert_file(
               f"at CQ {retry_cq} (was CQ {cq})", flush=True)
         # The re-encode's own encode reports no step: labelled as the
         # re-encode by key (its step stays None, so its fps is recorded).
-        reencoding = {"step_key": "steps.vmafTargetReencode", "step_params": {"cq": retry_cq}}
+        reencoding = {"step_key": "steps.vmafTargetReencode", "step_params": _quality_step(encoder, retry_cq)}
 
         async def _progress(**kw) -> None:
             await progress_callback(**(kw if kw.get("step") or kw.get("step_key") else {**kw, **reencoding}))

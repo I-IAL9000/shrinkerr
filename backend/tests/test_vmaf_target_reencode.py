@@ -177,7 +177,7 @@ async def test_a_miss_is_reencoded_once(run):
     assert seen.onto_existing == []
     # the re-encode says so while it runs: its encode's progress carries the step
     label = next(i for i, kw in enumerate(said) if kw.get("step_key") == "steps.vmafTargetReencode")
-    assert said[label]["step_params"] == {"cq": 27}
+    assert said[label]["step_params"] == {"cq": 27, "encoder": "libx265", "crf": 29}  # the Queue says "CRF 29"
     encode = [kw for kw in said[label:] if not kw.get("step")]
     assert encode and all(kw.get("step_key") == "steps.vmafTargetReencode" for kw in encode)
     assert not any(kw.get("step_key") == "steps.vmafTargetReencode" for kw in said[:label])

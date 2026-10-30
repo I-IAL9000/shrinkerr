@@ -243,8 +243,20 @@ async def test_a_conversion_uses_it(test_db, quick, monkeypatch):
     assert stats["crf"] == found["cq"] + 2  # libx265's CRF, from the CQ found — not the job's 30
     assert 28 in found["scores"]  # the search started from the job's quality (CRF 30)
     rounds = [s for s in said if s.get("step_key") == "steps.vmafTargetRound"]  # each round names itself
-    assert rounds[0]["step"] == "VMAF target: CQ 28 (round 1)" and rounds[0]["step_params"] == {"cq": 28, "round": 1}
+    # as the encoder names the quality (the Queue's from the params: encoderLabel.ts qualityLabelForCq)
+    assert rounds[0]["step"] == "VMAF target: CRF 30 (round 1)"
+    assert rounds[0]["step_params"] == {"cq": 28, "round": 1, "encoder": "libx265", "crf": 30}
     assert {s["step_params"]["round"] for s in rounds} == set(range(1, found["rounds"] + 1))
+    from backend.tests.test_message_codes import _render_en
+    assert _render_en("serverJobs", "steps.vmafTargetRound", {**rounds[0]["step_params"], "quality": "CRF 30"}) \
+        == rounds[0]["step"]
+
+
+def test_a_quality_named_as_the_encoder_names_it():
+    from backend.encoding_estimates import quality_label
+    assert [quality_label(e, 32) for e in ("nvenc", "libx265", "qsv", "vaapi", "videotoolbox")] == \
+        ["CQ 32", "CRF 34", "Q 32", "QP 32", "q:v 40"]
+    assert (quality_label("nvenc", 32.5), quality_label("libx265", 30.5)) == ("CQ 32.5", "CRF 32.5")
 
 
 @needs_vmaf

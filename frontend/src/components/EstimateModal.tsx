@@ -218,6 +218,8 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   const vmafTargets: [string, number][] = Object.entries((estimate?.vmaf_target?.targets || {}) as Record<string, number>)
     .filter(([, n]) => n > 0).sort(([a], [b]) => Number(a) - Number(b));
   const vmafFixed: number = estimate?.vmaf_target?.fixed_by_rule || 0;
+  // One file's search: the median of the recorded ones, else 3 minutes.
+  const searchTime = formatTime(estimate?.vmaf_target_search_seconds ?? 180);
 
   return (
     <div style={{
@@ -275,6 +277,12 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                   <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
                     {estimate.learned_from > 0 ? t("scannerModals:estimate.learnedFrom", { count: estimate.learned_from })
                       : t("scannerModals:estimate.typicalSavings")}
+                  </div>
+                )}
+                {/* The search picks each target file's quality: its savings are at the start. */}
+                {vmafTargets.length > 0 && (
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                    {t("scannerModals:estimate.savingsAtStartingQuality")}
                   </div>
                 )}
               </div>
@@ -400,7 +408,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                     ? t("scannerModals:estimate.whatHappens.originalsTrash")
                     : t("scannerModals:estimate.whatHappens.originalsDelete"),
               ];
-              for (const [target, n] of vmafTargets) rows.push(t("scannerModals:estimate.whatHappens.vmafTarget", { target, count: n, num: fmtNum(n) }));
+              for (const [target, n] of vmafTargets) rows.push(t("scannerModals:estimate.whatHappens.vmafTarget", { target, count: n, num: fmtNum(n), time: searchTime }));
               if (vmafFixed > 0) rows.push(t("scannerModals:estimate.whatHappens.vmafFixed", { count: vmafFixed, num: fmtNum(vmafFixed) }));
               // SRT copies take the place of the image subtitles they're read
               // from, unless those are kept (v0.10.0: "no tracks are removed"

@@ -70,6 +70,19 @@ def quality_settings(encoder: str, cq: int) -> dict:
     return {"nvenc_cq": cq}
 
 
+# Each encoder's name for its quality setting (quality_label).
+_QUALITY_NAMES = {"nvenc_cq": "CQ", "libx265_crf": "CRF", "qsv_cq": "Q", "vaapi_qp": "QP",
+                  "videotoolbox_quality": "q:v"}
+
+
+def quality_label(encoder: str, cq: float) -> str:
+    """`cq` (NVENC's scale) named as `encoder`'s own setting: "CQ 32.5",
+    "CRF 34.5", "Q 32", "QP 32", "q:v 40" — the frontend's qualityLabelForCq
+    (encoderLabel.ts), for a step's English text (v0.10.0)."""
+    [(key, value)] = quality_settings(encoder, cq).items()
+    return f"{_QUALITY_NAMES[key]} {value:g}"
+
+
 def preset_settings(encoder: str, preset: str) -> dict:
     """The settings a quality preset sets for `encoder`."""
     return quality_settings(encoder, QUALITY_PRESETS[preset])

@@ -460,9 +460,11 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
                   return <>
                     <span style={{ color: "var(--text-muted)" }}>{t("queue:item.stats.vmafTarget")}</span>
                     <div style={{ color: "var(--text-secondary)", gridColumn: "2 / span 2" }}>
+                      {/* How long the search took: its rounds (CQs scored) and wall time. */}
                       <div>
                         {t(vt.reached ? "queue:item.stats.vmafTargetFound" : "queue:item.stats.vmafTargetMissed",
-                          { quality: quality(vt.cq), vmaf: vt.vmaf, target: vt.target })}
+                          { quality: quality(vt.cq), vmaf: vt.vmaf, target: vt.target,
+                            search: t("queue:item.stats.vmafTargetSearch", { count: vt.rounds, time: fmtDuration(vt.seconds) }) })}
                       </div>
                       {vt.min != null && <div>{t("queue:item.stats.vmafTargetLowest", { min: vt.min })}</div>}
                       {vt.reencoded && retry && (

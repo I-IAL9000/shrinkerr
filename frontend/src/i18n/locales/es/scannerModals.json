@@ -44,9 +44,9 @@
       "originalsKeep_other": "Los originales se guardan {{count}} días, así que puedes deshacerlo",
       "originalsTrash": "Los originales van a la papelera",
       "originalsDelete": "Los originales se eliminan cuando el archivo nuevo está en su sitio",
-      "vmafTarget_one": "Objetivo VMAF {{target}}: la calidad de cada archivo se busca antes con codificaciones de prueba ({{num}} archivo)",
-      "vmafTarget_many": "Objetivo VMAF {{target}}: la calidad de cada archivo se busca antes con codificaciones de prueba ({{num}} archivos)",
-      "vmafTarget_other": "Objetivo VMAF {{target}}: la calidad de cada archivo se busca antes con codificaciones de prueba ({{num}} archivos)",
+      "vmafTarget_one": "Objetivo VMAF {{target}}: la calidad de cada archivo se busca antes con codificaciones de prueba, unos {{time}} ({{num}} archivo)",
+      "vmafTarget_many": "Objetivo VMAF {{target}}: la calidad de cada archivo se busca antes con codificaciones de prueba, unos {{time}} por archivo ({{num}} archivos)",
+      "vmafTarget_other": "Objetivo VMAF {{target}}: la calidad de cada archivo se busca antes con codificaciones de prueba, unos {{time}} por archivo ({{num}} archivos)",
       "vmafFixed_one": "Calidad fija, objetivo VMAF desactivado por una regla: {{num}} archivo",
       "vmafFixed_many": "Calidad fija, objetivo VMAF desactivado por una regla: {{num}} archivos",
       "vmafFixed_other": "Calidad fija, objetivo VMAF desactivado por una regla: {{num}} archivos",
@@ -112,7 +112,8 @@
     "learnedFrom_one": "aprendido de {{count}} conversión tuya",
     "learnedFrom_many": "aprendido de {{count}} conversiones tuyas",
     "learnedFrom_other": "aprendido de {{count}} conversiones tuyas",
-    "typicalSavings": "resultados típicos, hasta que tus conversiones le enseñen"
+    "typicalSavings": "resultados típicos, hasta que tus conversiones le enseñen",
+    "savingsAtStartingQuality": "archivos con objetivo VMAF: con la calidad donde empieza su búsqueda"
   },
   "overrides": {
     "encodingSettings": "Configuración de codificación",
