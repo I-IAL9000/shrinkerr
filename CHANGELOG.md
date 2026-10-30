@@ -153,6 +153,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Activity search treats `%` and `_` as plain characters; a VMAF cross-check that times out stops; Settings' test encode no longer hangs on long output.
 - On phones the header stays put and the Scanner tree and poster grid render; tree rows stay on one line; the path picker keeps the Scan button on screen; the development version label fits the sidebar.
 
+## [0.9.159] — 2026-10-30
+
+### Security
+- The live-updates and log connections now need the API key when one is set and password login is off; they were open to anyone who could reach the port.
+
+### Fixed
+- **An API key no longer locks you out**: with no username and password set, the sign-in page asks for the API key, and changing the key or switching the password login off in Settings keeps your browser signed in. A new key also replaces the old one at once instead of a minute later.
+
 ## [0.9.158] — 2026-10-10
 
 ### Fixed

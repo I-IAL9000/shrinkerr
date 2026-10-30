@@ -860,7 +860,10 @@ async def auth_check(request: Request):
     password_auth_on = auth_method == "forms"
     # v0.10.0: sign-in is required; until it's set up the UI shows the setup screen.
     from backend import demo
-    extra = {"setup_required": auth_method == "", "auth_method": auth_method, "demo": demo.ENABLED}
+    # v0.9.159: whether there's a username and password to ask for — with an
+    # API key and no password login, the sign-in page asks for the key.
+    extra = {"setup_required": auth_method == "", "auth_method": auth_method, "demo": demo.ENABLED,
+             "password_login": password_auth_on}
 
     # A reverse proxy signs people in, or a local address needn't.
     bypass = auth_policy.bypass(settings, request)
