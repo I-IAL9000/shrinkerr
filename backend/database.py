@@ -450,13 +450,14 @@ async def init_db():
                 except Exception:
                     pass
         # v0.10.0: per-rule actions (backend/rule_actions.py); jobs carry the
-        # originals policy and VMAF minimum.
+        # originals policy, VMAF minimum and VMAF target (NULL: Settings',
+        # 0: off, else the score).
         for table, cols in (("encoding_rules", (("audio_keep_languages", "TEXT"), ("sub_policy", "TEXT"),
                                                 ("sub_keep_languages", "TEXT"), ("min_savings_pct", "REAL"))),
                             ("encoding_rules", (("originals_policy", "TEXT"), ("originals_days", "INTEGER"),
-                                                ("vmaf_min_score", "REAL"))),
+                                                ("vmaf_min_score", "REAL"), ("vmaf_target", "REAL"))),
                             ("jobs", (("originals_policy", "TEXT"), ("originals_days", "INTEGER"),
-                                      ("vmaf_min_score", "REAL"))),
+                                      ("vmaf_min_score", "REAL"), ("vmaf_target", "REAL"))),
                             # "Fix for direct play" (backend/direct_play.py)
                             ("jobs", (("direct_play", "INTEGER"),))):
             for col, coltype in cols:

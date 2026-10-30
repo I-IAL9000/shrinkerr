@@ -46,6 +46,20 @@ def passes(values: list[float], target: float) -> bool:
     return sum(values) / len(values) >= target and min(values) >= target - MAX_SAMPLE_DIP
 
 
+def active_minimum(settings: dict) -> float:
+    """The VMAF minimum (the reject threshold) in force for a job's settings:
+    0 unless VMAF analysis is on, else the job's minimum (a rule's, or
+    Settings') when it's above 0. A target can't be set below it: the
+    search would pass qualities the minimum then rejects."""
+    enabled = settings.get("vmaf_analysis_enabled", True)
+    if not (enabled if isinstance(enabled, bool) else str(enabled).lower() == "true"):
+        return 0.0
+    try:
+        return max(0.0, float(settings.get("vmaf_min_score") or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def fractional_steps(encoder: str, output_codec: str | None) -> bool:
     """Whether the encoder's quality setting takes half steps: NVENC's -cq
     and libx265's CRF are floats. QSV, VAAPI, VideoToolbox and AV1 output

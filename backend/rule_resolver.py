@@ -45,7 +45,7 @@ def _make_rule_result(rule: dict) -> dict:
         "output_codec": rule.get("output_codec"),
         # v0.10.0: per-rule actions (backend/rule_actions.py)
         **{k: rule.get(k) for k in ("audio_keep_languages", "sub_policy", "sub_keep_languages", "min_savings_pct",
-                                    "originals_policy", "originals_days", "vmaf_min_score")},
+                                    "originals_policy", "originals_days", "vmaf_min_score", "vmaf_target")},
         "target_resolution": rule.get("target_resolution"),
         "audio_codec": rule.get("audio_codec"),
         "audio_bitrate": rule.get("audio_bitrate"),

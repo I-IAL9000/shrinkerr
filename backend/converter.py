@@ -3640,7 +3640,7 @@ async def convert_file(
     vmaf_target = None
     if live_settings.get("vmaf_target_enabled") and not command_only and not disc_type:
         from backend.encoding_estimates import _CRF_OFFSET, quality_settings
-        from backend.vmaf_target import DEFAULT_TARGET, find_quality
+        from backend.vmaf_target import DEFAULT_TARGET, active_minimum, find_quality
         # The step names the round being scored ("VMAF target: CQ 32 (round 3)").
         said = {"step": "Finding the quality for the VMAF target…"}
 
@@ -3653,9 +3653,11 @@ async def convert_file(
         search_start = vmaf_target_start_cq
         if search_start is None:
             search_start = crf - _CRF_OFFSET if encoder == "libx265" else cq
+        # The VMAF minimum is a floor under the target: a lower one would
+        # pass qualities the minimum then rejects.
+        target = max(float(live_settings.get("vmaf_target_score") or DEFAULT_TARGET), active_minimum(live_settings))
         vmaf_target = await _with_step(progress_callback, said, find_quality(
-            input_path, encoder, float((probe_data or {}).get("duration") or duration or 0),
-            float(live_settings.get("vmaf_target_score") or DEFAULT_TARGET),
+            input_path, encoder, float((probe_data or {}).get("duration") or duration or 0), target,
             start=search_start,
             convert_kwargs={"override_preset": override_preset, "override_libx265_preset": override_libx265_preset,
                             "override_target_resolution": override_target_resolution, "pre_settings": live_settings},

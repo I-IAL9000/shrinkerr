@@ -371,6 +371,7 @@ class JobQueue:
                     j.get("originals_policy"),
                     j.get("originals_days"),
                     j.get("vmaf_min_score"),
+                    j.get("vmaf_target"),
                     # The fixes Add to Queue chose ("" = none), else the setting's
                     (j["direct_play"] or None) if j.get("direct_play") is not None
                     else 1 if direct_play_default and j["job_type"] in _DIRECT_PLAY_JOB_TYPES else None,
@@ -383,8 +384,8 @@ class JobQueue:
                 "audio_tracks_to_remove, subtitle_tracks_to_remove, created_at, "
                 "queue_order, original_size, nvenc_preset, nvenc_cq, audio_codec, "
                 "audio_bitrate, libx265_crf, libx265_preset, target_resolution, priority, not_before, output_codec, "
-                "originals_policy, originals_days, vmaf_min_score, direct_play) "
-                "VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "originals_policy, originals_days, vmaf_min_score, vmaf_target, direct_play) "
+                "VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
             assigned_ids: list[int] = []
             if params_list:

@@ -62,6 +62,8 @@
     "noFieldsToUpdate": "No fields to update",
     "plexOptionsFailed": "Failed to fetch Plex options: {{error}}",
     "plexSyncFailed": "Plex sync failed: {{error}}",
+    "vmafTargetBelowMinimum": "The VMAF target ({{target}}) can't be below the VMAF minimum ({{minimum}}).",
+    "vmafTargetRange": "The VMAF target must be a score from 80 to 99.",
     "import": {
       "notYaml": "This isn't a YAML file: {{error}}",
       "notRulesFile": "This isn't a Shrinkerr rules file.",

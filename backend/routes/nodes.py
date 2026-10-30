@@ -506,13 +506,15 @@ async def request_job(req: RequestJobBody, request: Request):
         assigned["vmaf_min_score"] = float(srv_settings.get("vmaf_min_score", "0") or 0)
     except (TypeError, ValueError):
         assigned["vmaf_min_score"] = 0.0
-    # A rule's originals policy and VMAF minimum win (v0.10.0).
-    assigned.update(job_settings)
     assigned["vmaf_target_enabled"] = (srv_settings.get("vmaf_target_enabled") or "false").lower() == "true"
     try:
         assigned["vmaf_target_score"] = float(srv_settings.get("vmaf_target_score") or VMAF_TARGET_DEFAULT)
     except (TypeError, ValueError):
         assigned["vmaf_target_score"] = float(VMAF_TARGET_DEFAULT)
+    # A rule's originals policy, VMAF minimum and VMAF target win (v0.10.0).
+    # The target goes as the job's resolved enabled / score, which workers
+    # older than the rule's own target already understand: Off is disabled.
+    assigned.update(job_settings)
     # libx265 defaults the CPU worker should use for an NVENC job:
     #   1. Explicit "NVENC→CPU fallback" (user intentionally tuned these)
     #   2. Main libx265 settings IF libx265 is the server's default encoder
