@@ -191,3 +191,25 @@ async def test_a_restored_iso_is_a_disc_again(test_db, tmp_path, monkeypatch):
             assert await cur.fetchall() == [(str(original), "dvd")]
     await __import__("asyncio").sleep(0)  # the rescan runs in the background
     assert rescanned == [str(original)]
+
+
+@pytest.mark.asyncio
+async def test_isos_restored_before_the_fix_are_read_again_at_start_up(test_db, monkeypatch):
+    """Only an ISO Undo restored and left without a disc type: not one
+    with its type, not one that wasn't restored."""
+    import backend.routes.jobs as jobs_route
+    lost, fine, other = "/m/Lost (1995)/Lost.iso", "/m/Fine (1995)/Fine.iso", "/m/Other (1995)/Other.iso"
+    async with aiosqlite.connect(test_db) as db:
+        for path, disc, status in ((lost, None, "reverted"), (fine, "bdmv", "reverted"), (other, None, "completed")):
+            await db.execute("INSERT INTO scan_results (file_path, file_size, disc_type, scan_timestamp) "
+                             "VALUES (?, 1, ?, 't')", (path, disc))
+            await db.execute("INSERT INTO jobs (file_path, original_file_path, job_type, status, created_at) "
+                             "VALUES (?, ?, 'convert', ?, 't')", (path + ".mkv", path, status))
+        await db.commit()
+    read = []
+
+    async def rescan(path):
+        read.append(path)
+    monkeypatch.setattr(jobs_route, "_rescan_restored", rescan)
+
+    assert await jobs_route.rescan_restored_isos() == 1 and read == [lost]

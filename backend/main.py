@@ -268,6 +268,14 @@ async def lifespan(app: FastAPI):
             await backfill_stale_disc_type()
         except Exception as exc:
             print(f"[STARTUP] stale disc_type backfill skipped: {exc}", flush=True)
+        # v0.10.0: an ISO restored by Undo came back without its disc type
+        # (no Disc / ISO filter) — read again, in its own task: a Blu-ray ISO
+        # over SMB takes a minute.
+        try:
+            from backend.routes.jobs import rescan_restored_isos
+            _asyncio.create_task(rescan_restored_isos())
+        except Exception as exc:
+            print(f"[STARTUP] restored-ISO rescan skipped: {exc}", flush=True)
         try:
             from backend.database import remove_temp_scan_rows
             await remove_temp_scan_rows()
