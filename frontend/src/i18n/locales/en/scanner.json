@@ -144,7 +144,7 @@
     "failedBefore": "Failed before",
     "vmafRejected": "VMAF-rejected",
     "undoPossible": "Undo possible",
-    "noSavings": "No savings",
+    "noSavings": "Came out larger",
     "advancedLabel_one": "Advanced: {{count}} condition",
     "advancedLabel_other": "Advanced: {{count}} conditions",
     "notWatched6m": "6 months",

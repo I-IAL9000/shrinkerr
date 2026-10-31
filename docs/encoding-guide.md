@@ -429,7 +429,8 @@ A Dolby Vision file's video is kept as it is when the file is:
 
 The job still does its other work on the original (removing tracks, Fix
 for direct play: SRT copies, a stereo track), completes with **Video kept**
-and the reason, and the file is ignored so it isn't queued again.
+and the reason, and the file is marked **Came out larger** so it isn't
+queued again on its own.
 
 **Settings → Video → Dolby Vision** chooses what happens to profiles 7 and 8:
 

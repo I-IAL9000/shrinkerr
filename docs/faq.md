@@ -25,8 +25,8 @@ Several safety nets make destroying your library hard:
 - Originals are kept for N days (7 by default for new installs since
   v0.10.0), or moved to the trash, or deleted — Settings → Automation →
   Originals & Backups.
-- Files that grew after encoding are detected — original kept, file
-  auto-ignored.
+- Files that grew after encoding are detected — original kept, and the
+  file is marked **Came out larger** so it isn't queued again on its own.
 - **Review before replace** (Settings → Automation → Originals & Backups)
   holds converted files in Queue → Review until you approve them.
 

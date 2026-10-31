@@ -2328,9 +2328,11 @@ async def scan_directory(
         db = await aiosqlite.connect(settings.db_path)
         db.row_factory = aiosqlite.Row
         try:
-            async with db.execute("SELECT file_path FROM ignored_files") as cur:
+            # (not the queue's marks: came out larger, v0.10.0)
+            from backend.scan_filters import AUTO_IGNORE_REASONS
+            async with db.execute("SELECT file_path, reason FROM ignored_files") as cur:
                 rows = await cur.fetchall()
-                ignored_paths = {row["file_path"] for row in rows}
+                ignored_paths = {row["file_path"] for row in rows if row["reason"] not in AUTO_IGNORE_REASONS}
         finally:
             await db.close()
     except Exception:

@@ -165,7 +165,7 @@ async def queue_plan(body: PlanBody):
     added = 0
     if paths:
         added = (await jobs_route.add_jobs_from_scan(
-            jobs_route.BulkQueueFromScanRequest(file_paths=paths, priority=1)))["added"]
+            jobs_route.BulkQueueFromScanRequest(file_paths=paths, priority=1, automatic=True)))["added"]
         if added and jobs_route._worker is not None:
             jobs_route._worker.start_if_idle()
     return {"queued": added}

@@ -2111,15 +2111,27 @@ async def ignore_context(db) -> dict:
     """What scan_filters.is_ignored_path reads: files and folders ignored by
     hand, skip rules' prefixes, and the files exempt from them. `db` needs
     aiosqlite.Row rows."""
+    import json
+    from backend.scan_filters import AUTO_IGNORE_REASONS
     ignored_paths: set[str] = set()
     ignored_folders_raw: list[str] = []
     rule_exempt_paths: set[str] = set()
-    async with db.execute("SELECT file_path, reason FROM ignored_files") as cur:
+    # The queue's marks (v0.10.0): came out larger, not ignored — when, and
+    # at what quality (the Scanner's badge, Add to Queue's estimate).
+    larger_paths: dict[str, dict] = {}
+    async with db.execute("SELECT file_path, reason, ignored_at, details FROM ignored_files") as cur:
         for r in await cur.fetchall():
             p = r["file_path"]
             reason = r["reason"] or ""
             if reason in ("plex_label_exempt", "rule_exempt"):
                 rule_exempt_paths.add(p)
+                continue
+            if reason in AUTO_IGNORE_REASONS:
+                try:
+                    details = json.loads(r["details"]) if r["details"] else None
+                except ValueError:
+                    details = None
+                larger_paths[p] = {"reason": reason, "at": r["ignored_at"], "details": details}
                 continue
             ignored_paths.add(p)
             if p.endswith("/"):
@@ -2135,7 +2147,8 @@ async def ignore_context(db) -> dict:
     except Exception:
         pass
     return {"ignored_paths": ignored_paths, "ignored_folders_sorted": sorted(set(ignored_folders_raw)),
-            "rule_exempt_paths": rule_exempt_paths, "skip_prefixes_sorted": skip_prefixes_sorted}
+            "rule_exempt_paths": rule_exempt_paths, "skip_prefixes_sorted": skip_prefixes_sorted,
+            "larger_paths": larger_paths}
 
 
 async def _build_enrichment_context(db, titles: bool = False) -> dict:
@@ -2257,6 +2270,8 @@ def _enrich_row_minimal(row: dict, ctx: dict) -> dict:
         "has_removable_subs": bool(row.get("has_removable_subs")),
         "has_lossless_audio": bool(row.get("has_lossless_audio")),
         "ignored": is_ignored,
+        # Converted before and came out larger (v0.10.0): when, and at what quality
+        "came_out_larger": ctx.get("larger_paths", {}).get(row["file_path"]),
         "is_new": bool(detected_at and detected_at > ctx["cutoff_24h"]),
         "queued": fp in ctx["queued_paths"],
         "converted": row_converted(row, ctx),
@@ -2369,6 +2384,8 @@ def _enrich_row(row: dict, ctx: dict) -> dict:
         "has_removable_subs": bool(row.get("has_removable_subs")),
         "has_lossless_audio": bool(row.get("has_lossless_audio")),
         "ignored": is_ignored,
+        # Converted before and came out larger (v0.10.0): when, and at what quality
+        "came_out_larger": ctx.get("larger_paths", {}).get(row["file_path"]),
         "is_new": bool(detected_at and detected_at > ctx["cutoff_24h"]),
         "queued": fp in ctx["queued_paths"],
         "converted": row_converted(row, ctx),

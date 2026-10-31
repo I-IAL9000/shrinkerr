@@ -627,12 +627,13 @@ async def get_dashboard():
             # Load ignored paths and folders (same as scan results endpoint)
             ignored_paths_set: set[str] = set()
             ignored_folders_list: list[str] = []
+            from backend.scan_filters import AUTO_IGNORE_REASONS
             async with db.execute("SELECT file_path, reason FROM ignored_files") as cur:
                 for row in await cur.fetchall():
                     p = row["file_path"]
                     reason = row["reason"] or ""
-                    if reason in ("plex_label_exempt", "rule_exempt"):
-                        continue
+                    if reason in ("plex_label_exempt", "rule_exempt") or reason in AUTO_IGNORE_REASONS:
+                        continue  # (came out larger: not ignored, v0.10.0)
                     ignored_paths_set.add(p)
                     if p.endswith("/"):
                         ignored_folders_list.append(p)

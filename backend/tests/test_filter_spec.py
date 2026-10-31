@@ -200,7 +200,7 @@ EXPECTED = {
     # Blu-ray (10 at its 50 fps, 33) — bits per pixel flagged those; untimed
     # Broken: no.
     "bloated": {"dune", "alien", "big"},
-    "ignored": {"ep1", "old"},
+    "ignored": {"ep1"},  # not "old": it came out larger — the queue's note, not an ignore (v0.10.0)
     "queued": {"ep2"},
     "converted": {"old"},
     "new": {"alien"},
@@ -296,7 +296,7 @@ async def test_groups_or_inside_and_across_and_exclusions(lib):
     assert await names("!x265") == set(ROWS) - EXPECTED["x265"]
     assert await names("!vmaf_poor") == set(ROWS) - {"corrupt"}
     assert await names("type_movie,!ignored,!converted") == EXPECTED["type_movie"] - {"old"}
-    assert await names("!queued,!ignored") == set(ROWS) - {"ep1", "ep2", "old"}
+    assert await names("!queued,!ignored") == set(ROWS) - {"ep1", "ep2"}
     assert await names("container_avi,container_mp4,!missing_language") == {"big"}
     # "all", empty and unknown ids (an old bookmark) don't filter.
     for text in ("all", "", "no_such_filter", "all,no_such_filter"):

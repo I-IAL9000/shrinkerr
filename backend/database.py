@@ -523,6 +523,12 @@ async def init_db():
             await db.execute("ALTER TABLE jobs ADD COLUMN vmaf_score REAL DEFAULT NULL")
         except Exception:
             pass
+        # The queue's marks (no savings, larger, video kept) say when and at
+        # what quality the file came out larger (v0.10.0: scan_filters.AUTO_IGNORE_REASONS).
+        try:
+            await db.execute("ALTER TABLE ignored_files ADD COLUMN details TEXT")
+        except Exception:
+            pass
         # Migration: vmaf_uncertain (v0.3.32+) — flag set when libvmaf
         # desynced on every analysis window we tried, so the recorded
         # `vmaf_score` is the user's best estimate but isn't a

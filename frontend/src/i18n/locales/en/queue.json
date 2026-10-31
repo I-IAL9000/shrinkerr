@@ -123,7 +123,8 @@
       "directPlay": "Direct play fix"
     },
     "healthWarnTitle": "Health check surfaced warnings (file is playable)",
-    "noSavingsTitle": "No space savings — file was auto-ignored after conversion",
+    "noSavingsTitle": "No space saved — the Scanner lists it under Came out larger, and Add to Queue converts it again",
+    "cleanupGrewTitle": "No space saved: the clean-up added to the file (a subtitle, a stereo track)",
     "corruptTitle": "Health check flagged this file as corrupt",
     "badgeHighest": "HIGHEST",
     "badgeHigh": "HIGH",

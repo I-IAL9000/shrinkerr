@@ -167,6 +167,30 @@ def _utcnow() -> str:
 _DIRECT_PLAY_JOB_TYPES = ("convert", "combined")
 
 
+async def mark_came_out_larger(db, paths, reason: str, details: dict) -> None:
+    """The queue's note that a conversion saved nothing (v0.10.0;
+    scan_filters.AUTO_IGNORE_REASONS): when, and at what quality. A later
+    try refreshes it; a file ignored by hand, by folder or by a rule stays
+    as it is. The caller commits."""
+    from backend.scan_filters import AUTO_IGNORE_REASONS
+    for p in paths:
+        await db.execute(
+            "INSERT INTO ignored_files (file_path, reason, ignored_at, details) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(file_path) DO UPDATE SET reason = excluded.reason, ignored_at = excluded.ignored_at, "
+            f"details = excluded.details WHERE ignored_files.reason IN {AUTO_IGNORE_REASONS}",
+            (p, reason, _utcnow(), json.dumps(details)))
+
+
+def _quality_tried(result: dict) -> dict:
+    """What the Scanner says a file came out larger at: the encode's quality
+    and how much larger (mark_came_out_larger)."""
+    stats = result.get("encoding_stats") or {}
+    out = {k: stats[k] for k in ("cq", "encoder", "crf") if stats.get(k) is not None}
+    if stats.get("ratio") is not None:
+        out["pct"] = abs(round(float(stats["ratio"])))
+    return out
+
+
 async def _target_when_queued(db) -> float:
     """Settings' VMAF target as a conversion is queued — the job keeps it,
     whatever Settings say later (0: off; v0.10.0)."""
@@ -3145,10 +3169,9 @@ class QueueWorker:
                 try:
                     db = await self._db()
                     try:
-                        await db.execute(
-                            "INSERT OR IGNORE INTO ignored_files (file_path, reason, ignored_at) VALUES (?, ?, ?)",
-                            (file_path, "video_kept" if video_kept else "conversion_larger", _utcnow()),
-                        )
+                        await mark_came_out_larger(
+                            db, [file_path], "video_kept" if video_kept else "conversion_larger",
+                            {"error_key": video_kept.get("error_key")} if video_kept else _quality_tried(result))
                         await db.commit()
                         print(f"[WORKER] Marked as ignored ({'video kept' if video_kept else 'larger after conversion'}): "
                               f"{file_path}", flush=True)
@@ -4024,15 +4047,13 @@ class QueueWorker:
         # A conversion's: a clean-up that grew the file — a sidecar subtitle
         # merged in, an SRT copy, a stereo track — was asked to add it, and
         # ignoring the file meant it was never converted (v0.10.0).
-        if space_saved <= 0 and job_type in ("convert", "combined"):
+        # (Not after a larger encode or a kept video: their own mark says more.)
+        if (space_saved <= 0 and job_type in ("convert", "combined")
+                and not result.get("skipped_larger") and not video_kept):
             try:
                 db = await self._db()
                 try:
-                    for p in {file_path, current_file_path}:
-                        await db.execute(
-                            "INSERT OR IGNORE INTO ignored_files (file_path, reason, ignored_at) VALUES (?, ?, ?)",
-                            (p, "no_savings", _utcnow()),
-                        )
+                    await mark_came_out_larger(db, {file_path, current_file_path}, "no_savings", _quality_tried(result))
                     await db.commit()
                     print(f"[WORKER] Marked as ignored (no savings): {current_file_path}", flush=True)
                 finally:

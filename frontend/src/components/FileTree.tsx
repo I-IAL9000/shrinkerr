@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
+import { cameOutLargerNote } from "../utils/cameOutLarger";
 import { useTranslation } from "react-i18next";
 import type { ScannedFile, AudioTrack, SubtitleTrack } from "../types";
 import { getScanFiles } from "../api";
@@ -588,6 +589,15 @@ const FileRow = memo(function FileRow({
             style={{ fontSize: 9, color: "var(--text-muted)", background: "var(--bg-tertiary)", padding: "2px 6px", borderRadius: 3, border: "none", cursor: "pointer", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center" }}
             title={t("library:badges.clickToUnignore")}
           >{t("library:badges.ignored")} ✕</button>
+        )}
+        {/* Converted before and came out larger (v0.10.0): Add to Queue
+            converts it again; ✕ forgets the note. */}
+        {file.came_out_larger && onUnignoreFile && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onUnignoreFile(file.file_path); }}
+            style={{ fontSize: 9, color: "var(--caution)", background: "var(--bg-tertiary)", padding: "2px 6px", borderRadius: 3, border: "none", cursor: "pointer", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center" }}
+            title={cameOutLargerNote(file.came_out_larger, t)}
+          >{t("library:badges.cameOutLarger")} ✕</button>
         )}
         <div style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
           {!file.ignored && onIgnoreFile && (

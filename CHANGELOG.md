@@ -60,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Add to Queue shows what will happen** — the encoder that will run, what becomes of the originals, the tracks removed — and **Add & start** queues and starts in one go.
 - **Update notices follow your channel** (`:develop` builds hear about develop builds), show it, and can be turned off.
 - **Re-measure suspect VMAF scores is gone**: it needed each job's original, which is rarely kept after a conversion, and counted ordinary scores under 93 as suspect.
+- **Files that came out larger aren't ignored**: they're marked **Came out larger** in the Scanner (when, and at what quality), new downloads and policies still leave them alone, and Add to Queue converts them again — with another quality, no override needed. Files you ignore stay ignored.
 
 ### Security
 - The API key works only in the `X-Api-Key` header, not in URLs, where it ended up in logs and browser history; live updates use one-time tickets.

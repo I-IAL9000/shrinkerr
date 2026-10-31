@@ -115,7 +115,8 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
         // Priority order (worst → best):
         //   1. health_status === "corrupt"  → red triangle
         //   2. health_status === "warnings" → amber circle
-        //   3. completed but space_saved <= 0 → amber circle ("no savings, ignored")
+        //   3. completed but space_saved <= 0 → amber circle (a conversion: came
+        //      out larger, the Scanner's note; a clean-up: what it added)
         //   4. healthy completion with real savings → green check
         const isHealthCorrupt = job.health_status === "corrupt";
         const isHealthWarn    = job.health_status === "warnings";
@@ -125,7 +126,9 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
         const showAmber = isHealthWarn || (!isHealthCorrupt && noSavings);
         const amberTitle = isHealthWarn
           ? t("queue:item.healthWarnTitle")
-          : t("queue:item.noSavingsTitle");
+          : job.job_type === "convert" || job.job_type === "combined"
+            ? t("queue:item.noSavingsTitle")
+            : t("queue:item.cleanupGrewTitle");
         return (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, width: 34, flexShrink: 0 }}>
             {isHealthCorrupt ? (

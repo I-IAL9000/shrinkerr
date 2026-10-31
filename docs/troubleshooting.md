@@ -247,8 +247,14 @@ Failure here surfaces the actual HTTP error Plex returned.
 ## Encoded file is larger than original
 
 Shrinkerr detects this and keeps the original. The job shows **Larger**
-("The converted file was N% larger…"), and the file is added to the
-ignore list so subsequent scans skip it. To use the larger file anyway
+("The converted file was N% larger…"), and the Scanner marks the file
+**Came out larger** (with when and at what quality, on its badge). New
+downloads, imports and policies don't queue it again on their own, and
+**Needs conversion** leaves it out; the Scanner's **Came out larger** filter
+lists them. Select them and **Add to queue** to try again, with a lower
+quality setting or another rule: they're converted as usual (the estimate
+says they came out larger last time). Clicking the badge forgets the note.
+Files you ignore yourself stay ignored. To use the larger file anyway
 (say, for HEVC everywhere), open the job and press **Keep anyway**: it
 needs originals kept (Settings → Automation → Originals & Backups), which
 holds the larger file for as long as the originals.
@@ -269,7 +275,8 @@ you want to retry.
 Shrinkerr won't replace an HDR or Dolby Vision file with one that lost it.
 When it can't keep it, the job keeps the video as it is, still does its
 other work on the original (removing tracks, Fix for direct play), and
-completes with **Video kept**; the file is ignored so it isn't queued again.
+completes with **Video kept**; the file is marked **Came out larger** so it
+isn't queued again on its own.
 The job's details say why:
 
 - **"The video was kept as it is: Dolby Vision …"** — it names the reason:

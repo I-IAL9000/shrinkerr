@@ -93,7 +93,8 @@ async def run_policy(policy_id: int) -> dict:
         if paths and policy["action"] == "health_check":
             added = (await jobs_route.queue_health_checks(jobs_route.HealthCheckRequest(file_paths=paths)))["added"]
         elif paths:
-            added = (await jobs_route.add_jobs_from_scan(jobs_route.BulkQueueFromScanRequest(file_paths=paths)))["added"]
+            added = (await jobs_route.add_jobs_from_scan(
+                jobs_route.BulkQueueFromScanRequest(file_paths=paths, automatic=True)))["added"]
         if added and policy["start_queue"] and jobs_route._worker is not None:
             jobs_route._worker.start_if_idle()
         result = {"matched": len(rows), "chosen": len(paths), "queued": added,

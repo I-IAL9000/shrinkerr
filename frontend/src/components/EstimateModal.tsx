@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { triedQuality } from "../utils/cameOutLarger";
 import { useDialog } from "../useDialog";
 import { useTranslation, Trans } from "react-i18next";
 import i18n from "../i18n";
@@ -443,6 +444,13 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
               if (cleanupOnly) rows.push(t(`scannerModals:estimate.whatHappens.${fixing ? "cleanupSkipsFixes" : "cleanupSkips"}`));
               if (estimate.hardlinked > 0) rows.push(t("scannerModals:estimate.whatHappens.hardlinked", { count: estimate.hardlinked, num: fmtNum(estimate.hardlinked) }));
               if (estimate.leaving_soon > 0) rows.push(t("scannerModals:estimate.whatHappens.leavingSoon", { count: estimate.leaving_soon, num: fmtNum(estimate.leaving_soon) }));
+              // Converted before and came out larger (v0.10.0): converted again now
+              const larger = estimate.came_out_larger;
+              if (larger?.files > 0) {
+                const qualities = (larger.qualities || []).map(triedQuality).join(", ");
+                rows.push(t(qualities ? "scannerModals:estimate.whatHappens.cameOutLargerAt" : "scannerModals:estimate.whatHappens.cameOutLarger",
+                  { count: larger.files, num: fmtNum(larger.files), qualities }));
+              }
               return (
                 <div style={{ background: "var(--bg-primary)", borderRadius: 6, padding: "10px 12px", marginBottom: 16 }}>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>{t("scannerModals:estimate.whatHappens.title")}</div>

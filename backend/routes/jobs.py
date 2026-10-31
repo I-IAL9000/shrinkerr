@@ -94,6 +94,9 @@ class BulkQueueFromScanRequest(BaseModel):
     file_paths: list[str] = []
     priority: int = 0  # 0=Normal, 1=High, 2=Highest
     override_rules: bool = False  # When True, ignore encoding rules
+    # Queued by Shrinkerr itself (policies; v0.10.0): files that came out
+    # larger when converted are left as they are, as for new downloads.
+    automatic: bool = False
     select_all: bool = False  # When True, resolve matching files server-side
     filter: str = "all"  # Filter to apply when select_all=True
     # Encoding overrides from modal (None = auto)
@@ -125,13 +128,17 @@ class BulkQueueFromScanRequest(BaseModel):
     direct_play_fixes: Optional[list[str]] = None
 
 
-async def _ignored_among(db, file_paths: list[str]) -> set[str]:
+async def _ignored_among(db, file_paths: list[str], *, automatic: bool = False) -> set[str]:
     """The files that are ignored — by hand, by their folder or by a skip
-    rule — as the Scanner tells them (scan_filters.is_ignored_path)."""
+    rule — as the Scanner tells them (scan_filters.is_ignored_path). For
+    `automatic` queueing (new downloads, imports, policies), also the ones
+    that came out larger when converted (v0.10.0): not converted again on
+    their own; an explicit Add to Queue converts them."""
     from backend.routes.scan import ignore_context
     from backend.scan_filters import is_ignored_path
     ignore = await ignore_context(db)
-    return {fp for fp in file_paths if is_ignored_path(fp, ignore)}
+    return {fp for fp in file_paths
+            if is_ignored_path(fp, ignore) or (automatic and fp in ignore["larger_paths"])}
 
 
 def _direct_play_fixing(found: dict[str, list[str]], payload) -> dict[str, list[str]]:
@@ -533,7 +540,8 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
         # Ignored files (by hand, their folder or a skip rule) get only their
         # clean-up, as an "ignore" rule's do — never a conversion (v0.10.0;
         # Add to Queue's override converts them).
-        ignored = set() if payload.override_rules else await _ignored_among(db, file_paths)
+        ignored = set() if payload.override_rules else await _ignored_among(
+            db, file_paths, automatic=new_files or payload.automatic)
 
         jobs_to_insert: list[dict] = []
         ignored_by_rule = 0
@@ -2046,6 +2054,13 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         # those ignored by hand were counted) — get only their clean-up, as
         # add-from-scan has it, unless the override's on.
         ignored_set = await _ignored_among(db, file_paths)
+        # Converted before and came out larger (v0.10.0): converted again
+        # now, and the estimate says so — when and at what quality.
+        from backend.routes.scan import ignore_context
+        larger = (await ignore_context(db))["larger_paths"]
+        tried = [larger[fp]["details"] or {} for fp in file_paths if fp in larger]
+        tried_qualities = sorted({(d["cq"], d.get("encoder"), d.get("crf")) for d in tried if d.get("cq") is not None},
+                                 key=lambda q: q[0])[:3]
         scan_rows: dict[str, dict] = {}
         if file_paths:
             # Chunk IN clauses to stay under SQLite's 999-variable limit
@@ -2347,6 +2362,9 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             "by_source": by_source,
             "skipped_by_rules": skipped,
             "ignored_files": ignored_count,
+            "came_out_larger": {"files": len(tried), "qualities": [
+                {"cq": cq, "encoder": enc, **({"crf": crf} if crf is not None else {})}
+                for cq, enc, crf in tried_qualities]},
             "hardlinked": hardlinked,
             "leaving_soon": leaving_soon,
             "direct_play": direct_play,

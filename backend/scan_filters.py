@@ -52,6 +52,13 @@ class Filter:
 
 # ── Context helpers (the ignore list, Plex watch state, folder labels) ─────
 
+# The queue's own marks, when a conversion saved nothing (v0.10.0): notes,
+# not ignores. Automatic queueing (new downloads, imports, policies) skips the
+# file; an explicit Add to Queue converts it; the Scanner shows it under Came
+# out larger. Ignores by hand, by folder or by a rule stay ignores.
+AUTO_IGNORE_REASONS = ("no_savings", "conversion_larger", "video_kept")
+
+
 def is_ignored_path(fp: str, ctx: dict) -> bool:
     """Ignored by hand, by an ignored folder, or by a skip rule (unless exempt)."""
     if fp in ctx["ignored_paths"]:
@@ -206,6 +213,11 @@ def row_ignored(row: dict, ctx: dict) -> bool:
     if v is None:
         v = row["_ignored"] = is_ignored_path(row["file_path"], ctx)
     return v
+
+
+def row_came_out_larger(row: dict, ctx: dict) -> bool:
+    """Converted before and it saved nothing (AUTO_IGNORE_REASONS)."""
+    return row["file_path"] in ctx.get("larger_paths", ())
 
 
 def row_bitrate(row: dict) -> float:
@@ -484,7 +496,7 @@ _NEEDS_TIMED = "needs_conversion != 0 AND duration > 0"
 # Bump when a Python predicate or a helper / constant it relies on changes
 # (is_ignored_path, classify_type, hdr_kind, row_last_watched, LOW_BITRATE...):
 # a saved filter index is rebuilt. A change to a filter's SQL is noticed on its own.
-FILTERS_VERSION = 1
+FILTERS_VERSION = 2  # 2: Needs conversion leaves out files that came out larger
 
 _FILTER_LIST = [
     # Status. Each section of the filter bar is one group (v0.10.0): ticking
@@ -493,8 +505,11 @@ _FILTER_LIST = [
     # keep their own groups.
     Filter("new", "added", sql="new_detected_at > ?", params=_new_cutoff, inputs=("time",)),
     Filter("recent", sql="file_mtime > ?", params=_recent_cutoff, inputs=("time",)),
+    # (not a file that came out larger: adding a season from it would encode
+    # it again at the same quality — Came out larger lists them)
     Filter("needs_conversion", "queue", pre_sql=_NEEDS, inputs=("ignored", "rules", "plex"),
-           py=lambda r, c: bool(r.get("needs_conversion")) and not row_low_bitrate(r) and not row_ignored(r, c)),
+           py=lambda r, c: bool(r.get("needs_conversion")) and not row_low_bitrate(r) and not row_ignored(r, c)
+           and not row_came_out_larger(r, c)),
     Filter("low_bitrate", pre_sql=_NEEDS_TIMED, inputs=("ignored", "rules", "plex"),
            py=lambda r, c: row_low_bitrate(r) and not row_ignored(r, c)),
     Filter("high_bitrate", pre_sql=_NEEDS_TIMED, inputs=("ignored", "rules", "plex"),
@@ -604,9 +619,9 @@ _FILTER_LIST = [
     Filter("vmaf_rejected", "outcome", inputs=("jobs",),
            sql=_job_exists("j.error_key IN ('errors.vmafRejected', 'errors.vmafBelowThreshold')")),
     Filter("undo_possible", "outcome", sql=_UNDO_POSSIBLE, inputs=("jobs", "settings", "time")),
-    Filter("no_savings", "outcome", inputs=("ignored",), sql=(
+    Filter("no_savings", "outcome", inputs=("ignored",), sql=(  # Came out larger
         "EXISTS (SELECT 1 FROM ignored_files i WHERE i.file_path = scan_results.file_path "
-        "AND i.reason = 'conversion_larger')")),
+        f"AND i.reason IN {AUTO_IGNORE_REASONS})")),
     # What Sonarr / Radarr say (v0.10.0): below the cutoff they'll replace it
     Filter("arr_cutoff_unmet", "arr", inputs=("arr",), sql=(
         "EXISTS (SELECT 1 FROM arr_file_status a WHERE a.file_path = scan_results.file_path AND a.cutoff_unmet = 1)")),

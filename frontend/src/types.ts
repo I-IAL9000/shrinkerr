@@ -70,6 +70,8 @@ export interface ScannedFile {
   // the queue-estimate modal.
   video_conv_savings_bytes?: number;
   ignored: boolean;
+  // v0.10.0: converted before and came out larger — a note, not an ignore
+  came_out_larger?: import("./utils/cameOutLarger").CameOutLarger | null;
   is_new: boolean;
   queued: boolean;
   converted: boolean;

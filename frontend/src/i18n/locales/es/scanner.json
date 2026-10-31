@@ -149,7 +149,7 @@
     "failedBefore": "Falló antes",
     "vmafRejected": "Rechazado por VMAF",
     "undoPossible": "Se puede deshacer",
-    "noSavings": "Sin ahorro",
+    "noSavings": "Salieron más grandes",
     "advancedLabel_one": "Avanzada: {{count}} condición",
     "advancedLabel_many": "Avanzada: {{count}} condiciones",
     "advancedLabel_other": "Avanzada: {{count}} condiciones",
