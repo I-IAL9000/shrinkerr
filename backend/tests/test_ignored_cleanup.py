@@ -67,6 +67,27 @@ async def test_override_converts_them(library):
 
 
 @pytest.mark.asyncio
+async def test_converting_them_keeps_the_encode_rules(library):
+    """"Convert ignored files too" dropped every rule for every file in the
+    batch: the maintainer's Movies rule (P4) was lost for ten films queued
+    beside one an ignore rule kept, and they encoded at Settings' P3. It
+    lifts what keeps a file from converting — ignore and skip rules, the
+    Ignored mark — and encode rules still apply: an ignored file gets the
+    first one that matches it."""
+    from backend.routes.jobs import EstimateRequest, estimate_jobs
+    from backend.tests.test_vmaf_target_rules import _rule
+    await _rule("Exclude", "/m/Plain (2004)", action="ignore")
+    await _rule("Movies", "/m", nvenc_preset="p4")
+    assert set(await _queue(library, override_rules=True)) == set(FILES)
+    async with aiosqlite.connect(library) as db:
+        async with db.execute("SELECT file_path, nvenc_preset FROM jobs") as cur:
+            assert dict(await cur.fetchall()) == {path: "p4" for path in FILES}
+    estimate = await estimate_jobs(EstimateRequest(file_paths=list(FILES), override_rules=True))
+    assert estimate["by_type"] == {"convert": 1, "audio": 0, "combined": 3}
+    assert estimate["auto"]["preset"] == {"settings": {}, "rules": {"p4": 4}}
+
+
+@pytest.mark.asyncio
 async def test_the_estimate_says_the_same(library):
     from backend.routes.jobs import EstimateRequest, estimate_jobs
     plain = await estimate_jobs(EstimateRequest(file_paths=list(FILES)))

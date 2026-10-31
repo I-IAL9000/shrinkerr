@@ -521,7 +521,7 @@ async def get_skip_prefixes() -> list[str]:
 
 
 async def resolve_rules_for_batch(file_paths: list[str], extra_context: dict | None = None,
-                                  explain: bool = False) -> dict[str, Optional[dict]]:
+                                  explain: bool = False, encode_only: bool = False) -> dict[str, Optional[dict]]:
     """For each file path, find the first matching encoding rule.
 
     Condition types include directory, source, resolution, video_codec,
@@ -536,6 +536,8 @@ async def resolve_rules_for_batch(file_paths: list[str], extra_context: dict | N
     `explain` (the Settings tester, v0.10.0): file_path -> {"matched": that,
     "scanned": bool, "rules": every rule with whether it and each of its
     conditions matched}.
+    `encode_only`: encode rules only, ignore and skip rules passed over —
+    Add to Queue converting ignored files (v0.10.0).
     """
     if not file_paths:
         return {}
@@ -546,7 +548,7 @@ async def resolve_rules_for_batch(file_paths: list[str], extra_context: dict | N
         async with db.execute(
             "SELECT * FROM encoding_rules WHERE enabled = 1 ORDER BY priority ASC"
         ) as cur:
-            rules = [dict(r) for r in await cur.fetchall()]
+            rules = [dict(r) for r in await cur.fetchall() if not encode_only or r["action"] == "encode"]
 
         if not rules:
             return {fp: {"matched": None, "scanned": None, "rules": []} if explain else None for fp in file_paths}

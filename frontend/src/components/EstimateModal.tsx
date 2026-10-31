@@ -62,6 +62,9 @@ const CPU_PRESETS: { value: string; label: string; suffixKey?: string }[] = [
 ];
 
 const NVENC_PRESET_IDS = ["p1", "p2", "p3", "p4", "p5", "p6", "p7"];
+const ENCODER_NAMES: Record<string, string> = {
+  nvenc: "NVENC", libx265: "libx265 (CPU)", qsv: "Intel QSV", vaapi: "VAAPI", videotoolbox: "VideoToolbox",
+};
 
 interface EstimateModalProps {
   filePaths: string[];
@@ -173,14 +176,45 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   // and let the global QSV/VAAPI settings apply. v0.3.69+.
   const isHwHevc = effectiveEncoder === "qsv" || effectiveEncoder === "vaapi" || effectiveEncoder === "videotoolbox";
 
+  // The VMAF target finding every conversion's quality: the quality can't be
+  // set (it was only the search's start; a file the search can't test keeps
+  // its own). Files it doesn't search — a rule's Off, under two minutes —
+  // still take it.
+  const conversions = (estimate?.by_type?.convert || 0) + (estimate?.by_type?.combined || 0);
+  const searching = Object.values((estimate?.vmaf_target?.targets || {}) as Record<string, number>)
+    .reduce((n, files) => n + files, 0);
+  const unsearched = Math.max(0, conversions - searching);
+  const cqBySearch = searching > 0 && unsearched === 0;
+  const cqUsed = cqBySearch ? null : cq;
+
+  // What an "Auto" comes to (estimate.auto): Settings' value, and the ones
+  // rules give their files instead.
+  const autoLabel = (field: string, name: (value: string) => string = v => v): string => {
+    const found = estimate?.auto?.[field];
+    const settings = Object.keys(found?.settings || {}).map(name);
+    const rules = Object.keys(found?.rules || {}).map(name);
+    const parts = [
+      ...(settings.length ? [t("scannerModals:overrides.autoSettings", { value: settings.join(", ") })] : []),
+      ...(rules.length ? [t("scannerModals:overrides.autoRule", { count: rules.length, value: rules.join(", ") })] : []),
+    ];
+    return parts.length ? parts.join(" · ") : t("scannerModals:overrides.auto");
+  };
+  const presetName = (v: string) => CPU_PRESETS.find(p => p.value === v)?.label ?? v.toUpperCase();
+  const audioName = (v: string) => {
+    if (v === "copy") return t("scannerModals:overrides.audioCopy");
+    const [codec, bitrate] = v.split(":");
+    return `${codec.toUpperCase()} ${bitrate}k`;
+  };
+  const resolutionName = (v: string) => v === "copy" ? t("scannerModals:overrides.keepOriginal") : v;
+
   // Debounced estimate refresh
   useEffect(() => {
     if (!settingsRead) return;
     setLoading(true);
     const overrides: Record<string, any> = {};
-    if (cq !== null) {
-      if (isCpu) overrides.libx265_crf_override = cq;
-      else overrides.nvenc_cq_override = cq;
+    if (cqUsed !== null) {
+      if (isCpu) overrides.libx265_crf_override = cqUsed;
+      else overrides.nvenc_cq_override = cqUsed;
     }
     if (forceReencode) overrides.force_reencode = true;
     if (cleanupOnly) overrides.cleanup_only = true;  // the estimate converts nothing either
@@ -200,7 +234,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
       setEstimate({ total_files: 0, error: err?.message || t("scannerModals:estimate.unknownError") });
       setLoading(false);
     });
-  }, [settingsRead, overrideRules, cq, forceReencode, cleanupOnly, isCpu, encoder, directPlay, dpFixes, resolution, vmafOverride]);
+  }, [settingsRead, overrideRules, cqUsed, forceReencode, cleanupOnly, isCpu, encoder, directPlay, dpFixes, resolution, vmafOverride]);
   const buildOverrides = (): EncodingOverrides | undefined => {
     const o: EncodingOverrides = {};
     if (encoder !== null) o.encoder = encoder;
@@ -208,9 +242,9 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
       if (isCpu) o.libx265_preset = preset;
       else o.nvenc_preset = preset;
     }
-    if (cq !== null) {
-      if (isCpu) o.libx265_crf = cq;
-      else o.nvenc_cq = cq;
+    if (cqUsed !== null) {
+      if (isCpu) o.libx265_crf = cqUsed;
+      else o.nvenc_cq = cqUsed;
     }
     if (audioCdc !== null) o.audio_codec = audioCdc;
     if (audioBr !== null) o.audio_bitrate = audioBr;
@@ -565,7 +599,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                     <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.encoder")}</label>
                     <select aria-label={t("scannerModals:overrides.encoder")} value={encoder ?? ""} onChange={e => { setEncoder(e.target.value || null); setPreset(null); }}
                       style={{ flex: 1, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
-                      <option value="">{t("scannerModals:overrides.auto")}</option>
+                      <option value="">{autoLabel("encoder", v => ENCODER_NAMES[v] ?? v)}</option>
                       {(encoderCaps?.nvenc ?? true) && <option value="nvenc">NVENC (NVIDIA GPU)</option>}
                       {encoderCaps?.qsv && <option value="qsv">Intel QSV</option>}
                       {encoderCaps?.vaapi && <option value="vaapi">VAAPI (Intel/AMD)</option>}
@@ -574,42 +608,8 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                     </select>
                   </div>
 
-                  {/* Quality CQ/CRF — hidden for QSV/VAAPI which use their own
-                      global settings (Settings → Encoding). Per-batch QSV/VAAPI
-                      overrides aren't surfaced in v0.3.69; could add later if
-                      requested. */}
-                  {!isHwHevc && <>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.quality", { mode: isCpu ? "CRF" : "CQ" })}</label>
-                    <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
-                      <input type="range" min={15} max={40} value={cqSlider ?? cq ?? (estimate?.cq || 20)}
-                        aria-label={t("scannerModals:overrides.quality", { mode: isCpu ? "CRF" : "CQ" })}
-                        onChange={e => setCqSlider(Number(e.target.value))}
-                        onMouseUp={e => { const v = Number((e.target as HTMLInputElement).value); setCq(v); setCqSlider(null); }}
-                        onTouchEnd={e => { const v = Number((e.target as HTMLInputElement).value); setCq(v); setCqSlider(null); }}
-                        // FE#23: arrow-key changes were shown but never applied.
-                        onKeyUp={e => { const v = Number((e.target as HTMLInputElement).value); setCq(v); setCqSlider(null); }}
-                        style={{ flex: 1, accentColor: "var(--accent)" }} />
-                      <span style={{ fontSize: 12, color: (cqSlider ?? cq) !== null ? "white" : "var(--text-muted)", fontWeight: 600, width: 24, textAlign: "center" }}>
-                        {cqSlider ?? cq ?? (estimate?.cq || 20)}
-                      </span>
-                      {cq !== null && (
-                        <button onClick={() => setCq(null)} className="btn btn-xs btn-ghost">
-                          {t("scannerModals:overrides.reset")}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  {/* With a VMAF target the quality only starts the search (v0.10.0). */}
-                  {vmafTargets.length > 0 && (
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "0 0 0 90px" }}>
-                      {t("scannerModals:overrides.qualityStartsSearch")}
-                    </div>
-                  )}
-                  </>}
-
                   {/* The VMAF target (v0.10.0): Settings' or a rule's, Off — the
-                      quality above, no search — or a score of this batch's own.
+                      quality below, no search — or a score of this batch's own.
                       With the target on there was no way to queue at a set CQ. */}
                   {!cleanupOnly && <>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -637,6 +637,42 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                   </div>
                   </>}
 
+                  {/* Quality CQ/CRF — hidden for QSV/VAAPI which use their own
+                      global settings (Settings → Encoding). Per-batch QSV/VAAPI
+                      overrides aren't surfaced in v0.3.69; could add later if
+                      requested. */}
+                  {!isHwHevc && <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.quality", { mode: isCpu ? "CRF" : "CQ" })}</label>
+                    <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
+                      <input type="range" min={15} max={40} value={cqSlider ?? cqUsed ?? (estimate?.cq || 20)}
+                        aria-label={t("scannerModals:overrides.quality", { mode: isCpu ? "CRF" : "CQ" })}
+                        disabled={cqBySearch}
+                        onChange={e => setCqSlider(Number(e.target.value))}
+                        onMouseUp={e => { const v = Number((e.target as HTMLInputElement).value); setCq(v); setCqSlider(null); }}
+                        onTouchEnd={e => { const v = Number((e.target as HTMLInputElement).value); setCq(v); setCqSlider(null); }}
+                        // FE#23: arrow-key changes were shown but never applied.
+                        onKeyUp={e => { const v = Number((e.target as HTMLInputElement).value); setCq(v); setCqSlider(null); }}
+                        style={{ flex: 1, accentColor: "var(--accent)", opacity: cqBySearch ? 0.4 : 1 }} />
+                      <span style={{ fontSize: 12, color: (cqSlider ?? cqUsed) !== null ? "white" : "var(--text-muted)", fontWeight: 600, width: 24, textAlign: "center" }}>
+                        {cqSlider ?? cqUsed ?? (estimate?.cq || 20)}
+                      </span>
+                      {cqUsed !== null && (
+                        <button onClick={() => setCq(null)} className="btn btn-xs btn-ghost">
+                          {t("scannerModals:overrides.reset")}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {/* What the quality is for with a VMAF target (v0.10.0). */}
+                  {searching > 0 && (
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "0 0 0 90px" }}>
+                      {cqBySearch ? t("scannerModals:overrides.qualityBySearch")
+                        : t("scannerModals:overrides.qualityForSome", { count: unsearched, num: fmtNum(unsearched) })}
+                    </div>
+                  )}
+                  </>}
+
                   {/* Preset — hidden for QSV/VAAPI for the same reason as
                       Quality above. */}
                   {!isHwHevc && (
@@ -644,7 +680,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                     <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.preset")}</label>
                     <select aria-label={t("scannerModals:overrides.preset")} value={preset ?? ""} onChange={e => setPreset(e.target.value || null)}
                       style={{ flex: 1, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
-                      <option value="">{t("scannerModals:overrides.auto")}</option>
+                      <option value="">{autoLabel("preset", presetName)}</option>
                       {isCpu ? (
                         CPU_PRESETS.map(p => <option key={p.value} value={p.value}>{p.suffixKey ? `${p.label} ${t(`scannerModals:overrides.${p.suffixKey}`)}` : p.label}</option>)
                       ) : (
@@ -668,7 +704,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                     <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.audio")}</label>
                     <select aria-label={t("scannerModals:overrides.audio")} value={audioCdc ?? ""} onChange={e => setAudioCdc(e.target.value || null)}
                       style={{ flex: 1, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
-                      <option value="">{t("scannerModals:overrides.auto")}</option>
+                      <option value="">{autoLabel("audio", audioName)}</option>
                       <option value="copy">{t("scannerModals:overrides.audioCopy")}</option>
                       <option value="eac3">EAC3 (Dolby Digital+)</option>
                       <option value="ac3">AC3 (Dolby Digital)</option>
@@ -694,7 +730,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                     <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.resolution")}</label>
                     <select aria-label={t("scannerModals:overrides.resolution")} value={resolution ?? ""} onChange={e => setResolution(e.target.value || null)}
                       style={{ flex: 1, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
-                      <option value="">{t("scannerModals:overrides.autoKeepOriginal")}</option>
+                      <option value="">{autoLabel("resolution", resolutionName)}</option>
                       <option value="1080p">1080p</option>
                       <option value="720p">720p</option>
                       <option value="480p">480p</option>

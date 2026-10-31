@@ -109,7 +109,7 @@ async def add_bulk_jobs(payload: BulkJobCreate):
 class BulkQueueFromScanRequest(BaseModel):
     file_paths: list[str] = []
     priority: int = 0  # 0=Normal, 1=High, 2=Highest
-    override_rules: bool = False  # When True, ignore encoding rules
+    override_rules: bool = False  # Convert ignored files too: ignore and skip rules passed over
     # Queued by Shrinkerr itself (policies; v0.10.0): files that came out
     # larger when converted are left as they are, as for new downloads.
     automatic: bool = False
@@ -482,11 +482,12 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
     download's NZBGet category, for rules that match on it."""
     from backend.rule_resolver import resolve_rules_for_batch
 
-    # Resolve encoding rules for all files in batch (unless overridden)
-    if payload.override_rules:
-        rule_results = {}
-    else:
-        rule_results = await resolve_rules_for_batch(file_paths, extra_context=rule_context)
+    # Resolve encoding rules for all files in batch. Converting ignored files
+    # too (override_rules) passes over the rules that stop a conversion; the
+    # encode rules still apply — it dropped them all, and a batch's films
+    # lost their rule's preset (v0.10.0).
+    rule_results = await resolve_rules_for_batch(file_paths, extra_context=rule_context,
+                                                 encode_only=payload.override_rules)
 
     db = await connect_db()
     try:
@@ -2066,10 +2067,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         file_paths = [p for p in file_paths if not p.endswith("/")]
         file_paths += await _paths_matching(payload.filter or "all", folder_paths)
 
-    if payload.override_rules:
-        rule_results = {}
-    else:
-        rule_results = await resolve_rules_for_batch(file_paths)
+    rule_results = await resolve_rules_for_batch(file_paths, encode_only=payload.override_rules)  # as add-from-scan
 
     db = await connect_db()
     try:
@@ -2078,7 +2076,8 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         from backend.content_detect import SMART_CQ_KEYS
         est_keys = ('backup_original_days', 'trash_original_after_conversion', 'skip_hardlinked', 'maintainerr_skip',
                     'target_resolution', 'image_subs_keep_original', 'vmaf_target_enabled', 'vmaf_target_score',
-                    'vmaf_analysis_enabled', 'vmaf_min_score', *SMART_CQ_KEYS, *QUALITY_KEYS)
+                    'vmaf_analysis_enabled', 'vmaf_min_score', 'nvenc_preset', 'libx265_preset', 'audio_codec',
+                    'audio_bitrate', *SMART_CQ_KEYS, *QUALITY_KEYS)
         est_settings = {}
         async with db.execute(
             f"SELECT key, value FROM settings WHERE key IN ({','.join('?' for _ in est_keys)})", est_keys
@@ -2203,6 +2202,19 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         }
         vmaf_targets: dict[str, int] = {}
         vmaf_fixed_by_rule = 0
+        # What Add to Queue's "Auto"s come to (v0.10.0): over the files
+        # converted, the values Settings give and the ones rules give instead,
+        # each with how many files get it.
+        from backend.routes.settings import _ENCODING_DEFAULTS
+
+        def _setting(key: str) -> str:
+            return str(est_settings.get(key) or _ENCODING_DEFAULTS.get(key) or "")
+        auto: dict[str, dict[str, dict[str, int]]] = {
+            field: {"settings": {}, "rules": {}} for field in ("encoder", "preset", "audio", "resolution")}
+
+        def _auto(field: str, value: str, by_rule: bool) -> None:
+            counts = auto[field]["rules" if by_rule else "settings"]
+            counts[value] = counts.get(value, 0) + 1
 
         print(f"[ESTIMATE] {len(file_paths)} file(s) to estimate, {len(scan_rows)} found in scan_results, {len(ignored_set)} ignored", flush=True)
         if len(file_paths) > 0 and len(scan_rows) == 0:
@@ -2283,6 +2295,18 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
 
             # The encoder the job gets: the dialog's, a rule's, the default.
             file_encoder = payload.encoder or (rule.get("encoder") if rule else None) or default_encoder
+
+            if jt in ("convert", "combined"):
+                r = rule or {}
+                _auto("encoder", r.get("encoder") or default_encoder, bool(r.get("encoder")))
+                preset_key = {"nvenc": "nvenc_preset", "libx265": "libx265_preset"}.get(file_encoder)
+                if preset_key:  # Quick Sync, VAAPI and VideoToolbox take theirs from Settings only
+                    _auto("preset", r.get(preset_key) or _setting(preset_key), bool(r.get(preset_key)))
+                codec = r.get("audio_codec") or _setting("audio_codec")
+                _auto("audio", codec if codec == "copy" else f"{codec}:{r.get('audio_bitrate') or _setting('audio_bitrate')}",
+                      bool(r.get("audio_codec") or r.get("audio_bitrate")))
+                _auto("resolution", r.get("target_resolution") or _setting("target_resolution"),
+                      bool(r.get("target_resolution")))
 
             # Per-file time estimate — pick speed factor based on target encoder
             file_dur = float(row.get("duration") or 0)
@@ -2471,6 +2495,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             "resolution_breakdown": resolution_breakdown,
             "smart_encoding": smart_settings["content_detect"] or smart_settings["resolution_aware"],
             "vmaf_target": {"targets": vmaf_targets, "fixed_by_rule": vmaf_fixed_by_rule},  # v0.10.0
+            "auto": auto,
             "vmaf_target_search_seconds": search_seconds,
         }
     finally:

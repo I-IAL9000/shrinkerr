@@ -84,3 +84,26 @@ async def test_the_queue_changes_waiting_conversions_targets(library):
     assert await targets() == {PLAIN: 95, "/m/clean.mkv": None}
     await _refused(bulk_update_settings(BulkUpdateSettingsRequest(job_ids=ids, vmaf_target=70)),
                    "rules.vmafTargetRange")
+
+
+@pytest.mark.asyncio
+async def test_the_estimate_says_what_each_auto_comes_to(library):
+    """Add to Queue's Encoder, Preset, Audio and Resolution said "Auto" (and
+    Resolution "keep original", whatever Settings had): each now names
+    Settings' value and the ones rules give their files instead."""
+    from backend.routes.jobs import EstimateRequest, estimate_jobs
+    await _settings(library, default_encoder="nvenc", nvenc_preset="p3", audio_codec="eac3", audio_bitrate=640)
+    await _rule("Films", "/m/Films", nvenc_preset="p4", target_resolution="1080p")
+    await _rule("Reality", "/m/Reality", encoder="libx265", audio_codec="copy")
+    auto = (await estimate_jobs(EstimateRequest(file_paths=[FILM, PLAIN, REALITY])))["auto"]
+    assert auto == {
+        "encoder": {"settings": {"nvenc": 2}, "rules": {"libx265": 1}},
+        "preset": {"settings": {"p3": 1, "medium": 1}, "rules": {"p4": 1}},  # Reality's libx265: Settings' medium
+        "audio": {"settings": {"eac3:640": 2}, "rules": {"copy": 1}},
+        "resolution": {"settings": {"copy": 2}, "rules": {"1080p": 1}},
+    }
+    # The dialog's encoder decides which preset each file has.
+    cpu = (await estimate_jobs(EstimateRequest(file_paths=[FILM, PLAIN], encoder="libx265")))["auto"]
+    assert cpu["preset"] == {"settings": {"medium": 2}, "rules": {}}
+    assert (await estimate_jobs(EstimateRequest(file_paths=[FILM], cleanup_only=True)))["auto"]["preset"] == {
+        "settings": {}, "rules": {}}  # nothing converted

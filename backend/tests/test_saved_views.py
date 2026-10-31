@@ -109,7 +109,7 @@ async def test_auto_queue_can_be_limited_to_a_view(env):
         def __init__(self, path):
             self.file_path = path
     with patch("backend.rule_resolver.resolve_rules_for_batch",
-               new=AsyncMock(side_effect=lambda paths, extra_context=None: {p: None for p in paths})):
+               new=AsyncMock(side_effect=lambda paths, extra_context=None, encode_only=False: {p: None for p in paths})):
         assert await FileWatcher(env)._auto_queue_new_files([Scanned(p) for p in FILES]) == 1
     async with aiosqlite.connect(env) as db:
         async with db.execute("SELECT file_path FROM jobs") as cur:

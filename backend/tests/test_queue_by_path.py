@@ -112,7 +112,7 @@ async def test_add_by_path_follows_an_ignore_rule(env):
     a = file("A.mkv", probe([track(1, "eng"), track(2, "fre")]))
     b = file("B.mkv", probe([track(1, "eng")]))
 
-    async def rules(paths, extra_context=None):
+    async def rules(paths, extra_context=None, encode_only=False):
         return {p: _rule(action="ignore") for p in paths}
     with _rules(rules):
         await add_jobs_by_path(AddByPathRequest(file_paths=[a, b]))
@@ -127,7 +127,7 @@ async def test_add_by_path_passes_the_download_category_to_the_rules(env):
     f = file("Film.mkv", probe([track(1, "eng")]))
     seen = []
 
-    async def rules(paths, extra_context=None):
+    async def rules(paths, extra_context=None, encode_only=False):
         seen.append(extra_context)
         return {p: None for p in paths}
     with _rules(rules):
@@ -142,7 +142,7 @@ async def test_the_webhook_applies_rules(env):
     keep = file("Keep.mkv", probe([track(1, "eng")]))
     skip = file("Skip.mkv", probe([track(1, "eng")]))
 
-    async def rules(paths, extra_context=None):
+    async def rules(paths, extra_context=None, encode_only=False):
         return {keep: _rule(nvenc_cq=30, queue_priority=2), skip: _rule(action="skip")}
     with _rules(rules):
         assert (await webhook_queue(WebhookQueueRequest(paths=[keep, skip])))["added"] == 1
