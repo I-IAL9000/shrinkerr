@@ -83,8 +83,11 @@ BENIGN_PATTERNS: tuple[re.Pattern, ...] = tuple(re.compile(p, re.IGNORECASE) for
     # many streaming-service rips trip these warnings but play perfectly in
     # Plex / MPV / VLC / hardware decoders. Codec-scoped to avoid shadowing
     # real decode errors from other streams.
-    r"\[eac3 @ [^\]]+\]\s*expacc \d+ is out-of-range",
-    r"\[eac3 @ [^\]]+\]\s*exponent \d+ is out-of-range",  # the same check's other message (v0.10.0)
+    r"\[eac3 @ [^\]]+\]\s*expacc -?\d+ is out-of-range",
+    # The same check's other message (v0.10.0); the exponent can be negative
+    # ("exponent -1": a playable episode was marked corrupt, its sibling with
+    # "expacc 125" only warned).
+    r"\[eac3 @ [^\]]+\]\s*exponent -?\d+ is out-of-range",
     r"\[eac3 @ [^\]]+\]\s*error decoding the audio block",
 ))
 

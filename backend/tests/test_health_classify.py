@@ -32,6 +32,11 @@ def test_an_eac3_exponent_out_of_range_is_a_warning():
     reported = ("[eac3 @ 0x55a119252540] exponent 25 is out-of-range\n"
                 "[eac3 @ 0x55a119252540] error decoding the audio block\n")
     assert classify_errors(reported, 0)[0] == "warnings"
+    # The exponent can be negative: 90 Day Fiancé S12E13 (WEB-DL, E-AC3 copied
+    # from the source) was marked corrupt for it, S12E16's "expacc 125" warned.
+    negative = ("[eac3 @ 0x561346042000] exponent -1 is out-of-range\n"
+                "[eac3 @ 0x561346042000] error decoding the audio block\n")
+    assert classify_errors(negative, 0)[0] == "warnings"
     assert classify_errors("[ac3 @ 0x1] exponent 25 is out-of-range\n", 0)[0] == "corrupt"  # E-AC3 only, as before
 
 
