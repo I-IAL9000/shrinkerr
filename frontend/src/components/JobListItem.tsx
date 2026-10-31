@@ -13,6 +13,7 @@ import { pressable } from "../utils/a11y";
 import PendingJobPlan from "./PendingJobPlan";
 import { useRequestReplacement } from "../useRequestReplacement";
 import BeforeAfter from "./BeforeAfter";
+import { CODEC_LABELS } from "../codecLabels";
 
 interface JobListItemProps {
   job: Job;
@@ -427,7 +428,15 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
                     jobs don't change the video codec. */}
                 {job.job_type !== "audio" && <>
                   <span style={{ color: "var(--text-muted)" }}>{t("queue:item.stats.codec")}</span>
-                  <span style={{ color: "var(--text-secondary)" }}>x264</span>
+                  {/* The original's codec, named as the Scanner names it; a job
+                      from before it was recorded (v0.10.0) leaves it blank. It
+                      said "x264" for every original. */}
+                  <span style={{ color: "var(--text-secondary)" }}>
+                    {logData.encoding_stats.source_codec
+                      ? CODEC_LABELS[logData.encoding_stats.source_codec.toLowerCase()]
+                        || logData.encoding_stats.source_codec.toUpperCase()
+                      : ""}
+                  </span>
                   {/* Match the v0.3.30 rename rule: libx265 → "x265" (the
                       specific encoder), hardware encoders → "h265" (the
                       codec spec, encoder-agnostic) tagged with which one
