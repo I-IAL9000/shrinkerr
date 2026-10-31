@@ -92,6 +92,8 @@ const inputStyle: React.CSSProperties = {
 };
 
 const labelStyle = { color: "var(--text-muted)", fontSize: 13, marginBottom: 6 };
+// A checkbox's label: centred on the box (labelStyle's bottom margin lifted it).
+const checkboxLabelStyle = { ...labelStyle, marginBottom: 0 };
 const helpStyle = { fontSize: 12, color: "var(--text-muted)", marginTop: 4, paddingLeft: 0 };
 
 // Conversion Guide section (v0.9.142): `encoders` = which default encoders it
@@ -990,7 +992,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       <input type="checkbox" checked={encoding.direct_play_on_convert ?? false}
                         onChange={() => setEncoding({ ...encoding, direct_play_on_convert: !(encoding.direct_play_on_convert ?? false) })}
                         style={{ accentColor: "var(--accent)" }} />
-                      <span style={labelStyle}>{t("settingsMedia:video.directPlayOnConvert")}</span>
+                      <span style={checkboxLabelStyle}>{t("settingsMedia:video.directPlayOnConvert")}</span>
                     </label>
                     <div style={helpStyle}>{t("settingsMedia:video.directPlayOnConvertHelp")}</div>
                   </div>
@@ -1296,7 +1298,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             onChange={(e) => setEncoding({ ...encoding, qsv_lookahead: e.target.checked })}
                             style={{ accentColor: "var(--accent)" }}
                           />
-                          <span style={labelStyle}>{t("settingsMedia:video.lookahead.label")}</span>
+                          <span style={checkboxLabelStyle}>{t("settingsMedia:video.lookahead.label")}</span>
                         </label>
                         <div style={helpStyle}>
                           {t("settingsMedia:video.lookahead.help")}
@@ -1418,7 +1420,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         checked={encoding.content_type_detection === true || encoding.content_type_detection === "true"}
                         onChange={(e) => setEncoding({ ...encoding, content_type_detection: e.target.checked })}
                         style={{ accentColor: "var(--accent)" }} />
-                      <span style={labelStyle}>{t("settingsMedia:video.smart.contentType")}</span>
+                      <span style={checkboxLabelStyle}>{t("settingsMedia:video.smart.contentType")}</span>
                     </label>
                     <div style={helpStyle}>
                       {t("settingsMedia:video.smart.contentTypeHelp")}
@@ -1488,7 +1490,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         checked={encoding.vmaf_analysis_enabled === true || encoding.vmaf_analysis_enabled === "true" || (encoding.vmaf_analysis_enabled == null)}
                         onChange={(e) => setEncoding({ ...encoding, vmaf_analysis_enabled: e.target.checked })}
                         style={{ accentColor: "var(--accent)" }} />
-                      <span style={labelStyle}>{t("settingsMedia:video.smart.vmaf")}</span>
+                      <span style={checkboxLabelStyle}>{t("settingsMedia:video.smart.vmaf")}</span>
                     </label>
                     <div style={helpStyle}>
                       <Trans i18nKey="settingsMedia:video.smart.vmafHelp" components={{ b: <strong /> }} />
@@ -1498,7 +1500,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       <input type="checkbox" checked={encoding.compare_frames ?? true}
                         onChange={(e) => setEncoding({ ...encoding, compare_frames: e.target.checked })}
                         style={{ accentColor: "var(--accent)" }} />
-                      <span style={labelStyle}>{t("settingsMedia:video.smart.compareFrames")}</span>
+                      <span style={checkboxLabelStyle}>{t("settingsMedia:video.smart.compareFrames")}</span>
                     </label>
                     <div style={helpStyle}>{t("settingsMedia:video.smart.compareFramesHelp")}</div>
                     <table style={{ fontSize: 12, borderCollapse: "collapse", marginTop: 8, width: "100%" }}>
@@ -1546,7 +1548,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                               onChange={(e) => setEncoding({ ...encoding, vmaf_min_score: e.target.checked ? 88 : 0 })}
                               style={{ accentColor: "var(--accent)" }}
                             />
-                            <span style={labelStyle}>{t("settingsMedia:video.smart.minScore")}</span>
+                            <span style={checkboxLabelStyle}>{t("settingsMedia:video.smart.minScore")}</span>
                           </label>
                           <div style={{ ...helpStyle, marginLeft: 26 }}>
                             <Trans i18nKey="settingsMedia:video.smart.minScoreHelp" components={{ b: <strong /> }} />
@@ -1587,7 +1589,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             <input type="checkbox" checked={on}
                               onChange={(e) => setEncoding({ ...encoding, vmaf_target_enabled: e.target.checked })}
                               style={{ accentColor: "var(--accent)" }} />
-                            <span style={labelStyle}>{t("settingsMedia:video.smart.target")}</span>
+                            <span style={checkboxLabelStyle}>{t("settingsMedia:video.smart.target")}</span>
                           </label>
                           <div style={{ ...helpStyle, marginLeft: 26 }}>{t("settingsMedia:video.smart.targetHelp")}</div>
                           {on && (
@@ -1611,7 +1613,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         checked={encoding.resolution_aware_cq === true || encoding.resolution_aware_cq === "true"}
                         onChange={(e) => setEncoding({ ...encoding, resolution_aware_cq: e.target.checked })}
                         style={{ accentColor: "var(--accent)" }} />
-                      <span style={labelStyle}>{t("settingsMedia:video.smart.resAware")}</span>
+                      <span style={checkboxLabelStyle}>{t("settingsMedia:video.smart.resAware")}</span>
                     </label>
                     <div style={helpStyle}>
                       {t("settingsMedia:video.smart.resAwareHelp")}
@@ -1917,7 +1919,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     readOnly
                     onClick={() => setEncoding({ ...encoding, audio_cleanup_enabled: !(encoding?.audio_cleanup_enabled ?? true) })}
                     style={{ flexShrink: 0 }} />
-                  <span style={labelStyle}>{t("settingsMedia:audio.removeUnwanted")}</span>
+                  <span style={checkboxLabelStyle}>{t("settingsMedia:audio.removeUnwanted")}</span>
                 </label>
                 {/* v0.10.0: only the languages to keep depend on removing tracks —
                     language detection, conversion and the stereo track were
@@ -1985,7 +1987,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <input type="checkbox" checked={encoding.always_keep_dedup !== false}
                       onChange={() => setEncoding({ ...encoding, always_keep_dedup: encoding.always_keep_dedup === false })}
                       style={{ flexShrink: 0 }} />
-                    <span style={labelStyle}>{t("settingsMedia:audio.dedup.label")}</span>
+                    <span style={checkboxLabelStyle}>{t("settingsMedia:audio.dedup.label")}</span>
                   </label>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
                     {t("settingsMedia:audio.dedup.help")}
@@ -1996,7 +1998,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <input type="checkbox" checked={encoding.keep_native_language !== false}
                       onChange={() => setEncoding({ ...encoding, keep_native_language: encoding.keep_native_language === false })}
                       style={{ flexShrink: 0 }} />
-                    <span style={labelStyle}>{t("settingsMedia:audio.keepNative.label")}</span>
+                    <span style={checkboxLabelStyle}>{t("settingsMedia:audio.keepNative.label")}</span>
                   </label>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
                     {t("settingsMedia:audio.keepNative.help")}
@@ -2009,7 +2011,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <input type="checkbox" checked={encoding.reorder_native_audio !== false}
                       onChange={() => setEncoding({ ...encoding, reorder_native_audio: encoding.reorder_native_audio === false })}
                       style={{ flexShrink: 0 }} />
-                    <span style={labelStyle}>{t("settingsMedia:audio.reorderNative.label")}</span>
+                    <span style={checkboxLabelStyle}>{t("settingsMedia:audio.reorderNative.label")}</span>
                   </label>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
                     {t("settingsMedia:audio.reorderNative.help")}
@@ -2020,7 +2022,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <input type="checkbox" checked={encoding.auto_detect_languages !== false}
                       onChange={() => setEncoding({ ...encoding, auto_detect_languages: encoding.auto_detect_languages === false })}
                       style={{ flexShrink: 0 }} />
-                    <span style={labelStyle}>{t("settingsMedia:audio.autoDetect.label")}</span>
+                    <span style={checkboxLabelStyle}>{t("settingsMedia:audio.autoDetect.label")}</span>
                   </label>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
                     {t("settingsMedia:audio.autoDetect.help")}
@@ -2106,7 +2108,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           readOnly
                           onClick={() => setEncoding({ ...encoding, auto_convert_lossless: !encoding.auto_convert_lossless })}
                           style={{ flexShrink: 0 }} />
-                        <span style={labelStyle}>{t("settingsMedia:audio.lossless.label")}</span>
+                        <span style={checkboxLabelStyle}>{t("settingsMedia:audio.lossless.label")}</span>
                       </label>
                       <div style={{ ...helpStyle, paddingLeft: 26 }}>
                         {t("settingsMedia:audio.lossless.help")}
@@ -2142,7 +2144,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             <input type="checkbox" checked={encoding.convert_dts ?? false}
                               onChange={() => setEncoding({ ...encoding, convert_dts: !encoding.convert_dts })}
                               style={{ flexShrink: 0 }} />
-                            <span style={labelStyle}>{t("settingsMedia:audio.lossless.convertDts")}</span>
+                            <span style={checkboxLabelStyle}>{t("settingsMedia:audio.lossless.convertDts")}</span>
                           </label>
                           {/* v0.10.0: a lossy encode keeps the bed and drops the objects */}
                           <div>
@@ -2150,7 +2152,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                               <input type="checkbox" checked={encoding.lossless_keep_object_audio ?? true}
                                 onChange={() => setEncoding({ ...encoding, lossless_keep_object_audio: !(encoding.lossless_keep_object_audio ?? true) })}
                                 style={{ flexShrink: 0 }} />
-                              <span style={labelStyle}>{t("settingsMedia:audio.lossless.keepObjects")}</span>
+                              <span style={checkboxLabelStyle}>{t("settingsMedia:audio.lossless.keepObjects")}</span>
                             </label>
                             <div style={{ ...helpStyle, paddingLeft: 26 }}>{t("settingsMedia:audio.lossless.keepObjectsHelp")}</div>
                           </div>
@@ -2164,7 +2166,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         <input type="checkbox" checked={encoding.audio_compat_track ?? false}
                           onChange={() => setEncoding({ ...encoding, audio_compat_track: !encoding.audio_compat_track })}
                           style={{ flexShrink: 0 }} />
-                        <span style={labelStyle}>{t("settingsMedia:audio.compat.label")}</span>
+                        <span style={checkboxLabelStyle}>{t("settingsMedia:audio.compat.label")}</span>
                       </label>
                       <div style={{ ...helpStyle, paddingLeft: 26 }}>{t("settingsMedia:audio.compat.help")}</div>
                       {encoding.audio_compat_track && (
@@ -2301,7 +2303,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     readOnly
                     onClick={() => setEncoding({ ...encoding, sub_cleanup_enabled: !(encoding?.sub_cleanup_enabled ?? true) })}
                     style={{ flexShrink: 0 }} />
-                  <span style={labelStyle}>{t("settingsMedia:subtitles.removeUnwanted")}</span>
+                  <span style={checkboxLabelStyle}>{t("settingsMedia:subtitles.removeUnwanted")}</span>
                 </label>
                 {(encoding?.sub_cleanup_enabled ?? true) && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 500 }}>
@@ -2371,7 +2373,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       readOnly
                       onClick={() => setEncoding({ ...encoding, sub_keep_unknown: !(encoding.sub_keep_unknown ?? true) })}
                       style={{ flexShrink: 0 }} />
-                    <span style={labelStyle}>{t("settingsMedia:subtitles.keepUnknown.label")}</span>
+                    <span style={checkboxLabelStyle}>{t("settingsMedia:subtitles.keepUnknown.label")}</span>
                   </label>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: -14, paddingLeft: 26 }}>
                     {t("settingsMedia:subtitles.keepUnknown.help")}
@@ -2382,7 +2384,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <input type="checkbox" checked={encoding.keep_native_subs === true || encoding.keep_native_subs === "true"}
                       onChange={() => setEncoding({ ...encoding, keep_native_subs: !(encoding.keep_native_subs === true || encoding.keep_native_subs === "true") })}
                       style={{ flexShrink: 0 }} />
-                    <span style={labelStyle}>{t("settingsMedia:subtitles.keepNative.label")}</span>
+                    <span style={checkboxLabelStyle}>{t("settingsMedia:subtitles.keepNative.label")}</span>
                   </label>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: -14, paddingLeft: 26 }}>
                     <Trans i18nKey="settingsMedia:subtitles.keepNative.help" components={{ b: <strong /> }} />
@@ -2393,7 +2395,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <input type="checkbox" checked={encoding.auto_detect_languages !== false}
                       onChange={() => setEncoding({ ...encoding, auto_detect_languages: encoding.auto_detect_languages === false })}
                       style={{ flexShrink: 0 }} />
-                    <span style={labelStyle}>{t("settingsMedia:subtitles.autoDetect.label")}</span>
+                    <span style={checkboxLabelStyle}>{t("settingsMedia:subtitles.autoDetect.label")}</span>
                   </label>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
                     {t("settingsMedia:subtitles.autoDetect.help")}
@@ -2409,7 +2411,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <input type="checkbox" checked={encoding.merge_external_subs ?? false}
                       onChange={() => setEncoding({ ...encoding, merge_external_subs: !(encoding.merge_external_subs ?? false) })}
                       style={{ flexShrink: 0 }} />
-                    <span style={labelStyle}>{t("settingsMedia:subtitles.external.merge")}</span>
+                    <span style={checkboxLabelStyle}>{t("settingsMedia:subtitles.external.merge")}</span>
                   </label>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: -4, paddingLeft: 26, marginBottom: 12 }}>
                     <Trans i18nKey="settingsMedia:subtitles.external.mergeHelp" components={{ code: <code /> }} />
@@ -2420,7 +2422,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       <input type="checkbox" checked={encoding.delete_external_subs_after_merge ?? false}
                         onChange={() => setEncoding({ ...encoding, delete_external_subs_after_merge: !(encoding.delete_external_subs_after_merge ?? false) })}
                         style={{ flexShrink: 0 }} />
-                      <span style={labelStyle}>{t("settingsMedia:subtitles.external.deleteAfter")}</span>
+                      <span style={checkboxLabelStyle}>{t("settingsMedia:subtitles.external.deleteAfter")}</span>
                     </label>
                   )}
                   {(encoding.merge_external_subs ?? false) && (encoding.delete_external_subs_after_merge ?? false) && (
@@ -2437,7 +2439,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <input type="checkbox" checked={encoding.image_subs_to_srt ?? false}
                       onChange={() => setEncoding({ ...encoding, image_subs_to_srt: !(encoding.image_subs_to_srt ?? false) })}
                       style={{ flexShrink: 0 }} />
-                    <span style={labelStyle}>{t("settingsMedia:subtitles.imageSubs.toSrt")}</span>
+                    <span style={checkboxLabelStyle}>{t("settingsMedia:subtitles.imageSubs.toSrt")}</span>
                   </label>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: -4, paddingLeft: 26, marginBottom: 12 }}>
                     {t("settingsMedia:subtitles.imageSubs.toSrtHelp")}
@@ -2447,7 +2449,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       <input type="checkbox" checked={encoding.image_subs_keep_original ?? true}
                         onChange={() => setEncoding({ ...encoding, image_subs_keep_original: !(encoding.image_subs_keep_original ?? true) })}
                         style={{ flexShrink: 0 }} />
-                      <span style={labelStyle}>{t("settingsMedia:subtitles.imageSubs.keepOriginal")}</span>
+                      <span style={checkboxLabelStyle}>{t("settingsMedia:subtitles.imageSubs.keepOriginal")}</span>
                     </label>
                   )}
                 </div>
@@ -2880,7 +2882,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   <input type="checkbox" checked={encoding?.plex_scan_after_conversion !== false && encoding?.plex_scan_after_conversion !== "false"}
                     onChange={() => setEncoding({ ...encoding, plex_scan_after_conversion: encoding?.plex_scan_after_conversion === false || encoding?.plex_scan_after_conversion === "false" })}
                     style={{ flexShrink: 0 }} />
-                  <span style={labelStyle}>{t("settingsIntegrations:shared.refreshAfter")}</span>
+                  <span style={checkboxLabelStyle}>{t("settingsIntegrations:shared.refreshAfter")}</span>
                 </label>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 28 }}>
                   {t("settingsIntegrations:plex.refreshAfterHelp")}
@@ -2891,7 +2893,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     readOnly
                     onClick={() => setEncoding({ ...encoding, plex_empty_trash_after_scan: !encoding?.plex_empty_trash_after_scan })}
                     style={{ flexShrink: 0 }} />
-                  <span style={labelStyle}>{t("settingsIntegrations:plex.emptyTrash")}</span>
+                  <span style={checkboxLabelStyle}>{t("settingsIntegrations:plex.emptyTrash")}</span>
                 </label>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
                   {t("settingsIntegrations:plex.emptyTrashHelp")}
@@ -2901,7 +2903,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   <input type="checkbox" checked={encoding?.plex_prioritize_unwatched || false}
                     onChange={() => setEncoding({ ...encoding, plex_prioritize_unwatched: !encoding?.plex_prioritize_unwatched })}
                     style={{ flexShrink: 0 }} />
-                  <span style={labelStyle}>{t("settingsIntegrations:plex.prioritizeUnwatched")}</span>
+                  <span style={checkboxLabelStyle}>{t("settingsIntegrations:plex.prioritizeUnwatched")}</span>
                 </label>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
                   {t("settingsIntegrations:plex.prioritizeUnwatchedHelp")}
@@ -3489,7 +3491,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     onClick={() => setEncoding({ ...encoding, auto_queue_new: !encoding?.auto_queue_new })}
                     readOnly
                     style={{ flexShrink: 0 }} />
-                  <span style={labelStyle}>{t("settingsSystem:automation.autoQueue.newFiles")}</span>
+                  <span style={checkboxLabelStyle}>{t("settingsSystem:automation.autoQueue.newFiles")}</span>
                 </label>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26, marginBottom: 16 }}>
                   {t("settingsSystem:automation.autoQueue.newFilesHelp")}
@@ -3561,7 +3563,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <input type="checkbox" checked={encoding?.skip_hardlinked ?? true}
                       onChange={e => setEncoding({ ...encoding, skip_hardlinked: e.target.checked })}
                       style={{ flexShrink: 0 }} />
-                    <span style={labelStyle}>{t("settingsSystem:automation.filters.skipHardlinked")}</span>
+                    <span style={checkboxLabelStyle}>{t("settingsSystem:automation.filters.skipHardlinked")}</span>
                   </label>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26, lineHeight: 1.6 }}>
                     {t("settingsSystem:automation.filters.skipHardlinkedHelp")}
@@ -3613,7 +3615,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <input type="checkbox" checked={encoding?.review_before_replace ?? false}
                       onChange={e => setEncoding({ ...encoding, review_before_replace: e.target.checked })}
                       style={{ flexShrink: 0 }} />
-                    <span style={labelStyle}>{t("settingsSystem:automation.originals.review")}</span>
+                    <span style={checkboxLabelStyle}>{t("settingsSystem:automation.originals.review")}</span>
                   </label>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26, lineHeight: 1.6 }}>
                     {t("settingsSystem:automation.originals.reviewHelp")}
@@ -3726,7 +3728,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   <input type="checkbox" checked={encoding?.skip_files_newer_enabled || false}
                     onChange={() => setEncoding({ ...encoding, skip_files_newer_enabled: !encoding?.skip_files_newer_enabled })}
                     style={{ flexShrink: 0 }} />
-                  <span style={labelStyle}>{t("settingsSystem:automation.stability.delay")}</span>
+                  <span style={checkboxLabelStyle}>{t("settingsSystem:automation.stability.delay")}</span>
                 </label>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
                   {t("settingsSystem:automation.stability.delayHelp")}

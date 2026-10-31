@@ -223,26 +223,21 @@ export default function RenamingSettings({ onSaveBarChange }: { onSaveBarChange?
       {/* Toggles */}
       <div style={sectionStyle}>
         <h3 style={{ color: "white", marginTop: 0, marginBottom: 16, fontSize: 14 }}>{t("settingsRenaming:behavior.heading")}</h3>
-        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 12 }}>
+        {/* The checkbox centres on its title, the help below it (a grid row each). */}
+        <label style={{ display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 10, alignItems: "center", cursor: "pointer", marginBottom: 12 }}>
           <input type="checkbox" checked={settings.enabled_auto} onChange={e => update({ enabled_auto: e.target.checked })} />
-          <div>
-            <div style={{ fontSize: 12, color: "var(--text-primary)" }}>{t("settingsRenaming:behavior.autoRename")}</div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("settingsRenaming:behavior.autoRenameHelp")}</div>
-          </div>
+          <div style={{ fontSize: 12, color: "var(--text-primary)" }}>{t("settingsRenaming:behavior.autoRename")}</div>
+          <div style={{ gridColumn: 2, fontSize: 11, color: "var(--text-muted)" }}>{t("settingsRenaming:behavior.autoRenameHelp")}</div>
         </label>
-        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 12 }}>
+        <label style={{ display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 10, alignItems: "center", cursor: "pointer", marginBottom: 12 }}>
           <input type="checkbox" checked={settings.rename_folders} onChange={e => update({ rename_folders: e.target.checked })} />
-          <div>
-            <div style={{ fontSize: 12, color: "var(--text-primary)" }}>{t("settingsRenaming:behavior.renameFolders")}</div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("settingsRenaming:behavior.renameFoldersHelp")}</div>
-          </div>
+          <div style={{ fontSize: 12, color: "var(--text-primary)" }}>{t("settingsRenaming:behavior.renameFolders")}</div>
+          <div style={{ gridColumn: 2, fontSize: 11, color: "var(--text-muted)" }}>{t("settingsRenaming:behavior.renameFoldersHelp")}</div>
         </label>
-        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+        <label style={{ display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 10, alignItems: "center", cursor: "pointer" }}>
           <input type="checkbox" checked={settings.remove_illegal} onChange={e => update({ remove_illegal: e.target.checked })} />
-          <div>
-            <div style={{ fontSize: 12, color: "var(--text-primary)" }}>{t("settingsRenaming:behavior.removeIllegal")}</div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("settingsRenaming:behavior.removeIllegalHelp")}</div>
-          </div>
+          <div style={{ fontSize: 12, color: "var(--text-primary)" }}>{t("settingsRenaming:behavior.removeIllegal")}</div>
+          <div style={{ gridColumn: 2, fontSize: 11, color: "var(--text-muted)" }}>{t("settingsRenaming:behavior.removeIllegalHelp")}</div>
         </label>
       </div>
 

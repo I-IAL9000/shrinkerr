@@ -156,6 +156,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scans skip hidden and system folders, including Shrinkerr's own backups and NAS recycle bins.
 - Activity search treats `%` and `_` as plain characters; a VMAF cross-check that times out stops; Settings' test encode no longer hangs on long output.
 - On phones the header stays put and the Scanner tree and poster grid render; tree rows stay on one line; the path picker keeps the Scan button on screen; the development version label fits the sidebar.
+- Settings' checkbox labels line up with their checkboxes (some sat a few pixels high).
 
 ## [0.9.159] — 2026-10-30
 
