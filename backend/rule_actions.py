@@ -84,9 +84,9 @@ def job_overrides(rule: Optional[dict]) -> dict:
 
 
 def settings_overrides(job: dict) -> dict:
-    """A job's own originals policy, VMAF minimum and VMAF target, as the
-    encoding settings convert_file reads (empty: the global ones apply; a
-    target of 0 is Off, whatever Settings say). A "Fix for
+    """A job's own originals policy, VMAF minimum, VMAF target and lossless
+    audio choice, as the encoding settings convert_file reads (empty: the
+    global ones apply; a target of 0 is Off, whatever Settings say). A "Fix for
     direct play" job (backend/direct_play.py) reads image subtitles into SRT
     and adds a compatibility track where the audio needs one — those it
     was asked to."""
@@ -112,6 +112,8 @@ def settings_overrides(job: dict) -> dict:
         out["vmaf_target_enabled"] = float(target) > 0
         if float(target) > 0:
             out["vmaf_target_score"] = float(target)
+    if job.get("lossless_audio") in ("keep", "convert"):
+        out["auto_convert_lossless"] = job["lossless_audio"] == "convert"
     return out
 
 

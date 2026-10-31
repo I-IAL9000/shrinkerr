@@ -944,6 +944,9 @@ export interface JobPlan {
   originals: Originals;
   direct_play?: string[];  // the direct-play fixes it makes on its file (v0.10.0)
   image_subs_keep_original?: boolean;
+  // What a conversion does with its lossless audio (v0.10.0): the tracks it
+  // converts and to what, and the lossless ones it keeps; null: nothing to say
+  lossless?: { convert: number[]; keep: number[]; codec: string; bitrate: number } | null;
 }
 export const getJobPlan = (id: number) => apiFetch<JobPlan>(`/jobs/${id}/plan`);
 export interface PendingSummary {

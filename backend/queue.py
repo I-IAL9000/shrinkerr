@@ -240,6 +240,7 @@ def _job_values(j: dict, target_default: float, direct_play_default: bool) -> di
         # The fixes Add to Queue chose ("" = none), else the setting's
         "direct_play": (j["direct_play"] or None) if j.get("direct_play") is not None
         else 1 if direct_play_default and j["job_type"] in _DIRECT_PLAY_JOB_TYPES else None,
+        "lossless_audio": j.get("lossless_audio"),  # "keep", "convert"; None: Settings'
     }
 
 

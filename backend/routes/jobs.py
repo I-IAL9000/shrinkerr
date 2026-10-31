@@ -1,7 +1,7 @@
 import asyncio
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from backend.api_errors import ApiError
@@ -131,6 +131,9 @@ class BulkQueueFromScanRequest(BaseModel):
     # or the rule's / Settings' — else the score to search for, over a
     # rule's and Settings' target. None: the rule's, else Settings'.
     vmaf_target_override: float | None = None
+    # Add to Queue's lossless audio (v0.10.0): a conversion keeps it or
+    # converts it whatever Settings say. None: Settings'.
+    lossless_audio_override: Optional[Literal["keep", "convert"]] = None
     force_reencode: bool = False
     # User-chosen "no video conversion" — runs only the audio/sub cleanup
     # pass on the original file. Same effect as a rule with action="ignore",
@@ -368,7 +371,33 @@ def _job_savings(job: dict, row: dict, audio: list[dict], quality: dict) -> int:
 
 
 _JOB_PLAN_COLS = ("id, file_path, job_type, encoder, nvenc_cq, libx265_crf, target_resolution, original_size, "
-                  "audio_tracks_to_remove, subtitle_tracks_to_remove, direct_play")
+                  "audio_tracks_to_remove, subtitle_tracks_to_remove, direct_play, lossless_audio")
+
+
+def _lossless_plan(job: dict, audio: list[dict], live: dict) -> Optional[dict]:
+    """What a conversion does with its lossless audio (v0.10.0): the tracks
+    it converts (stream indexes) and to what, and the lossless ones it keeps
+    — Atmos and DTS:X, or all of them when the job keeps them. None when
+    there's nothing to say: no such tracks, or Settings don't convert them
+    and the job didn't choose to keep them. `audio`: the plan's tracks."""
+    from backend.converter import is_lossless_audio, lossless_to_convert
+    from backend.rule_actions import settings_overrides
+    if job["job_type"] not in ("convert", "combined"):
+        return None
+    on = bool({**live, **settings_overrides(job)}.get("auto_convert_lossless"))
+    if not on and job.get("lossless_audio") != "keep":
+        return None
+    keep_objects = live.get("lossless_keep_object_audio", True)
+    convert_dts = bool(live.get("convert_dts"))
+    kept = [t for t in audio if not t.get("remove")]
+    convert = [t["stream_index"] for t in kept if on and lossless_to_convert(
+        t.get("codec") or "", t.get("profile") or "", t.get("title") or "", keep_objects, convert_dts)]
+    keep = [t["stream_index"] for t in kept
+            if t["stream_index"] not in convert and is_lossless_audio(t.get("codec") or "", t.get("profile") or "")]
+    if not convert and not keep:
+        return None
+    return {"convert": convert, "keep": keep, "codec": live.get("lossless_target_codec", "eac3"),
+            "bitrate": live.get("lossless_target_bitrate", 640)}
 
 
 @router.get("/pending-summary")
@@ -432,6 +461,7 @@ async def job_plan(job_id: int):
     removes, about what it saves, and what becomes of the original. The
     tracks are edited on the file (PUT /api/scan/results/{scan_id}/tracks),
     which updates the job."""
+    from backend.converter import get_live_encoding_settings
     from backend.encoding_estimates import load_quality_settings
     db = await connect_db()
     try:
@@ -455,7 +485,7 @@ async def job_plan(job_id: int):
     if row is None:
         return {"scan_id": None, "job_type": job["job_type"], "audio": [], "subtitles": [], "native_first": None,
                 "file_size": job.get("original_size") or 0, "estimated_savings": 0, "originals": originals,
-                "direct_play": fixes, "image_subs_keep_original": keep_image_subs}
+                "direct_play": fixes, "image_subs_keep_original": keep_image_subs, "lossless": None}
     audio = json.loads(row["audio_tracks_json"] or "[]")
     subs = json.loads(row["subtitle_tracks_json"] or "[]")
     remove_a = set(json.loads(job["audio_tracks_to_remove"] or "[]"))
@@ -471,6 +501,7 @@ async def job_plan(job_id: int):
         "file_size": row["file_size"] or 0, "estimated_savings": _job_savings(job, row, audio, quality),
         "originals": originals,
         "direct_play": fixes, "image_subs_keep_original": keep_image_subs,
+        "lossless": _lossless_plan(job, audio, await get_live_encoding_settings()),
     }
 
 
@@ -728,6 +759,8 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
                 **job_overrides(rule),
                 **({"vmaf_target": payload.vmaf_target_override}
                    if payload.vmaf_target_override is not None and job_type in ("convert", "combined") else {}),
+                **({"lossless_audio": payload.lossless_audio_override}
+                   if payload.lossless_audio_override and job_type in ("convert", "combined") else {}),
                 # The fixes it makes ("" = none chosen); None: the setting's
                 "direct_play": None if payload.direct_play is None else ",".join(sorted(problems)),
                 "audio_codec": audio_codec,

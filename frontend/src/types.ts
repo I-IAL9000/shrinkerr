@@ -110,6 +110,8 @@ export interface Job {
   direct_play?: number | string | null;
   // v0.10.0: the VMAF target it was queued with (0: off; null: queued before jobs kept one)
   vmaf_target?: number | null;
+  // v0.10.0: Add to Queue's lossless audio choice (null: Settings')
+  lossless_audio?: "keep" | "convert" | null;
   progress: number;
   fps: number | null;
   eta_seconds: number | null;

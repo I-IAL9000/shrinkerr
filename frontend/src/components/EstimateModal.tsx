@@ -42,6 +42,9 @@ export interface EncodingOverrides {
   // The VMAF target (v0.10.0): 0 off — encode at the quality chosen — else a
   // score; absent: the rule's, else Settings'.
   vmaf_target?: number;
+  // Lossless audio (v0.10.0): kept or converted whatever Settings say;
+  // absent: Settings'.
+  lossless_audio?: "keep" | "convert";
 }
 
 // Fix for direct play's fixes (backend/direct_play.py's problems), in the
@@ -102,6 +105,10 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   // score; Settings' own target, to name it (null: off).
   const [vmafChoice, setVmafChoice] = useState("");
   const [settingsTarget, setSettingsTarget] = useState<number | null>(null);
+  // Lossless audio (v0.10.0): null Settings', else this batch's choice; and
+  // what Settings do with it, to name it.
+  const [lossless, setLossless] = useState<"keep" | "convert" | null>(null);
+  const [settingsLossless, setSettingsLossless] = useState<{ on: boolean; target: string } | null>(null);
   const vmafMode = vmafChoice === "" ? "" : vmafChoice === "off" ? "off" : "custom";
   const vmafScore = Number(vmafChoice);
   // What reaches the queue: 0 off, a score from 80 to 99, else nothing chosen.
@@ -114,6 +121,10 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
       if (s?.direct_play_on_convert) setDirectPlay(true);
       const on = s?.vmaf_target_enabled === true || s?.vmaf_target_enabled === "true";
       setSettingsTarget(on ? Number(s?.vmaf_target_score) || VMAF_EXCELLENT_MIN : null);
+      if (s) setSettingsLossless({
+        on: s.auto_convert_lossless === true,
+        target: `${s.lossless_target_codec || "eac3"}:${s.lossless_target_bitrate || 640}`,
+      });
     }).catch(() => {}).finally(() => setSettingsRead(true));
     getEncoderCaps().then(setEncoderCaps).catch(() => {});
   }, []);
@@ -254,6 +265,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
     o.direct_play = directPlay;  // either way: unticked overrides the setting
     if (directPlay) o.direct_play_fixes = dpFixes;
     if (vmafOverride !== null) o.vmaf_target = vmafOverride;
+    if (lossless !== null) o.lossless_audio = lossless;
     return o;
   };
   // A clean-up's Dolby Vision (v0.10.0): removed under "Convert to HDR10";
@@ -588,7 +600,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                 </svg>
                 {t("scannerModals:overrides.encodingSettings")}
                 <span style={{ marginLeft: "auto", color: "var(--text-muted)", fontSize: 11 }}>
-                  {cq !== null || encoder !== null || preset !== null || audioCdc !== null || vmafChoice !== "" ? t("scannerModals:overrides.custom") : t("scannerModals:overrides.defaultSettings")}
+                  {cq !== null || encoder !== null || preset !== null || audioCdc !== null || vmafChoice !== "" || lossless !== null ? t("scannerModals:overrides.custom") : t("scannerModals:overrides.defaultSettings")}
                 </span>
               </button>
 
@@ -724,6 +736,26 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       </select>
                     )}
                   </div>
+
+                  {/* Lossless audio (v0.10.0): kept or converted for this
+                      batch, whatever Settings say ("Copy" above is the other
+                      tracks'). Conversions only: a clean-up never converts it. */}
+                  {!cleanupOnly && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.lossless")}</label>
+                    <select aria-label={t("scannerModals:overrides.lossless")} value={lossless ?? ""}
+                      onChange={e => setLossless((e.target.value || null) as "keep" | "convert" | null)}
+                      style={{ flex: 1, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
+                      <option value="">{settingsLossless
+                        ? t("scannerModals:overrides.autoSettings", { value: settingsLossless.on
+                          ? t("scannerModals:overrides.losslessConvert", { target: audioName(settingsLossless.target) })
+                          : t("scannerModals:overrides.losslessKeep") })
+                        : t("scannerModals:overrides.auto")}</option>
+                      <option value="keep">{t("scannerModals:overrides.losslessKeep")}</option>
+                      <option value="convert">{t("scannerModals:overrides.losslessConvert", { target: audioName(settingsLossless?.target ?? "eac3:640") })}</option>
+                    </select>
+                  </div>
+                  )}
 
                   {/* Resolution */}
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

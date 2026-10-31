@@ -1242,6 +1242,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         if (encodingOverrides.direct_play != null) extra.direct_play = encodingOverrides.direct_play;
         if (encodingOverrides.direct_play) extra.direct_play_fixes = encodingOverrides.direct_play_fixes;
         if (encodingOverrides.vmaf_target != null) extra.vmaf_target_override = encodingOverrides.vmaf_target;
+        if (encodingOverrides.lossless_audio) extra.lossless_audio_override = encodingOverrides.lossless_audio;
       }
       if (filter !== "all") extra.filter = filter;
       const result = await addJobsFromScan(estimatePaths, priority, overrideRules, extra) as any;

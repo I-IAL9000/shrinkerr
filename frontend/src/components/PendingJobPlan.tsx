@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Job } from "../types";
+import type { AudioTrack, Job } from "../types";
 import { getJobPlan, updateAudioTracks, updateSubtitleTracks, type JobPlan } from "../api";
 import { encoderPresetLabel, encoderSettingsLabel, jobEncoderSettings } from "../utils/encoderLabel";
 import { fmtBytes } from "../fmt";
@@ -8,6 +8,18 @@ import { trackLanguageName } from "../utils/languages";
 import { useToast } from "../useToast";
 import AudioTrackRow from "./AudioTrackRow";
 import SubTrackRow from "./SubTrackRow";
+
+// A plan's lossless tracks by name, once each: "TrueHD Atmos, DTS-HD MA".
+function losslessNames(audio: AudioTrack[], streams: number[]): string {
+  const names = audio.filter(tr => streams.includes(tr.stream_index)).map(tr => {
+    const codec = tr.codec.toLowerCase();
+    const text = `${tr.profile || ""} ${tr.title || ""}`.toLowerCase();
+    if (codec === "dts") return /dts[:-]?x/.test(text) ? "DTS:X" : (tr.profile || "DTS").split(" + ")[0];
+    const name = codec === "truehd" ? "TrueHD" : codec.startsWith("pcm") ? "PCM" : codec.toUpperCase();
+    return text.includes("atmos") ? `${name} Atmos` : name;
+  });
+  return [...new Set(names)].join(", ");
+}
 
 // What a pending job will do (v0.10.0): the video conversion, every track of
 // its file and whether the job removes it, about what it saves and what
@@ -27,7 +39,7 @@ export default function PendingJobPlan({ job, encodingDefaults, onChanged }: {
 
   // Reloads when the job changes under it too (a language change, an edit
   // in the Scanner, a quality preset) — the queue polls.
-  const version = [job.job_type, job.encoder, job.nvenc_cq, job.libx265_crf,
+  const version = [job.job_type, job.encoder, job.nvenc_cq, job.libx265_crf, job.lossless_audio,
     (job.audio_tracks_to_remove || []).join(), (job.subtitle_tracks_to_remove || []).join()].join("|");
   useEffect(() => {
     let cancelled = false;
@@ -79,6 +91,12 @@ export default function PendingJobPlan({ job, encodingDefaults, onChanged }: {
             : t("queue:plan.videoTargetNoPreset", { encoder: encoderName, target: job.vmaf_target })
           : t("queue:plan.video", { encoder: encoderName, settings: encoderSettingsLabel(encoder, settings) }),
     },
+    // Its lossless audio (v0.10.0): Settings' or Add to Queue's choice.
+    ...(plan.lossless?.convert.length ? [{ text: t("queue:plan.losslessConvert", {
+      tracks: losslessNames(plan.audio, plan.lossless.convert),
+      target: `${plan.lossless.codec.toUpperCase()} ${plan.lossless.bitrate}k`,
+    }) }] : []),
+    ...(plan.lossless?.keep.length ? [{ text: t("queue:plan.losslessKeep", { tracks: losslessNames(plan.audio, plan.lossless.keep) }) }] : []),
     ...(plan.native_first ? [{ text: t("queue:plan.nativeFirst", { language: trackLanguageName(plan.native_first) }) }] : []),
     // Fix for direct play (v0.10.0): Hi10P's fix is the conversion above.
     ...(plan.direct_play || []).filter(fix => fix !== "video").map(fix => ({
