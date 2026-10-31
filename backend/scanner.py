@@ -331,6 +331,24 @@ async def first_frame_info(source: str, input_args: Optional[list[str]] = None) 
         return None
 
 
+def audio_profile(codec: str, profile: str, title: str) -> str:
+    """An audio track's profile as ffprobe reports it — or, for DTS it can't
+    name ("unknown"), the one its title does (v0.10.0). Lossless DTS is told
+    from lossy by the profile alone (converter.is_lossless_audio, the best-
+    track ranking): Silent Friend's "DTS-HD MA 5.1", profile unknown, was
+    taken for lossy DTS and never converted. MA and Master Audio are
+    DTS-HD MA, HRA and High Resolution DTS-HD HRA; anything else stays
+    unknown."""
+    if (codec or "").lower() != "dts" or (profile and profile.lower() != "unknown"):
+        return profile or ""
+    named = (title or "").lower()
+    if re.search(r"\bma\b|master audio", named):
+        return "DTS-HD MA"
+    if re.search(r"\bhra\b|high resolution", named):
+        return "DTS-HD HRA"
+    return profile or ""
+
+
 async def media_input(file_path: str) -> tuple[Optional[str], list[str], Optional[str]]:
     """What ffprobe / ffmpeg read for `file_path`: (input, args before -i,
     disc_type). Shared by probe_file and audio language detection, which
@@ -602,7 +620,7 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
                 "stream_index": stream.get("index", len(audio_tracks) + 1),
                 "language": lang,
                 "codec": stream.get("codec_name", ""),
-                "profile": stream.get("profile", ""),
+                "profile": audio_profile(stream.get("codec_name", ""), stream.get("profile", ""), tags.get("title", "")),
                 "channels": stream.get("channels", 2),
                 "title": tags.get("title", ""),
                 "bitrate": bitrate,
@@ -2385,6 +2403,9 @@ async def scan_directory(
                     if all(cached.get(k) == signature[k] for k in signature) and cached.get("probe"):
                         probe_caches[path] = stored[path]
                         reused += 1
+                        # A probe stored before audio_profile kept ffprobe's "unknown" DTS.
+                        for t in cached["probe"].get("audio_tracks") or []:
+                            t["profile"] = audio_profile(t.get("codec", ""), t.get("profile", ""), t.get("title", ""))
                         return cached["probe"]
                 except (ValueError, TypeError, AttributeError):
                     pass

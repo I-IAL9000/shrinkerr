@@ -141,3 +141,23 @@ def test_kept_tracks_get_their_own_bitrates():
     every = " ".join(_build_ffmpeg_cmd_impl("/m/in.mkv", "/m/out.mkv", encoder="libx265", audio_codec="aac",
                                             audio_bitrate=128))
     assert "-c:a aac -b:a 128k" in every  # one setting for every track: unindexed
+
+
+def test_a_dts_track_ffprobe_cant_name_goes_by_its_title():
+    """Silent Friend's DTS-HD MA: ffprobe said profile "unknown", so it was
+    taken for lossy DTS and never converted (v0.10.0)."""
+    from backend.converter import is_lossless_audio
+    from backend.scanner import audio_profile
+    assert audio_profile("dts", "unknown", "DTS-HD MA 5.1") == "DTS-HD MA"
+    assert audio_profile("dts", "", "German DTS-HD Master Audio 7.1") == "DTS-HD MA"
+    assert audio_profile("dts", "unknown", "DTS-HD HRA 7.1") == "DTS-HD HRA"
+    assert audio_profile("dts", "unknown", "DTS 5.1") == "unknown"  # lossy, as far as anyone can tell
+    assert audio_profile("dts", "unknown", "Main audio") == "unknown"  # "ma" only as a word
+    assert audio_profile("dts", "DTS", "DTS-HD MA 5.1") == "DTS"  # ffprobe's own name wins
+    assert audio_profile("ac3", "unknown", "MA") == "unknown"  # DTS only
+    assert lossless_to_convert("dts", audio_profile("dts", "unknown", "DTS-HD MA 5.1"), "DTS-HD MA 5.1")
+    assert not lossless_to_convert("dts", "unknown", "DTS-HD MA 5.1")  # as it was
+    # still kept when the title says DTS:X
+    assert not lossless_to_convert("dts", audio_profile("dts", "unknown", "DTS-HD MA + DTS:X 7.1"),
+                                   "DTS-HD MA + DTS:X 7.1")
+    assert is_lossless_audio("dts", audio_profile("dts", "unknown", "DTS-HD MA 5.1"))
