@@ -1,11 +1,16 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { useVirtualizer, useWindowVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  defaultRangeExtractor, useVirtualizer, useWindowVirtualizer, type Range, type Virtualizer,
+} from "@tanstack/react-virtual";
 
 // Virtualized list for the Queue tabs (v0.9.138). With thousands of jobs the
 // page used to mount every row — ~58K DOM elements for 5K pending jobs, ~2s to
 // show the tab and ~1s per checkbox click — and froze Firefox. Only the rows
 // in view (plus `overscan`) are mounted; row heights are measured, so rows
-// that expand (completed/failed details) just grow in place.
+// that expand (completed/failed details) just grow in place. Open rows stay
+// mounted out of view (keepMounted): a row's details live in it, and an open
+// one that came back showed "Loading…" (79 px) until they reloaded (387 px) —
+// each change above the view moved the page, 308 px one way and back.
 //
 // The page scrolls inside `.main-content` on desktop but the window scrolls
 // on mobile (theme.css ≤768px sets overflow-y: visible), so the scroll source
@@ -16,6 +21,8 @@ interface Props {
   getKey: (index: number) => number | string;
   renderRow: (index: number) => ReactNode;
   estimateSize?: number;
+  /** Rows to keep mounted out of view (the open ones). */
+  keepMounted?: number[];
 }
 
 const OVERSCAN = 10;
@@ -74,9 +81,19 @@ function useScrollMargin(listRef: RefObject<HTMLDivElement | null>, scrollEl: HT
   return margin;
 }
 
+// The rows in view (plus overscan) and the ones kept mounted.
+function useRangeExtractor(keep: number[] | undefined) {
+  return useMemo(() => (range: Range) => {
+    const shown = defaultRangeExtractor(range);
+    if (!keep?.length) return shown;
+    return [...new Set([...shown, ...keep.filter(i => i < range.count)])].sort((a, b) => a - b);
+  }, [keep]);
+}
+
 function ElementList({ scrollEl, ...p }: Props & { scrollEl: HTMLElement }) {
   const listRef = useRef<HTMLDivElement>(null);
   const scrollMargin = useScrollMargin(listRef, scrollEl);
+  const rangeExtractor = useRangeExtractor(p.keepMounted);
   const v = useVirtualizer({
     count: p.count,
     getScrollElement: () => scrollEl,
@@ -84,6 +101,7 @@ function ElementList({ scrollEl, ...p }: Props & { scrollEl: HTMLElement }) {
     getItemKey: p.getKey,
     overscan: OVERSCAN,
     scrollMargin,
+    rangeExtractor,
   });
   return <Rows listRef={listRef} v={v} scrollMargin={scrollMargin} renderRow={p.renderRow} />;
 }
@@ -91,12 +109,14 @@ function ElementList({ scrollEl, ...p }: Props & { scrollEl: HTMLElement }) {
 function WindowList(p: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const scrollMargin = useScrollMargin(listRef, null);
+  const rangeExtractor = useRangeExtractor(p.keepMounted);
   const v = useWindowVirtualizer({
     count: p.count,
     estimateSize: () => p.estimateSize ?? 40,
     getItemKey: p.getKey,
     overscan: OVERSCAN,
     scrollMargin,
+    rangeExtractor,
   });
   return <Rows listRef={listRef} v={v} scrollMargin={scrollMargin} renderRow={p.renderRow} />;
 }

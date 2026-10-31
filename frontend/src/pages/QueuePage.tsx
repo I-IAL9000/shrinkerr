@@ -608,6 +608,8 @@ export default function QueuePage() {
     />
   );
   const jobKey = (i: number) => tabJobs[i].id;
+  // Open rows stay mounted when they scroll out of view (VirtualJobList).
+  const openRows = useMemo(() => tabJobs.flatMap((j, i) => expandedIds.has(j.id) ? [i] : []), [tabJobs, expandedIds]);
 
   if (initialLoading) {
     return (
@@ -984,7 +986,7 @@ export default function QueuePage() {
           {tabJobs.length > 0 && (
             <>
               <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden" }}>
-                <VirtualJobList count={tabJobs.length} getKey={jobKey} renderRow={renderPendingRow} />
+                <VirtualJobList count={tabJobs.length} getKey={jobKey} renderRow={renderPendingRow} keepMounted={openRows} />
               </div>
             </>
           )}
@@ -1007,7 +1009,7 @@ export default function QueuePage() {
           {tabJobs.length > 0 && (
             <>
               <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden" }}>
-                <VirtualJobList count={tabJobs.length} getKey={jobKey} renderRow={renderCompletedRow} />
+                <VirtualJobList count={tabJobs.length} getKey={jobKey} renderRow={renderCompletedRow} keepMounted={openRows} />
               </div>
               {tabHasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
               {loadingMore && (
@@ -1036,7 +1038,7 @@ export default function QueuePage() {
           {tabJobs.length > 0 && (
             <>
             <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden" }}>
-              <VirtualJobList count={tabJobs.length} getKey={jobKey} renderRow={renderFailedRow} />
+              <VirtualJobList count={tabJobs.length} getKey={jobKey} renderRow={renderFailedRow} keepMounted={openRows} />
             </div>
             {tabHasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
             {loadingMore && (
