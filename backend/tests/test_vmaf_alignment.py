@@ -69,3 +69,31 @@ async def test_a_window_that_rounded_a_frame_apart(tmp_path):
     ref, dist, _ = _vmaf_pipelines(src, dst)
     assert await score(ref, dist, "after.json") > 90
     assert json.loads((tmp_path / "after.json").read_text())["pooled_metrics"]["vmaf"]["min"] > 80
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not _has_libvmaf(), reason="needs ffmpeg with libvmaf")
+async def test_a_sample_is_compared_frame_by_frame_whatever_its_timestamps(tmp_path):
+    """The Nest (2002): its VMAF target samples (VC-1 cut from a remux) had
+    no start time, and their encodes started a frame in. Paired by
+    timestamps, each frame met its neighbour — 31 to 37 at every quality,
+    92 by frame number — and the search took CQ 37. Here the sample's video
+    starts a frame after its container's clock (its audio starts at 0)."""
+    from backend.converter import _probe_vmaf_stream, _run_libvmaf_pass
+    from backend.vmaf_target import _vmaf
+    video, sample, encode = tmp_path / "v.mkv", tmp_path / "sample.mkv", tmp_path / "encode.mkv"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x240:r=24:d=6,noise=alls=8:allf=t",
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "14", "-bf", "2", str(video)], check=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-itsoffset", "0.041667", "-i", str(video), "-f", "lavfi",
+                    "-i", "sine=d=6", "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", str(sample)], check=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(sample), "-map", "0:v", "-c:v", "libx264", "-preset",
+                    "veryfast", "-crf", "18", str(encode)], check=True)
+    src, dst = await _probe_vmaf_stream(str(sample)), await _probe_vmaf_stream(str(encode))
+    ref_pipeline, dist_pipeline, fps = _vmaf_pipelines(src, dst)
+    by_time = await _run_libvmaf_pass(input_path=str(sample), temp_path=str(encode), seek=0.0, duration=6.0,
+                                      ref_pipeline=ref_pipeline, dist_pipeline=dist_pipeline,
+                                      json_path=str(tmp_path / "t.json"), fps_for_progress=fps, progress_callback=None,
+                                      step_label="")
+    assert by_time["score"] < 60  # each frame against its neighbour
+
+    assert await _vmaf(str(sample), str(encode), 6.0, str(tmp_path / "f.json")) >= 95

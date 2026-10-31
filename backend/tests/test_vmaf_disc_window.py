@@ -29,9 +29,9 @@ def test_a_files_window_is_a_seek_and_a_discs_is_by_frame_number():
     assert seek["limit"] == ["-t", "30.000"]  # before each output: the cross-check has two
     assert seek["ref"] == "[0:V]" and seek["frames"] is None and not seek["outputs"]
 
-    disc = vmaf_window("bluray:/m/f.iso", "out.mkv", 600.0, 30.0, (14386, 719), ["-probesize", "200M"])
+    disc = vmaf_window("bluray:/m/f.iso", "out.mkv", 600.0, 30.0, (14386, 719), ["-probesize", "200M"], rate=23.976)
     assert disc["inputs"] == ["-probesize", "200M", "-i", "bluray:/m/f.iso", "-i", "out.mkv"]  # no seek
-    trim = "trim=start_frame=14386:end_frame=15105,setpts=PTS-STARTPTS,"
+    trim = "trim=start_frame=14386:end_frame=15105,setpts=N/(23.976000*TB),"  # timed by number
     assert disc["ref"] == "[ref_in]" + trim and disc["dist"] == "[1:v]" + trim
     assert disc["frames"] == 15105 and disc["limit"] == []  # the progress counts the frames up to its end
 

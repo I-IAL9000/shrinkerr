@@ -2272,12 +2272,13 @@ def _is_bimodal_vmaf(result: dict) -> bool:
 
 
 def vmaf_window(ref: str, dist: str, seek: float, duration: float, frames: tuple[int, int] | None,
-                ref_args: list[str] | None = None) -> dict:
+                ref_args: list[str] | None = None, rate: float | None = None) -> dict:
     """How a comparison reads its window of the reference and the encode
     (_run_libvmaf_pass, the quality cross-check): by seeking both to `seek`
     for `duration`, or, with `frames` (first, count), by frame number from
-    the start of both, each branch trimmed to them and its clock restarted.
-    A third output then counts the reference's frames as they're read, so
+    the start of both, each branch trimmed to them and each frame timed by
+    its number at `rate` (else its clock restarted): the two can't be paired
+    by timestamps that disagree. A third output then counts the reference's frames as they're read, so
     the progress moves while the frames before the window go by (`frames`:
     the count it reaches; ffmpeg's stats show the first output's).
     {"inputs", "count" (the counting chain, before the branches), "ref" and
@@ -2290,7 +2291,8 @@ def vmaf_window(ref: str, dist: str, seek: float, duration: float, frames: tuple
                 "frames": None}
     first, count = frames
     end = first + count
-    head = f"trim=start_frame={first}:end_frame={end},setpts=PTS-STARTPTS,"
+    clock = f"setpts=N/({rate:.6f}*TB)" if rate else "setpts=PTS-STARTPTS"
+    head = f"trim=start_frame={first}:end_frame={end},{clock},"
     return {"inputs": [*(ref_args or []), "-i", ref, "-i", dist],
             "count": f"[0:V]split[ref_in][ref_count];[ref_count]trim=end_frame={end}[read];",
             "ref": f"[ref_in]{head}", "dist": f"[1:v]{head}",
@@ -2340,7 +2342,7 @@ async def _run_libvmaf_pass(
     import re as _re
     import json as _vjson
 
-    window = vmaf_window(input_path, temp_path, seek, duration, frames, ref_args)
+    window = vmaf_window(input_path, temp_path, seek, duration, frames, ref_args, rate=fps_for_progress)
     vmaf_filter = (
         f"{window['count']}{window['ref']}{ref_pipeline}[ref_norm];"
         f"{window['dist']}{dist_pipeline}[dist_norm];"
@@ -4938,7 +4940,8 @@ async def convert_file(
                         # [dx][rx] twice, psnr took the source's first stream
                         # twice and measured it against itself (inf dB).
                         xc_window = vmaf_window(vmaf_ref, temp_path, xcheck_seek, xcheck_dur,
-                                                _vmaf_frames(xcheck_seek), vmaf_ref_args)
+                                                _vmaf_frames(xcheck_seek), vmaf_ref_args,
+                                                rate=vmaf_fps_for_progress)
                         xcheck_filter = (
                             f"{xc_window['count']}{xc_window['ref']}{ref_pipeline}[ref_x];"
                             f"{xc_window['dist']}{dist_pipeline}[dist_x];"

@@ -49,6 +49,9 @@ PLATEAU_GAIN = 0.2
 # than this under the target: Sgt. Bilko's 29 and 30 averaged 92.82 for a
 # target of 93, and 29.5 scored 92.77 — a round for nothing.
 HALF_STEP_MARGIN = 0.1
+# A sample's score that low is checked by timestamps too (_vmaf): no real
+# encode in the search's range scores it, a misaligned compare does.
+SUSPECT_SCORE = 50.0
 # The best quality scores well over this on any footage its samples are
 # measured right on: The Nest's scored 31 at CQ 14 and at CQ 37 alike, and
 # the search, taking the target as out of reach, chose 37 (the file scored
@@ -348,14 +351,30 @@ async def _cut_samples(input_path: str, duration: float, work: str, *, disc_inpu
 
 
 async def _vmaf(reference: str, encoded: str, seconds: float, json_path: str) -> float | None:
+    """A sample's encode scored against the sample, frame by frame by number:
+    both hold the same frames from their start. By timestamps, The Nest's
+    samples (VC-1 cut from a remux: no start time, and their encodes started
+    a frame in) were compared each frame with its neighbour — 31 to 37 at
+    every quality, 92 by number — and the search took CQ 37. A score under
+    SUSPECT_SCORE is compared by timestamps too, and the better one kept: a
+    misaligned compare only ever scores lower."""
     from backend.converter import _probe_vmaf_stream, _run_libvmaf_pass, _vmaf_pipelines
-    ref_pipeline, dist_pipeline, fps = _vmaf_pipelines(await _probe_vmaf_stream(reference),
-                                                       await _probe_vmaf_stream(encoded))
-    result = await _run_libvmaf_pass(
-        input_path=reference, temp_path=encoded, seek=0.0, duration=seconds,
-        ref_pipeline=ref_pipeline, dist_pipeline=dist_pipeline, json_path=json_path,
-        fps_for_progress=fps or 24.0, progress_callback=None, step_label="")
-    return result.get("score")
+    src, dst = await _probe_vmaf_stream(reference), await _probe_vmaf_stream(encoded)
+
+    async def compare(by_number: bool) -> float | None:
+        ref_pipeline, dist_pipeline, fps = _vmaf_pipelines({**src, "start_time": None} if by_number else src, dst)
+        result = await _run_libvmaf_pass(
+            input_path=reference, temp_path=encoded, seek=0.0, duration=seconds,
+            ref_pipeline=ref_pipeline, dist_pipeline=dist_pipeline, json_path=json_path,
+            fps_for_progress=fps or 24.0, progress_callback=None, step_label="",
+            frames=(0, int(seconds * 120)) if by_number else None)  # every frame, at up to 120 fps
+        return result.get("score")
+    score = await compare(True)
+    if score is None or score < SUSPECT_SCORE:
+        by_time = await compare(False)
+        if by_time is not None and (score is None or by_time > score):
+            score = by_time
+    return score
 
 
 async def find_quality(input_path: str, encoder: str, duration: float, target: float, start: float,
