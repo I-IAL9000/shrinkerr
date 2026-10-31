@@ -287,6 +287,8 @@
   "plan": {
     "title": "Qué va a pasar",
     "video": "Convierte el vídeo con {{encoder}} ({{settings}})",
+    "videoTarget": "Convierte el vídeo con {{encoder}} ({{preset}}), con la calidad que el objetivo VMAF {{target}} encuentre para él",
+    "videoTargetNoPreset": "Convierte el vídeo con {{encoder}}, con la calidad que el objetivo VMAF {{target}} encuentre para él",
     "noVideo": "El vídeo no se recodifica; solo cambian las pistas",
     "nativeFirst": "Pone primero el audio del idioma original ({{language}}), para que se reproduzca por defecto",
     "size": "{{before}} → unos {{after}} (ahorra unos {{saved}})",

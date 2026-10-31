@@ -1223,7 +1223,10 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     setEstimatePaths(null);
     setAddingToQueueCount(submittedCount);
     try {
+      // A file already waiting in the queue takes these settings (v0.10.0;
+      // it was skipped, and the dialog's choices dropped).
       const extra: Record<string, any> = {};
+      extra.update_pending = true;
       if (encodingOverrides) {
         if (encodingOverrides.encoder) extra.encoder_override = encodingOverrides.encoder;
         if (encodingOverrides.nvenc_preset) extra.nvenc_preset_override = encodingOverrides.nvenc_preset;
@@ -1241,24 +1244,28 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         if (encodingOverrides.vmaf_target != null) extra.vmaf_target_override = encodingOverrides.vmaf_target;
       }
       if (filter !== "all") extra.filter = filter;
-      const result = await addJobsFromScan(estimatePaths, priority, overrideRules, Object.keys(extra).length > 0 ? extra : undefined) as any;
+      const result = await addJobsFromScan(estimatePaths, priority, overrideRules, extra) as any;
       if (!estimateKeepsSelection) {
         setSelectAllActive(false);
         setSelectedPaths(new Set());
       }
       const skippedExisting = result.skipped_existing ?? 0;
+      const updated = result.updated ?? 0;
       // "Add & start" (v0.10.0): start the queue once the jobs are in.
-      if (start && (result.added > 0 || skippedExisting > 0)) {
+      if (start && (result.added > 0 || skippedExisting > 0 || updated > 0)) {
         await startQueue();
         toast(t("queue:toasts.queueStarted"), "success");
       }
       if (result.added > 0) {
         const priorityLabel = priority > 0 ? t(priority === 1 ? "scanner:toasts.priorityHigh" : "scanner:toasts.priorityHighest") : "";
-        const dupsNote = skippedExisting > 0 ? t("scanner:toasts.alreadyQueuedNote", { n: skippedExisting }) : "";
+        const dupsNote = (updated > 0 ? t("scanner:toasts.updatedNote", { n: updated }) : "")
+          + (skippedExisting > 0 ? t("scanner:toasts.alreadyQueuedNote", { n: skippedExisting }) : "");
         toast(
           t("scanner:toasts.addedToQueue", { count: result.added, priority: priorityLabel, dups: dupsNote }),
           "success",
         );
+      } else if (updated > 0) {
+        toast(t("scanner:toasts.updatedInQueue", { count: updated, num: updated }), "success");
       } else if (skippedExisting > 0) {
         // Distinguish "all dups" from "no actionable work" — the prior
         // toast claimed "files may already be optimized" in both cases,

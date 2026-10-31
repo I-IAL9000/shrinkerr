@@ -213,6 +213,36 @@ async def _direct_play_by_default(db) -> bool:
     return bool(row) and (row[0] or "").lower() == "true"
 
 
+def _job_values(j: dict, target_default: float, direct_play_default: bool) -> dict:
+    """The columns a queued job's dict sets (add_jobs_bulk), in order — and a
+    waiting job re-added from Add to Queue takes them too (update_pending_jobs)."""
+    return {
+        "job_type": j["job_type"],
+        "encoder": j.get("encoder"),
+        "audio_tracks_to_remove": json.dumps(j.get("audio_tracks_to_remove") or []),
+        "subtitle_tracks_to_remove": json.dumps(j.get("subtitle_tracks_to_remove") or []),
+        "original_size": j.get("original_size") or 0,
+        "nvenc_preset": j.get("nvenc_preset"),
+        "nvenc_cq": j.get("nvenc_cq"),
+        "audio_codec": j.get("audio_codec"),
+        "audio_bitrate": j.get("audio_bitrate"),
+        "libx265_crf": j.get("libx265_crf"),
+        "libx265_preset": j.get("libx265_preset"),
+        "target_resolution": j.get("target_resolution"),
+        "priority": j.get("priority") or 0,
+        "not_before": j.get("not_before"),
+        "output_codec": j.get("output_codec"),
+        "originals_policy": j.get("originals_policy"),
+        "originals_days": j.get("originals_days"),
+        "vmaf_min_score": j.get("vmaf_min_score"),
+        "vmaf_target": j.get("vmaf_target") if j.get("vmaf_target") is not None
+        else target_default if j["job_type"] in _DIRECT_PLAY_JOB_TYPES else None,
+        # The fixes Add to Queue chose ("" = none), else the setting's
+        "direct_play": (j["direct_play"] or None) if j.get("direct_play") is not None
+        else 1 if direct_play_default and j["job_type"] in _DIRECT_PLAY_JOB_TYPES else None,
+    }
+
+
 class JobQueue:
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -317,6 +347,41 @@ class JobQueue:
         except Exception:
             pass
 
+    async def update_pending_jobs(self, jobs: list[dict]) -> set[str]:
+        """Files waiting in the queue, added again from Add to Queue: their
+        pending jobs take these jobs' settings, in their place in the queue
+        (v0.10.0 — they were skipped, and the dialog's choices dropped: a
+        batch re-added at P4 kept P3). A job that has started is left as it
+        is. Returns the paths updated."""
+        if not jobs:
+            return set()
+        db = await self._connect()
+        try:
+            waiting: dict[str, int] = {}
+            paths = [j["file_path"] for j in jobs]
+            for i in range(0, len(paths), 900):
+                chunk = paths[i:i + 900]
+                async with db.execute(
+                    f"SELECT id, file_path FROM jobs WHERE status = 'pending' "
+                    f"AND file_path IN ({','.join('?' * len(chunk))})", chunk,
+                ) as cur:
+                    for r in await cur.fetchall():
+                        waiting[r["file_path"]] = r["id"]
+            if not waiting:
+                return set()
+            target_default = await _target_when_queued(db)
+            direct_play_default = await _direct_play_by_default(db)
+            updates = [(j["file_path"], _job_values(j, target_default, direct_play_default))
+                       for j in jobs if j["file_path"] in waiting]
+            columns = list(updates[0][1])
+            await db.executemany(
+                f"UPDATE jobs SET {', '.join(f'{c} = ?' for c in columns)} WHERE id = ? AND status = 'pending'",
+                [(*values.values(), waiting[fp]) for fp, values in updates])
+            await db.commit()
+            return {fp for fp, _ in updates}
+        finally:
+            await db.close()
+
     async def add_jobs_bulk(self, jobs: list[dict]) -> list[int]:
         """Insert many jobs in a single transaction — much faster than N add_job() calls.
 
@@ -393,44 +458,15 @@ class JobQueue:
                 else:
                     append_counter += 1
                     order = append_counter
-                params_list.append((
-                    fp,
-                    j["job_type"],
-                    j.get("encoder"),
-                    json.dumps(j.get("audio_tracks_to_remove") or []),
-                    json.dumps(j.get("subtitle_tracks_to_remove") or []),
-                    now,
-                    order,
-                    j.get("original_size") or 0,
-                    j.get("nvenc_preset"),
-                    j.get("nvenc_cq"),
-                    j.get("audio_codec"),
-                    j.get("audio_bitrate"),
-                    j.get("libx265_crf"),
-                    j.get("libx265_preset"),
-                    j.get("target_resolution"),
-                    j.get("priority") or 0,
-                    j.get("not_before"),
-                    j.get("output_codec"),
-                    j.get("originals_policy"),
-                    j.get("originals_days"),
-                    j.get("vmaf_min_score"),
-                    j.get("vmaf_target") if j.get("vmaf_target") is not None
-                    else target_default if j["job_type"] in _DIRECT_PLAY_JOB_TYPES else None,
-                    # The fixes Add to Queue chose ("" = none), else the setting's
-                    (j["direct_play"] or None) if j.get("direct_play") is not None
-                    else 1 if direct_play_default and j["job_type"] in _DIRECT_PLAY_JOB_TYPES else None,
-                ))
+                params_list.append((fp, now, order,
+                                    *_job_values(j, target_default, direct_play_default).values()))
                 inserted_mask.append(True)
 
             # 4. Single executemany — one thread-pool round-trip instead of N.
+            columns = list(_job_values({"job_type": "convert"}, 0.0, False))
             sql = (
-                "INSERT INTO jobs (file_path, job_type, status, encoder, "
-                "audio_tracks_to_remove, subtitle_tracks_to_remove, created_at, "
-                "queue_order, original_size, nvenc_preset, nvenc_cq, audio_codec, "
-                "audio_bitrate, libx265_crf, libx265_preset, target_resolution, priority, not_before, output_codec, "
-                "originals_policy, originals_days, vmaf_min_score, vmaf_target, direct_play) "
-                "VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                f"INSERT INTO jobs (file_path, status, created_at, queue_order, {', '.join(columns)}) "
+                f"VALUES (?, 'pending', ?, ?, {', '.join('?' * len(columns))})"
             )
             assigned_ids: list[int] = []
             if params_list:

@@ -261,6 +261,8 @@
   "plan": {
     "title": "What will happen",
     "video": "Converts the video with {{encoder}} ({{settings}})",
+    "videoTarget": "Converts the video with {{encoder}} ({{preset}}), at the quality the VMAF target {{target}} finds for it",
+    "videoTargetNoPreset": "Converts the video with {{encoder}}, at the quality the VMAF target {{target}} finds for it",
     "noVideo": "The video isn't re-encoded; only the tracks change",
     "nativeFirst": "Moves the original-language audio ({{language}}) first, so it plays by default",
     "size": "{{before}} → about {{after}} (saves about {{saved}})",

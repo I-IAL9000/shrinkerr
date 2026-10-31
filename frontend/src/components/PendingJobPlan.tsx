@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Job } from "../types";
 import { getJobPlan, updateAudioTracks, updateSubtitleTracks, type JobPlan } from "../api";
-import { encoderSettingsLabel, jobEncoderSettings } from "../utils/encoderLabel";
+import { encoderPresetLabel, encoderSettingsLabel, jobEncoderSettings } from "../utils/encoderLabel";
 import { fmtBytes } from "../fmt";
 import { trackLanguageName } from "../utils/languages";
 import { useToast } from "../useToast";
@@ -65,14 +65,19 @@ export default function PendingJobPlan({ job, encodingDefaults, onChanged }: {
 
   const converts = plan.job_type === "convert" || plan.job_type === "combined";
   const encoder = job.encoder || encodingDefaults?.default_encoder || "nvenc";
+  const encoderName = t(`settingsMedia:video.encoderNames.${encoder}`, { defaultValue: encoder });
+  const settings = jobEncoderSettings(job, encodingDefaults);
+  // A VMAF target job's quality is the search's to find (v0.10.0): it said
+  // "P3 / CQ 27", the job's queued quality.
+  const preset = encoderPresetLabel(encoder, settings);
   const lines: { text: string; warn?: boolean }[] = [
     {
-      text: converts
-        ? t("queue:plan.video", {
-            encoder: t(`settingsMedia:video.encoderNames.${encoder}`, { defaultValue: encoder }),
-            settings: encoderSettingsLabel(encoder, jobEncoderSettings(job, encodingDefaults)),
-          })
-        : t("queue:plan.noVideo"),
+      text: !converts ? t("queue:plan.noVideo")
+        : (job.vmaf_target ?? 0) > 0
+          ? preset
+            ? t("queue:plan.videoTarget", { encoder: encoderName, preset, target: job.vmaf_target })
+            : t("queue:plan.videoTargetNoPreset", { encoder: encoderName, target: job.vmaf_target })
+          : t("queue:plan.video", { encoder: encoderName, settings: encoderSettingsLabel(encoder, settings) }),
     },
     ...(plan.native_first ? [{ text: t("queue:plan.nativeFirst", { language: trackLanguageName(plan.native_first) }) }] : []),
     // Fix for direct play (v0.10.0): Hi10P's fix is the conversion above.

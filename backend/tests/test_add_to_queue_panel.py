@@ -42,3 +42,25 @@ def test_converting_ignored_files_says_the_rules_still_apply():
             assert _text(lang, f"scannerModals:estimate.{key}"), (lang, key)
     assert "default settings" not in _text("en", "scannerModals:estimate.rulesWarningHelp")
     assert "override" not in _text("en", "scannerModals:estimate.includeIgnored").lower()
+
+
+def test_add_to_queue_updates_files_already_waiting():
+    src = _source("ScannerPage.tsx")
+    assert "extra.update_pending = true" in src
+    assert re.search(r'"scanner:toasts\.updatedInQueue",\s*\{\s*count: updated', src)
+    assert re.search(r'"scanner:toasts\.updatedNote",\s*\{\s*n: updated', src)
+    for lang in PLURALS:
+        assert all(p <= {"num"} for p in _placeholders(lang, "scanner:toasts.updatedInQueue")), lang  # "That item…"
+        assert all(p == {"n"} for p in _placeholders(lang, "scanner:toasts.updatedNote")), lang
+
+
+def test_a_waiting_target_job_says_the_target_finds_its_quality():
+    """The pending job's "what will happen" said "P3 / CQ 27" for a VMAF
+    target job: the CQ is the search's to find."""
+    src = _source("PendingJobPlan.tsx")
+    assert "(job.vmaf_target ?? 0) > 0" in src
+    assert '"queue:plan.videoTarget"' in src and '"queue:plan.videoTargetNoPreset"' in src
+    assert "encoderPresetLabel(encoder" in src
+    for lang in PLURALS:
+        assert all(p == {"encoder", "preset", "target"} for p in _placeholders(lang, "queue:plan.videoTarget")), lang
+        assert all(p == {"encoder", "target"} for p in _placeholders(lang, "queue:plan.videoTargetNoPreset")), lang

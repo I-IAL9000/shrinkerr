@@ -107,3 +107,40 @@ async def test_the_estimate_says_what_each_auto_comes_to(library):
     assert cpu["preset"] == {"settings": {"medium": 2}, "rules": {}}
     assert (await estimate_jobs(EstimateRequest(file_paths=[FILM], cleanup_only=True)))["auto"]["preset"] == {
         "settings": {}, "rules": {}}  # nothing converted
+
+
+async def _jobs(db_path):
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM jobs") as cur:
+            return {r["file_path"]: dict(r) for r in await cur.fetchall()}
+
+
+@pytest.mark.asyncio
+async def test_adding_a_waiting_file_again_updates_its_job(library):
+    """A file already waiting in the queue was skipped, and Add to Queue's
+    choices were dropped: re-added with P4 to fix a batch queued at P3, the
+    maintainer's jobs kept P3. Its pending job takes them now, in its place
+    in the queue; a running one is left alone, and the other ways in
+    (policies, webhooks, download scripts) still skip it."""
+    from backend.routes.jobs import BulkQueueFromScanRequest, add_jobs_from_scan
+    await _settings(library, vmaf_target_enabled="true", vmaf_target_score=93)
+    first = await _queue(library, FILM, PLAIN)
+    async with aiosqlite.connect(library) as db:
+        await db.execute("UPDATE jobs SET status = 'running' WHERE file_path = ?", (PLAIN,))
+        await db.commit()
+
+    result = await add_jobs_from_scan(BulkQueueFromScanRequest(
+        file_paths=[FILM, PLAIN], vmaf_target_override=0, nvenc_preset_override="p4", priority=2,
+        update_pending=True))
+
+    assert (result["added"], result["updated"], result["skipped_existing"]) == (0, 1, 1)
+    jobs = await _jobs(library)
+    film = jobs[FILM]
+    assert (film["id"], film["queue_order"], film["status"]) == (first[FILM]["id"], first[FILM]["queue_order"], "pending")
+    assert (film["vmaf_target"], film["nvenc_preset"], film["priority"]) == (0, "p4", 2)
+    assert (jobs[PLAIN]["vmaf_target"], jobs[PLAIN]["nvenc_preset"]) == (93, None)  # running: as it was
+
+    again = await add_jobs_from_scan(BulkQueueFromScanRequest(file_paths=[FILM], vmaf_target_override=90))
+    assert (again["added"], again["updated"], again["skipped_existing"]) == (0, 0, 1)
+    assert (await _jobs(library))[FILM]["vmaf_target"] == 0

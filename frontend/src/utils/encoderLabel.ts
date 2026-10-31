@@ -32,6 +32,23 @@ export function encoderSettingsLabel(encoder: string | null | undefined, s: Enco
   }
 }
 
+/** The preset part of encoderSettingsLabel ("P6", "Medium"); "" for an
+ *  encoder without one (VAAPI, VideoToolbox). A VMAF target job's quality is
+ *  the search's to find. */
+export function encoderPresetLabel(encoder: string | null | undefined, s: EncoderSettings): string {
+  switch ((encoder || "nvenc").toLowerCase()) {
+    case "libx265":
+      return cap(s.libx265_preset || "medium");
+    case "qsv":
+      return cap(s.qsv_preset || "medium");
+    case "vaapi":
+    case "videotoolbox":
+      return "";
+    default:
+      return (s.nvenc_preset || "p6").toUpperCase();
+  }
+}
+
 // VideoToolbox -q:v measured against NVENC's CQ — backend/encoding_estimates.py
 // _VT_Q_AS_CQ (a backend test keeps the two in step).
 const VT_Q_AS_CQ: [number, number][] = [[40, 29], [45, 28], [50, 26], [55, 23], [60, 21], [62, 18], [65, 15]];
