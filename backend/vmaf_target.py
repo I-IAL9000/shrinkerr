@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+import statistics
 import tempfile
 import time
 from datetime import datetime, timedelta, timezone
@@ -34,6 +35,9 @@ SECONDS_PER_SAMPLE, MIN_SAMPLES, MAX_SAMPLES = 480, 3, 6
 MAX_SAMPLE_DIP = 2.0
 # Where a search landed is trusted for this long (remembered_cq).
 MEMORY_DAYS = 90
+# A folder with no landing of its own starts at the others' median once
+# there are this many (remembered_cq).
+MIN_LANDINGS = 3
 # A target no quality reaches (grainy footage levels off below it): the
 # search takes the highest CQ scoring within this of the best it found, not
 # the best quality, which only bought a bigger file (search).
@@ -49,6 +53,9 @@ PLATEAU_GAIN = 0.2
 # than this under the target: Sgt. Bilko's 29 and 30 averaged 92.82 for a
 # target of 93, and 29.5 scored 92.77 — a round for nothing.
 HALF_STEP_MARGIN = 0.1
+# The search scores every other frame of a sample: 2.7 s instead of 4.1 for a
+# 10 s 1080p sample, VMAF 99.09 instead of 99.11 (the maintainer's NUC).
+VMAF_SUBSAMPLE = 2
 # A sample's score that low is checked by timestamps too (_vmaf): no real
 # encode in the search's range scores it, a misaligned compare does.
 SUSPECT_SCORE = 50.0
@@ -234,9 +241,12 @@ async def search(score: Callable[[float], Awaitable[list[float]]], target: float
 
 async def remembered_cq(db, file_path: str, target: float, encoder: str, output_codec: str) -> float | None:
     """Where the last search for `target` landed in `file_path`'s folder (a
-    season, a film's folder) with this encoder and output codec, or None —
-    nothing remembered, or nothing in the last MEMORY_DAYS. It's only a
-    starting point for the next search."""
+    season, a film's folder) with this encoder and output codec; else where
+    the searches in other folders landed, their median, once there are
+    MIN_LANDINGS — a film is alone in its folder, and started at the rule's
+    CQ every time (25, where the maintainer's films landed at 25 to 33);
+    else None. Only the last MEMORY_DAYS count. It's only a starting point
+    for the next search."""
     cutoff = (datetime.now(timezone.utc) - timedelta(days=MEMORY_DAYS)).isoformat()
     async with db.execute(
         "SELECT cq FROM vmaf_target_memory WHERE folder = ? AND target = ? AND encoder = ? "
@@ -244,7 +254,14 @@ async def remembered_cq(db, file_path: str, target: float, encoder: str, output_
         (os.path.dirname(file_path), target, encoder, output_codec, cutoff),
     ) as cur:
         row = await cur.fetchone()
-    return float(row[0]) if row else None
+    if row:
+        return float(row[0])
+    async with db.execute(
+        "SELECT cq FROM vmaf_target_memory WHERE target = ? AND encoder = ? AND output_codec = ? AND updated_at >= ?",
+        (target, encoder, output_codec, cutoff),
+    ) as cur:
+        landings = [float(r[0]) for r in await cur.fetchall()]
+    return statistics.median(landings) if len(landings) >= MIN_LANDINGS else None
 
 
 async def remember(db, file_path: str, target: float, encoder: str, output_codec: str, cq: float) -> None:
@@ -367,7 +384,8 @@ async def _vmaf(reference: str, encoded: str, seconds: float, json_path: str) ->
             input_path=reference, temp_path=encoded, seek=0.0, duration=seconds,
             ref_pipeline=ref_pipeline, dist_pipeline=dist_pipeline, json_path=json_path,
             fps_for_progress=fps or 24.0, progress_callback=None, step_label="",
-            frames=(0, int(seconds * 120)) if by_number else None)  # every frame, at up to 120 fps
+            frames=(0, int(seconds * 120)) if by_number else None,  # every frame, at up to 120 fps
+            subsample=VMAF_SUBSAMPLE)
         return result.get("score")
     score = await compare(True)
     if score is None or score < SUSPECT_SCORE:
@@ -417,32 +435,45 @@ async def find_quality(input_path: str, encoder: str, duration: float, target: f
         encoded_bytes: dict = {}
         source_bytes = sum(os.path.getsize(s) for s in samples)
 
+        async def encode(n: int, cq: float) -> str:
+            """Sample n encoded at `cq`: the encode's path (_Failed when it can't be)."""
+            if on_sample:  # the round's progress: sample n + 1 of them
+                await on_sample(n + 1, len(samples))
+            plan = await convert_file(
+                samples[n], encoder, SAMPLE_SECONDS, command_only=True, override_cq=cq,
+                override_crf=quality_settings("libx265", cq)["libx265_crf"] if encoder == "libx265" else None,
+                output_codec=output_codec, **(convert_kwargs or {}))
+            if not plan.get("command") or not await _run(list(plan["command"]), 1800, on_proc):
+                raise _Failed
+            return plan["output_path"]
+
         async def score(cq: float) -> list[float]:
             nonlocal rounds
             rounds += 1
             if on_round:
                 await on_round(cq, rounds)
             values = []
-            for n, sample in enumerate(samples):
-                if on_sample:  # the round's progress: sample n + 1 of them
-                    await on_sample(n + 1, len(samples))
-                plan = await convert_file(
-                    sample, encoder, SAMPLE_SECONDS, command_only=True, override_cq=cq,
-                    override_crf=quality_settings("libx265", cq)["libx265_crf"] if encoder == "libx265" else None,
-                    output_codec=output_codec, **(convert_kwargs or {}))
-                if not plan.get("command") or not await _run(list(plan["command"]), 1800, on_proc):
-                    raise _Failed
-                value = await _vmaf(sample, plan["output_path"], SAMPLE_SECONDS,
-                                    os.path.join(work, f"vmaf{n}_{cq}.json"))
-                try:
-                    key = setting_key(cq)
-                    encoded_bytes[key] = encoded_bytes.get(key, 0) + os.path.getsize(plan["output_path"])
-                    os.unlink(plan["output_path"])
-                except OSError:
-                    pass
-                if value is None:
-                    raise _Failed
-                values.append(value)
+            # The next sample is encoded (the GPU's work, mostly) while this one
+            # is scored (the CPU's): 1.6 s and 2.7 s for a 1080p sample on the
+            # maintainer's NUC, one after the other until v0.10.0.
+            pending: asyncio.Future | None = asyncio.ensure_future(encode(0, cq))
+            try:
+                for n, sample in enumerate(samples):
+                    output = await pending
+                    pending = asyncio.ensure_future(encode(n + 1, cq)) if n + 1 < len(samples) else None
+                    value = await _vmaf(sample, output, SAMPLE_SECONDS, os.path.join(work, f"vmaf{n}_{cq}.json"))
+                    try:
+                        key = setting_key(cq)
+                        encoded_bytes[key] = encoded_bytes.get(key, 0) + os.path.getsize(output)
+                        os.unlink(output)
+                    except OSError:
+                        pass
+                    if value is None:
+                        raise _Failed
+                    values.append(value)
+            finally:
+                if pending is not None:  # a sample failed: the next one's encode isn't left running
+                    await asyncio.gather(pending, return_exceptions=True)
             mean = round(sum(values) / len(values), 2)
             print(f"[VMAF-TARGET] CQ {cq}: VMAF {mean} (lowest {round(min(values), 2)}) on {len(values)} samples",
                   flush=True)

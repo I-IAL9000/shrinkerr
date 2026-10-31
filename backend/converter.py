@@ -2271,6 +2271,16 @@ def _is_bimodal_vmaf(result: dict) -> bool:
     return mn is not None and mx is not None and mn < 20 and mx >= 90
 
 
+def _vmaf_threads() -> int:
+    """libvmaf's threads: every CPU this process may use. 4 took 6.1 s for a
+    10 s 1080p sample on the maintainer's 16-thread NUC, 16 took 4.1 s
+    (v0.10.0)."""
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:  # macOS
+        return os.cpu_count() or 4
+
+
 def vmaf_window(ref: str, dist: str, seek: float, duration: float, frames: tuple[int, int] | None,
                 ref_args: list[str] | None = None, rate: float | None = None) -> dict:
     """How a comparison reads its window of the reference and the encode
@@ -2313,6 +2323,7 @@ async def _run_libvmaf_pass(
     step_label: str,
     frames: tuple[int, int] | None = None,
     ref_args: list[str] | None = None,
+    subsample: int = 1,
 ) -> dict:
     """Run libvmaf for a single seek window and return a result dict.
 
@@ -2321,7 +2332,8 @@ async def _run_libvmaf_pass(
     timestamps restart in every VOB or start far from zero (a Blu-ray at
     4200 s): the seek landed on another scene, and Showgirls scored 1.8 on
     an encode its samples had scored 92. `ref_args`: the reference's input
-    options (the encode's).
+    options (the encode's). `subsample`: score every Nth frame (the VMAF
+    target's samples).
 
     Returns:
         {
@@ -2347,7 +2359,8 @@ async def _run_libvmaf_pass(
         f"{window['count']}{window['ref']}{ref_pipeline}[ref_norm];"
         f"{window['dist']}{dist_pipeline}[dist_norm];"
         f"[dist_norm][ref_norm]scale2ref=flags=bicubic[dist][ref];"
-        f"[dist][ref]libvmaf=model=version=vmaf_v0.6.1:n_threads=4:"
+        f"[dist][ref]libvmaf=model=version=vmaf_v0.6.1:n_threads={_vmaf_threads()}:"
+        f"{f'n_subsample={subsample}:' if subsample > 1 else ''}"
         f"log_fmt=json:log_path={json_path}:shortest=1[vmaf]"
     )
     cmd = [

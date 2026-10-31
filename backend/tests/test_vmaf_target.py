@@ -479,3 +479,67 @@ async def test_the_setting_is_kept_in_range(test_db, monkeypatch):
     await settings_route.update_encoding_settings(SettingsUpdate(vmaf_target_enabled=True, vmaf_target_score=120))
     got = await settings_route.get_encoding_settings()
     assert (got["vmaf_target_enabled"], got["vmaf_target_score"]) == (True, 99.0)
+
+
+async def _overlapping(tmp_path, monkeypatch, score_of):
+    """find_quality on three fake samples, recording when each is encoded and
+    scored; `score_of(sample)` is its score."""
+    import asyncio
+    import os
+    work = tmp_path / "work"
+    work.mkdir()
+    events = []
+
+    async def cut(input_path, duration, w, **kw):
+        paths = [os.path.join(w, f"sample{n}.mkv") for n in range(3)]
+        for p in paths:
+            open(p, "wb").write(b"s" * 1000)
+        return paths
+    monkeypatch.setattr(vmaf_target, "_cut_samples", cut)
+
+    async def plan(sample, encoder, seconds, override_cq=None, **kw):
+        return {"command": [sample], "output_path": f"{sample}.{override_cq}.out"}
+    import backend.converter as converter
+    monkeypatch.setattr(converter, "convert_file", plan)
+
+    async def run(cmd, timeout, on_proc=None):
+        events.append(("encode", os.path.basename(cmd[0])))
+        await asyncio.sleep(0.02)
+        events.append(("encoded", os.path.basename(cmd[0])))
+        return True
+    monkeypatch.setattr(vmaf_target, "_run", run)
+
+    async def vmaf(ref, enc, seconds, json_path):
+        open(enc, "wb").write(b"e" * 500)
+        events.append(("score", os.path.basename(ref)))
+        await asyncio.sleep(0.05)
+        events.append(("scored", os.path.basename(ref)))
+        return score_of(os.path.basename(ref))
+    monkeypatch.setattr(vmaf_target, "_vmaf", vmaf)
+
+    async def available():
+        return True
+    import backend.test_encode as test_encode
+    monkeypatch.setattr(test_encode, "check_vmaf_available", available)
+    monkeypatch.setattr(vmaf_target.tempfile, "mkdtemp", lambda prefix="": str(work))
+    found = await vmaf_target.find_quality("/m/film.mkv", "nvenc", 2500.0, 93, start=30)
+    return found, events
+
+
+@pytest.mark.asyncio
+async def test_the_next_sample_is_encoded_while_one_is_scored(tmp_path, monkeypatch):
+    """The encode is the GPU's work, the score the CPU's: 1.6 s and 2.7 s for
+    a 1080p sample, one after the other until v0.10.0."""
+    found, events = await _overlapping(tmp_path, monkeypatch, lambda sample: 95.0)
+    assert found["reached"]
+    first_round = events[:events.index(("scored", "sample2.mkv")) + 1]
+    assert first_round.index(("encode", "sample1.mkv")) < first_round.index(("scored", "sample0.mkv"))
+    assert first_round.index(("encode", "sample2.mkv")) < first_round.index(("scored", "sample1.mkv"))
+
+
+@pytest.mark.asyncio
+async def test_a_sample_that_cant_be_scored_leaves_no_encode_running(tmp_path, monkeypatch):
+    found, events = await _overlapping(tmp_path, monkeypatch, lambda sample: None)
+    assert found is None
+    assert ("encode", "sample1.mkv") in events and events[-1] != ("encode", "sample1.mkv")
+    assert events.count(("encode", "sample1.mkv")) == events.count(("encoded", "sample1.mkv"))

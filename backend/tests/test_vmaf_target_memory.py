@@ -53,6 +53,23 @@ async def test_remember_and_recall(test_db):
 
 
 @pytest.mark.asyncio
+async def test_a_folder_with_no_landing_starts_where_the_others_landed(test_db):
+    """A film is alone in its folder: it started at the rule's CQ every time.
+    Now it starts at the median of where the other searches landed, once
+    there are three."""
+    async with aiosqlite.connect(test_db) as db:
+        for film, cq in (("A", 27), ("B", 33)):
+            await vmaf_target.remember(db, f"/m/{film} (2020)/{film}.mkv", 93, "nvenc", "hevc", cq)
+    assert await _recall(test_db, "/m/New (2020)/New.mkv") is None  # two aren't enough
+    async with aiosqlite.connect(test_db) as db:
+        await vmaf_target.remember(db, "/m/C (2020)/C.mkv", 93, "nvenc", "hevc", 29)
+        await vmaf_target.remember(db, "/m/D (2020)/D.mkv", 95, "nvenc", "hevc", 20)  # another target
+    assert await _recall(test_db, "/m/New (2020)/New.mkv") == 29
+    assert await _recall(test_db, "/m/A (2020)/Another.mkv") == 27  # a folder's own landing first
+    assert await _recall(test_db, "/m/New (2020)/New.mkv", encoder="libx265") is None
+
+
+@pytest.mark.asyncio
 async def test_what_expired_is_cleared_when_something_new_is_remembered(test_db):
     async with aiosqlite.connect(test_db) as db:
         await vmaf_target.remember(db, f"{SEASON}/E01.mkv", 93, "nvenc", "hevc", 31)
