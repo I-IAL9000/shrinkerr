@@ -3713,6 +3713,16 @@ async def convert_file(
         if not vmaf_target:
             # Files under MIN_DURATION are never searched; not "untested".
             target_untested = target if search_duration >= MIN_DURATION else None
+        elif vmaf_target.get("larger"):
+            # Its samples came out larger than the original's at the quality
+            # found: the file would too. The video is kept as it is, before a
+            # full encode (QueueWorker's is_video_kept: the rest of the job runs).
+            label, pct = quality_label(encoder, vmaf_target["cq"]), vmaf_target.get("size_ratio") or 0
+            why = (f"The video was kept as it is: VMAF target {target:g} needs {label}, and its samples "
+                   f"came out {pct:g}% larger than the original's.")
+            print(f"[CONVERT] {why}", flush=True)
+            return {"success": False, "error": why, "error_key": "errors.vmafTargetLarger",
+                    "error_params": {"target": f"{target:g}", "quality": label, "pct": f"{pct:g}"}}
         else:
             cq = vmaf_target["cq"]
             crf = quality_settings("libx265", cq)["libx265_crf"]
@@ -4497,6 +4507,7 @@ async def convert_file(
             return None
         return {**{k: vmaf_target[k] for k in ("target", "cq", "vmaf", "min", "reached", "rounds", "samples",
                                                "seconds")},
+                "best": vmaf_target.get("best"),  # out of reach: the best the samples scored
                 "checked_score": checked_score, **target_notes}
 
     if space_saved < 0:
@@ -4989,8 +5000,10 @@ async def convert_file(
     # re-encode reports both (_target_stats: "retry").
     # ------------------------------------------------------------------
     retry_cq, held = None, None
-    if (vmaf_target and not _target_retry and vmaf_score is not None and not vmaf_uncertain
-            and vmaf_score < vmaf_target["target"] - 1.0):
+    # Not when the target is out of reach (no quality reached it): a lower
+    # quality only makes the file bigger (v0.10.0).
+    if (vmaf_target and vmaf_target.get("reached") and not _target_retry and vmaf_score is not None
+            and not vmaf_uncertain and vmaf_score < vmaf_target["target"] - 1.0):
         from backend.encoding_estimates import quality_settings
         from backend.vmaf_target import fractional_steps
 

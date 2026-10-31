@@ -186,7 +186,7 @@
       "vmafUncertain": "Medición VMAF dudosa: libvmaf perdió la sincronía en todas las ventanas de análisis probadas. La puntuación no es fiable; casi con seguridad la codificación se ve bien. Vuelve a medir desde Ajustes → Vídeo → VMAF.",
       "vmafTarget": "Objetivo VMAF",
       "vmafTargetFound": "{{quality}}: las muestras puntuaron {{vmaf}} (objetivo {{target}}; {{search}})",
-      "vmafTargetMissed": "{{quality}}, la mejor del rango: las muestras puntuaron {{vmaf}} (objetivo {{target}}; {{search}})",
+      "vmafTargetMissed": "{{quality}}: el objetivo está fuera de alcance para este archivo, las muestras puntuaron {{vmaf}} (la mejor {{best}}; objetivo {{target}}; {{search}})",
       "vmafTargetFound_untimed": "{{quality}}: las muestras puntuaron {{vmaf}} (objetivo {{target}})",
       "vmafTargetMissed_untimed": "{{quality}}, la mejor del rango: las muestras puntuaron {{vmaf}} (objetivo {{target}})",
       "vmafTargetSearch_one": "{{count}} ronda, {{time}}",

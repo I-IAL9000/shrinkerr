@@ -1009,11 +1009,13 @@ class JobQueue:
 
 
 def is_video_kept(error_key: Optional[str]) -> bool:
-    """A conversion refused because the encode would lose Dolby Vision or HDR
+    """A conversion refused because the encode would lose Dolby Vision or HDR,
+    or the VMAF target's quality would make the file larger
     (converter.convert_file): the video is kept as it is, and the job's other
     work still runs — it failed the whole job, PGS to SRT and the stereo
     track with it (v0.10.0)."""
-    return bool(error_key) and (error_key.startswith("errors.dolbyVisionKept.") or error_key == "errors.hdrKept8Bit")
+    return bool(error_key) and (error_key.startswith("errors.dolbyVisionKept.")
+                                or error_key in ("errors.hdrKept8Bit", "errors.vmafTargetLarger"))
 
 
 def local_node_outcome(job: dict, final_status: str) -> tuple[bool, bool]:

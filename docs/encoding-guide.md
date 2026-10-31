@@ -312,7 +312,14 @@ works.
   the last search in the same folder landed (a season, say) or, the first
   time, at the job's quality; steps up or down until it brackets the
   answer, narrows it, and on NVENC and libx265 tries a half step more
-  (CQ 32.5). If even CQ 14 misses the target, CQ 14 is used.
+  (CQ 32.5).
+- **A target out of reach.** Grainy footage can level off below the
+  target whatever the quality (92.5 at CQ 22, 92.7 at CQ 14). Then the
+  search takes the highest CQ within a point of the best score it found,
+  and the file isn't re-encoded. If that quality's samples come out larger
+  than the original's, the file would too: its video is kept as it is,
+  without the full encode, and the job's details say why (its track
+  clean-up still runs).
 - **It replaces** the quality from presets, rules and content type for
   that file. The job's details show the quality chosen, the samples'
   score, how long the search took and the lowest sample ("VMAF target:

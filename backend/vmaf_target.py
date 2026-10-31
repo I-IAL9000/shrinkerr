@@ -34,6 +34,10 @@ SECONDS_PER_SAMPLE, MIN_SAMPLES, MAX_SAMPLES = 480, 3, 6
 MAX_SAMPLE_DIP = 2.0
 # Where a search landed is trusted for this long (remembered_cq).
 MEMORY_DAYS = 90
+# A target no quality reaches (grainy footage levels off below it): the
+# search takes the highest CQ scoring within this of the best it found, not
+# the best quality, which only bought a bigger file (search).
+KNEE_POINTS = 1.0
 # A disc's samples start on a Blu-ray aligned unit (32 transport packets of
 # 192 bytes), which is also a whole number of DVD sectors (2048).
 DISC_ALIGN = 6144
@@ -101,8 +105,9 @@ async def search(score: Callable[[float], Awaitable[list[float]]], target: float
     the per-sample VMAF values. `setting_key` maps a CQ to the encoder's
     actual setting: CQs sharing a key are scored once.
     {"cq", "vmaf" (mean at cq), "min" (lowest sample at cq), "reached",
-    "rounds" (CQs scored), "scores": {cq: {"mean", "min"}}}; when no CQ
-    passes, the best one is used."""
+    "rounds" (CQs scored), "scores": {cq: {"mean", "min"}}}. When no CQ
+    passes, the target is out of reach ("best": the best mean found): the
+    highest CQ within KNEE_POINTS of it, narrowed between the CQs scored."""
     scored: dict = {}  # setting key -> (mean, lowest sample, passes)
     scores: dict = {}
 
@@ -141,8 +146,25 @@ async def search(score: Callable[[float], Awaitable[list[float]]], target: float
     found = lo >= best
     if found and half_steps and lo + 0.5 <= worst and await at(lo + 0.5):
         lo += 0.5
-    chosen = lo if found else best
-    return {"cq": chosen, "vmaf": scores[chosen]["mean"], "min": scores[chosen]["min"], "reached": found,
+    if found:
+        return {"cq": lo, "vmaf": scores[lo]["mean"], "min": scores[lo]["min"], "reached": True,
+                "rounds": len(scored), "scores": scores}
+    # Out of reach (v0.10.0): CQ 14 scored 92.7 where CQ 22 scored 92.5 on
+    # grainy footage, and came out larger than the original.
+    top = max(v["mean"] for v in scores.values())
+
+    def close(c: float) -> bool:
+        return scores[c]["mean"] >= top - KNEE_POINTS
+    k_lo = max(c for c in scores if close(c))
+    k_hi = min([c for c in scores if c > k_lo and not close(c)], default=worst + 1)
+    while k_hi - k_lo > 1:
+        mid = (k_lo + k_hi) // 2
+        await at(mid)
+        if close(mid):
+            k_lo = mid
+        else:
+            k_hi = mid
+    return {"cq": k_lo, "vmaf": scores[k_lo]["mean"], "min": scores[k_lo]["min"], "reached": False, "best": top,
             "rounds": len(scored), "scores": scores}
 
 
@@ -310,6 +332,10 @@ async def find_quality(input_path: str, encoder: str, duration: float, target: f
             pass
 
         rounds = 0
+        # The encoded samples' bytes per setting, against the samples' own:
+        # whether a quality would make the file larger (the size guard).
+        encoded_bytes: dict = {}
+        source_bytes = sum(os.path.getsize(s) for s in samples)
 
         async def score(cq: float) -> list[float]:
             nonlocal rounds
@@ -329,6 +355,8 @@ async def find_quality(input_path: str, encoder: str, duration: float, target: f
                 value = await _vmaf(sample, plan["output_path"], SAMPLE_SECONDS,
                                     os.path.join(work, f"vmaf{n}_{cq}.json"))
                 try:
+                    key = setting_key(cq)
+                    encoded_bytes[key] = encoded_bytes.get(key, 0) + os.path.getsize(plan["output_path"])
                     os.unlink(plan["output_path"])
                 except OSError:
                     pass
@@ -352,9 +380,16 @@ async def find_quality(input_path: str, encoder: str, duration: float, target: f
             print("[VMAF-TARGET] A sample couldn't be encoded or scored — keeping the job's quality", flush=True)
             return None
         seconds = round(time.monotonic() - began, 1)
+        reach = "" if result["reached"] else f", out of reach: the best {result['best']}"
         print(f"[VMAF-TARGET] {os.path.basename(input_path)}: CQ {result['cq']} for VMAF {target} "
-              f"({result['vmaf']}{'' if result['reached'] else ', the best in range'}) "
-              f"in {result['rounds']} rounds, {seconds}s", flush=True)
-        return {**result, "target": target, "samples": len(samples), "seconds": seconds}
+              f"({result['vmaf']}{reach}) in {result['rounds']} rounds, {seconds}s", flush=True)
+        # The size guard: samples encoded at the quality found larger than
+        # the original's mean the file would be too — not worth a full encode.
+        chosen_bytes = encoded_bytes.get(setting_key(result["cq"]))
+        ratio = round((chosen_bytes / source_bytes - 1) * 100, 1) if chosen_bytes and source_bytes else None
+        if ratio is not None and ratio >= 0:
+            print(f"[VMAF-TARGET] Its samples came out {ratio}% larger than the original's", flush=True)
+        return {**result, "target": target, "samples": len(samples), "seconds": seconds,
+                "larger": ratio is not None and ratio >= 0, "size_ratio": ratio}
     finally:
         shutil.rmtree(work, ignore_errors=True)

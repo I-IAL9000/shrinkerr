@@ -53,6 +53,7 @@
       "ffmpeg": "The video was kept as it is: dropping Dolby Vision needs ffmpeg 7.1 or later, and it can't be kept for this job."
     },
     "hdrKept8Bit": "The video was kept as it is: HDR video needs a 10-bit encoder; {{encoder}} encodes 8-bit here. Use NVENC, libx265 or VideoToolbox.",
+    "vmafTargetLarger": "The video was kept as it is: VMAF target {{target}} needs {{quality}}, and its samples came out {{pct}}% larger than the original's.",
     "dolbyVisionNotDropped": "Dolby Vision was to be dropped, but the new file still carries it. Original kept.",
     "encodeLarger": "The converted file was {{pct}}% larger than the original, so the original was kept.",
     "hdrLost": "The {{format}} source lost its HDR in the encode. Original kept.",

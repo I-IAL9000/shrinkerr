@@ -58,21 +58,25 @@ async def test_the_steps_grow_from_a_far_start():  # 2, 4, 8, 16 … from the st
     async def hopeless(cq):
         return [80.0, 80.0]
     r = await vmaf_target.search(hopeless, 93, start=42)  # the steps end at the floor, which is scored
-    assert (r["cq"], r["reached"], r["rounds"]) == (14, False, 5)
+    # out of reach and flat: no quality does better, so the smallest file (test_vmaf_target_out_of_reach.py)
+    assert (r["cq"], r["reached"], r["rounds"]) == (42, False, 5)
 
 
 @pytest.mark.asyncio
-async def test_out_of_reach_uses_the_floor():
+async def test_out_of_reach_tries_the_floor_and_takes_where_the_score_stops_improving():
+    """Out of reach, the search still tries the best quality, CQ 14; when it
+    scores no better, the highest CQ is taken: a better quality would only
+    make the file bigger (it used to take CQ 14)."""
     async def score(cq):
         return [80.0, 80.0]
     r = await vmaf_target.search(score, 93, start=30)
-    assert (r["cq"], r["reached"]) == (14, False)
+    assert (r["cq"], r["reached"], r["best"]) == (42, False, 80.0)
     asked = []
 
     async def odd(cq):  # an odd start steps over CQ 14: the floor is still tried
         asked.append(cq)
         return [80.0, 80.0]
-    assert (await vmaf_target.search(odd, 93, start=29))["cq"] == 14 and 14 in asked
+    assert (await vmaf_target.search(odd, 93, start=29))["cq"] == 42 and 14 in asked
 
 
 @pytest.mark.asyncio

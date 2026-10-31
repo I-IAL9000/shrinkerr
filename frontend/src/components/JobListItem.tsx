@@ -475,7 +475,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
                       {/* How long the search took: its rounds (CQs scored) and wall time. */}
                       <div>
                         {t(vt.reached ? "queue:item.stats.vmafTargetFound" : "queue:item.stats.vmafTargetMissed",
-                          { quality: quality(vt.cq), vmaf: vt.vmaf, target: vt.target,
+                          { quality: quality(vt.cq), vmaf: vt.vmaf, target: vt.target, best: vt.best ?? vt.vmaf,
                             // Jobs from earlier 0.10 builds didn't time the search.
                             context: vt.rounds == null ? "untimed" : undefined,
                             search: vt.rounds == null ? "" : t("queue:item.stats.vmafTargetSearch", { count: vt.rounds, time: fmtDuration(vt.seconds) }) })}

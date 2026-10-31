@@ -165,7 +165,7 @@
       "vmafUncertain": "VMAF measurement-suspect: libvmaf desynced on every analysis window we tried. The score is unreliable; the encode is almost certainly visually fine. Re-measure from Settings → Video → VMAF.",
       "vmafTarget": "VMAF target",
       "vmafTargetFound": "{{quality}}: samples scored {{vmaf}} (target {{target}}; {{search}})",
-      "vmafTargetMissed": "{{quality}}, the best in range: samples scored {{vmaf}} (target {{target}}; {{search}})",
+      "vmafTargetMissed": "{{quality}}: the target is out of reach for this file, samples scored {{vmaf}} (the best {{best}}; target {{target}}; {{search}})",
       "vmafTargetFound_untimed": "{{quality}}: samples scored {{vmaf}} (target {{target}})",
       "vmafTargetMissed_untimed": "{{quality}}, the best in range: samples scored {{vmaf}} (target {{target}})",
       "vmafTargetSearch_one": "{{count}} round, {{time}}",

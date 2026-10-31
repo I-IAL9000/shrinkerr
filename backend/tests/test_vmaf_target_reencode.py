@@ -612,3 +612,30 @@ async def test_a_remote_worker_kills_an_ffmpeg_started_after_a_cancel(tmp_path, 
                                                                      "job_type": "convert", "encoder": "libx265"},
                                                    ["libx265"]), timeout=20)
     assert killed == [-9] and client.completed == [(False, "errors.cancelledByUser")]
+
+
+@needs_vmaf
+@pytest.mark.asyncio
+async def test_out_of_reach_isnt_reencoded(run):
+    """No quality reached the target (test_vmaf_target_out_of_reach.py): a
+    lower one only makes the file bigger, so a miss isn't encoded again."""
+    result = await run(90.0, found={"reached": False, "best": 92.7})
+    assert result["success"], result.get("error")
+    assert run.seen.crfs == [32]  # one encode, at CQ 30
+    stats = result["encoding_stats"]["vmaf_target"]
+    assert stats["reached"] is False and stats["best"] == 92.7 and "retry" not in stats
+
+
+@needs_vmaf
+@pytest.mark.asyncio
+async def test_samples_larger_than_the_original_keep_the_video_before_any_encode(run):
+    from backend.queue import is_video_kept
+    from backend.tests.test_message_codes import _render_en
+    result = await run(found={"reached": False, "best": 92.7, "cq": 22, "larger": True, "size_ratio": 8.0})
+    assert result["success"] is False and result["error_key"] == "errors.vmafTargetLarger"
+    assert is_video_kept(result["error_key"])  # the queue keeps the video and runs the rest of the job
+    assert result["error"] == ("The video was kept as it is: VMAF target 93 needs CRF 24, and its samples "
+                               "came out 8% larger than the original's.")
+    assert _render_en("serverJobs", result["error_key"], result["error_params"]) == result["error"]
+    assert run.seen.crfs == []  # no encode
+    assert run.seen.src.read_bytes() == run.seen.before and _left(run.seen.src.parent) == [run.seen.src.name]
