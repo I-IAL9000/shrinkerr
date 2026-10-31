@@ -156,3 +156,13 @@ def test_the_plan_names_the_tracks():
     for lang in PLURALS:
         assert _placeholders(lang, "queue:plan.losslessConvert") == [{"tracks", "target"}], lang
         assert _placeholders(lang, "queue:plan.losslessKeep") == [{"tracks"}], lang
+
+
+def test_the_running_card_says_what_the_encode_does():
+    """It said "Lossless → EAC3" from Settings alone: a job set to keep its
+    lossless audio, or a TrueHD Atmos film (kept lossless), showed it too."""
+    from backend.tests.test_vmaf_target_ui import _source
+    src = _source("QueuePage.tsx")
+    assert "getJobPlan(job.id)" in src
+    assert "losslessCodec={lossless?.codec ?? null}" in src
+    assert "auto_convert_lossless" not in src

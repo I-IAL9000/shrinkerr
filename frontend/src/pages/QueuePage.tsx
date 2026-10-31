@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { mergeHead } from "../utils/mergeHead";
 import { encoderSettingsLabel, jobEncoderSettings } from "../utils/encoderLabel";
 import VirtualJobList from "../components/VirtualJobList";
-import { getJobs, getJobIds, getJobStats, startQueue, pauseQueue, cancelJob, cancelCurrentJob, removeJob, retryJob, clearCompleted, clearPending, ignoreFile, bulkUpdateJobSettings, bulkMoveJobs, bulkIgnoreJobs, getEncodingSettings, getTracksByPath, reorderJobs, researchFilesBulk, getNodes, undoConversion, keepLarger } from "../api";
+import { getJobs, getJobIds, getJobStats, startQueue, pauseQueue, cancelJob, cancelCurrentJob, removeJob, retryJob, clearCompleted, clearPending, ignoreFile, bulkUpdateJobSettings, bulkMoveJobs, bulkIgnoreJobs, getEncodingSettings, getJobPlan, type JobPlan, reorderJobs, researchFilesBulk, getNodes, undoConversion, keepLarger } from "../api";
 import { fmtNum, fmtBytes } from "../fmt";
 import JobCard from "../components/JobCard";
 import JobListItem from "../components/JobListItem";
@@ -449,40 +449,26 @@ export default function QueuePage() {
     setDropIdx(null);
   };
 
-  // Track cache for running jobs (keyed by file_path)
-  const [trackCache, setTrackCache] = useState<Map<string, any[]>>(new Map());
-  // Lossless flag cache, also keyed by file_path. Sourced from the
-  // backend's pre-computed has_lossless_audio (handles DTS-HD profile
-  // variants that the old client-side detection was missing).
-  // v0.3.106+.
-  const [losslessCache, setLosslessCache] = useState<Map<string, boolean>>(new Map());
+  // Running jobs' plans (keyed by job id): their tracks, and what the encode
+  // does with lossless audio — the job's own choice and Atmos / DTS:X kept
+  // (v0.10.0: the card said "Lossless → EAC3" from Settings alone).
+  const [planCache, setPlanCache] = useState<Map<number, JobPlan>>(new Map());
 
-  // Fetch track data for all running jobs
+  // Fetch the plan of each running job
   useEffect(() => {
-    // Keep only the running jobs' entries (v0.10.0: both maps grew for as
+    // Keep only the running jobs' entries (v0.10.0: the map grew for as
     // long as the page stayed open).
-    const live = new Set(running.map(j => j.file_path));
-    const prune = <T,>(prev: Map<string, T>) =>
-      [...prev.keys()].every(k => live.has(k)) ? prev : new Map([...prev].filter(([k]) => live.has(k)));
-    setTrackCache(prune);
-    setLosslessCache(prune);
+    const live = new Set(running.map(j => j.id));
+    setPlanCache(prev =>
+      [...prev.keys()].every(k => live.has(k)) ? prev : new Map([...prev].filter(([k]) => live.has(k))));
     for (const job of running) {
-      if (!trackCache.has(job.file_path)) {
-        getTracksByPath(job.file_path).then((data) => {
-          setTrackCache(prev => {
-            const next = new Map(prev);
-            next.set(job.file_path, data.audio_tracks || []);
-            return next;
-          });
-          setLosslessCache(prev => {
-            const next = new Map(prev);
-            next.set(job.file_path, !!data.has_lossless_audio);
-            return next;
-          });
+      if (!planCache.has(job.id)) {
+        getJobPlan(job.id).then((plan) => {
+          setPlanCache(prev => new Map(prev).set(job.id, plan));
         }).catch(() => {});
       }
     }
-  }, [running.map(j => j.file_path).join(",")]);
+  }, [running.map(j => j.id).join(",")]);
 
   // Row renderers for the virtualized lists (v0.9.138). Only rows in view are
   // mounted, so a job_progress WebSocket tick (which re-renders this page via
@@ -687,25 +673,16 @@ export default function QueuePage() {
       {running.map((job, runIndex) => {
         const progress = jobProgressMap.get(job.id);
         if (!progress) return null; // shown as spinner below
-        const tracks = trackCache.get(job.file_path) || [];
+        const plan = planCache.get(job.id);
+        const tracks = plan?.audio || [];
         const removeIndices = new Set(job.audio_tracks_to_remove || []);
         const removedLangs = tracks
           .filter((t: any) => removeIndices.has(t.stream_index))
           .map((t: any) => (t.language || "und").toLowerCase())
           .filter((v: string, i: number, a: string[]) => a.indexOf(v) === i);
-        // "Lossless → EAC3" badge: only show when a track that's
-        // ACTUALLY GOING TO BE KEPT is lossless. Pre-v0.3.124 the
-        // backend's has_lossless_audio was a file-level flag, so a
-        // file with a TrueHD/DTS-HD MA secondary that was being
-        // removed still triggered the badge — implying a transcode
-        // that would never happen. The per-track `is_lossless` flag
-        // (also v0.3.124) lets the UI intersect against the job's
-        // removal list. Falls back to the file-level flag when the
-        // per-track field isn't present (older /tracks-by-path
-        // responses that haven't been re-fetched yet).
-        const hasLossless = tracks.length > 0
-          ? tracks.some((t: any) => t.is_lossless && !removeIndices.has(t.stream_index))
-          : !!losslessCache.get(job.file_path);
+        // "Lossless → EAC3" badge: only when the encode converts a track
+        // it keeps (the plan's `lossless`, as "What will happen" says it).
+        const lossless = plan?.lossless?.convert.length ? plan.lossless : null;
         return (
           <JobCard key={job.id} progress={progress}
             jobIndex={runIndex}
@@ -726,8 +703,8 @@ export default function QueuePage() {
             audioTracksToRemove={job.audio_tracks_to_remove}
             subtitleTracksToRemove={job.subtitle_tracks_to_remove}
             removedTrackLangs={removedLangs}
-            losslessCodec={hasLossless && encodingDefaults?.auto_convert_lossless ? encodingDefaults?.lossless_target_codec : null}
-            losslessBitrate={hasLossless && encodingDefaults?.auto_convert_lossless ? encodingDefaults?.lossless_target_bitrate : null}
+            losslessCodec={lossless?.codec ?? null}
+            losslessBitrate={lossless?.bitrate ?? null}
             onCancel={() => {
               cancelCurrentJob(job.id).then(() => {
                 toast(t(job.job_type === "health_check" ? "queue:toasts.healthCheckCancelled" : "queue:toasts.conversionCancelled"));
