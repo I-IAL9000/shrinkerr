@@ -2236,11 +2236,19 @@ def _vmaf_pipelines(src_info: dict, dst_info: dict) -> tuple[str, str, float | N
         source's, some sample windows rounded them a whole slot apart — every
         frame compared with its neighbour (Dragons' Den, 1080i HDTV cut at a
         keyframe 1.112 s in: VMAF 43 on a fine encode). The encode's
-        timestamps are moved by that fraction first (_vmaf_grid_shift).
+        timestamps are moved by that fraction first (_vmaf_grid_shift);
+      size fix (v0.10.0): a resized encode is scored at its own size, the
+        source brought down to it — scaled up to the source's (scale2ref),
+        the resolution a rule drops counted as the encode's loss: Stolen
+        Kisses, 4K to 1080p, scored 68.8, and its VMAF target samples too
+        low at every quality to be trusted.
     """
     target_fps = src_info.get("fps") or dst_info.get("fps")
     range_clause = "scale=in_range=auto:out_range=tv:flags=bicubic"
     ref_chain, dist_chain = [range_clause], [range_clause]
+    dw, dh = dst_info.get("width") or 0, dst_info.get("height") or 0
+    if 0 < dw < (src_info.get("width") or 0) and 0 < dh < (src_info.get("height") or 0):
+        ref_chain.append(f"scale={dw}:{dh}:flags=bicubic")
     if target_fps and target_fps > 0:
         shift = _vmaf_grid_shift(src_info.get("start_time"), dst_info.get("start_time"), target_fps)
         if shift:

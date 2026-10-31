@@ -221,11 +221,19 @@ async def run_test_encode(
         if await check_vmaf_available():
             await _send_progress("analyzing", 90)
             vmaf_json = TEMP_DIR / f"{task_id}_vmaf.json"
+            # Compared as a conversion's check compares (_vmaf_pipelines): a
+            # resized encode at its own size — libvmaf refused two sizes, and
+            # a rule that resizes showed no VMAF (v0.10.0).
+            from backend.converter import _probe_vmaf_stream, _vmaf_pipelines
+            ref_pipeline, dist_pipeline, _ = _vmaf_pipelines(
+                await _probe_vmaf_stream(str(orig_path)), await _probe_vmaf_stream(str(enc_path)))
             vmaf_cmd = [
                 "ffmpeg", "-y", "-hide_banner", "-progress", "pipe:1",
                 "-i", str(enc_path),
                 "-i", str(orig_path),
-                "-lavfi", f"libvmaf=model=version=vmaf_v0.6.1:log_fmt=json:log_path={vmaf_json}",
+                "-lavfi", f"[1:V]{ref_pipeline}[ref_norm];[0:V]{dist_pipeline}[dist_norm];"
+                          f"[dist_norm][ref_norm]scale2ref=flags=bicubic[dist][ref];"
+                          f"[dist][ref]libvmaf=model=version=vmaf_v0.6.1:log_fmt=json:log_path={vmaf_json}",
                 "-f", "null", "-",
             ]
             vmaf_proc = await asyncio.create_subprocess_exec(
