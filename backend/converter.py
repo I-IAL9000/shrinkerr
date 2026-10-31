@@ -2467,6 +2467,44 @@ async def _run_libvmaf_pass(
         }
 
 
+async def _run_libvmaf_windows(starts: list[float], seconds: float, *, progress_callback, **kw) -> dict:
+    """_run_libvmaf_pass over windows of `seconds` from each of `starts` (the
+    VMAF target's sample points), as one result: their mean score, lowest
+    and highest frame and mean harmonic mean. A window whose frames desynced
+    (_is_bimodal_vmaf) is left out while others scored cleanly. "windows":
+    each window's (start, score); "seek": the lowest-scoring window's, which
+    the quality cross-check reads. The progress runs once across them all.
+
+    One 30 s window a third of the way in scored The Night Eats the World's
+    encode 98.4; the six sample points 92.93, as the search's samples had
+    (93.08): one scene says little about a film (v0.10.0)."""
+    results = []
+    for n, start in enumerate(starts):
+        async def report(progress=0, n=n, eta_seconds=None, **rest):
+            await progress_callback(progress=min(99.0, (n + progress / 100) / len(starts) * 100),
+                                    eta_seconds=None, **rest)
+        results.append(await _run_libvmaf_pass(seek=start, duration=seconds,
+                                               progress_callback=report if progress_callback else None, **kw))
+    scored = [r for r in results if r.get("score") is not None]
+    if not scored:
+        return {**results[0], "windows": []}
+    kept = [r for r in scored if not _is_bimodal_vmaf(r)] or scored
+
+    def mean(key: str) -> Optional[float]:
+        values = [r[key] for r in kept if r.get(key) is not None]
+        return sum(values) / len(values) if values else None
+    return {
+        "score": round(mean("score"), 1),
+        "min": min((r["min"] for r in kept if r.get("min") is not None), default=None),
+        "max": max((r["max"] for r in kept if r.get("max") is not None), default=None),
+        "harmonic_mean": mean("harmonic_mean"),
+        "error": None,
+        "stderr_tail": [],
+        "seek": min(kept, key=lambda r: r["score"])["seek"],
+        "windows": [(r["seek"], r.get("score")) for r in results],
+    }
+
+
 def _output_is_full_length(source_duration: Optional[float],
                            output_duration: Optional[float],
                            tol: float = 0.98) -> bool:
@@ -4801,29 +4839,55 @@ async def convert_file(
                 # end of the block can remove all of them, not just the primary.
                 vmaf_json_paths_to_cleanup: list[Path] = [vmaf_json_path]
 
-                # Primary VMAF pass — runs at the configured seek point. The
-                # entire run (ffmpeg subprocess, progress streaming, JSON
-                # parse) is delegated to the module-level helper; we get back
-                # a result dict with score / min / max / harmonic_mean / error.
-                print(
-                    f"[CONVERT] Running VMAF analysis ({vmaf_duration:.0f}s sample at "
-                    f"{vmaf_seek:.0f}s, target_fps={target_fps or 'n/a'})...",
-                    flush=True,
-                )
-                result_primary = await _run_libvmaf_pass(
-                    input_path=vmaf_ref,
-                    temp_path=temp_path,
-                    seek=vmaf_seek,
-                    duration=vmaf_duration,
-                    ref_pipeline=ref_pipeline,
-                    dist_pipeline=dist_pipeline,
-                    json_path=vmaf_json_path,
-                    fps_for_progress=vmaf_fps_for_progress,
-                    progress_callback=progress_callback,
-                    step_label="VMAF analysis",
-                    frames=_vmaf_frames(vmaf_seek),
-                    ref_args=vmaf_ref_args,
-                )
+                # A file is scored where the VMAF target samples it (3 to 6
+                # windows, _run_libvmaf_windows), so the score speaks for the
+                # whole file, as the target's does (v0.10.0). A disc keeps one
+                # window, read from the start (a window across the film would
+                # read all of it), and so does a file of 30 s or less.
+                from backend.vmaf_target import SAMPLE_SECONDS, sample_points
+                vmaf_windows = None if disc_type or duration <= 30 else sample_points(duration)
+                if vmaf_windows:
+                    vmaf_duration = float(SAMPLE_SECONDS)
+                    print(
+                        f"[CONVERT] Running VMAF analysis ({len(vmaf_windows)} × {SAMPLE_SECONDS}s at "
+                        f"{', '.join(f'{w:.0f}s' for w in vmaf_windows)}, target_fps={target_fps or 'n/a'})...",
+                        flush=True,
+                    )
+                    result_primary = await _run_libvmaf_windows(
+                        vmaf_windows, vmaf_duration,
+                        input_path=vmaf_ref,
+                        temp_path=temp_path,
+                        ref_pipeline=ref_pipeline,
+                        dist_pipeline=dist_pipeline,
+                        json_path=vmaf_json_path,
+                        fps_for_progress=vmaf_fps_for_progress,
+                        progress_callback=progress_callback,
+                        step_label="VMAF analysis",
+                    )
+                else:
+                    # One window at the configured seek point. The entire run
+                    # (ffmpeg subprocess, progress streaming, JSON parse) is
+                    # delegated to the module-level helper; we get back a
+                    # result dict with score / min / max / harmonic_mean / error.
+                    print(
+                        f"[CONVERT] Running VMAF analysis ({vmaf_duration:.0f}s sample at "
+                        f"{vmaf_seek:.0f}s, target_fps={target_fps or 'n/a'})...",
+                        flush=True,
+                    )
+                    result_primary = await _run_libvmaf_pass(
+                        input_path=vmaf_ref,
+                        temp_path=temp_path,
+                        seek=vmaf_seek,
+                        duration=vmaf_duration,
+                        ref_pipeline=ref_pipeline,
+                        dist_pipeline=dist_pipeline,
+                        json_path=vmaf_json_path,
+                        fps_for_progress=vmaf_fps_for_progress,
+                        progress_callback=progress_callback,
+                        step_label="VMAF analysis",
+                        frames=_vmaf_frames(vmaf_seek),
+                        ref_args=vmaf_ref_args,
+                    )
                 vmaf_results = [result_primary]
 
                 # Bimodal-retry: if libvmaf desynced mid-window (the 0/100
@@ -4835,7 +4899,8 @@ async def convert_file(
                 # pay the extra ~30s. Skipped on very short files where there
                 # isn't enough headroom to seek somewhere meaningfully
                 # different (60s minimum gap between the two windows).
-                if _is_bimodal_vmaf(result_primary) and duration > 90 and vmaf_duration > 0:
+                # (Windows across the file leave a desynced one out instead.)
+                if not vmaf_windows and _is_bimodal_vmaf(result_primary) and duration > 90 and vmaf_duration > 0:
                     # Pick an alternate seek that's at least 60s away from the
                     # primary. Prefer 66% of duration; if primary already sat
                     # past mid-file, go back to 33% instead. Clamp so
@@ -4888,6 +4953,9 @@ async def convert_file(
                     if _hm is not None: extra.append(f"harmonic_mean={_hm:.1f}")
                     suffix = (" [" + " ".join(extra) + "]") if extra else ""
                     seek_suffix = f" (seek={best.get('seek', vmaf_seek):.0f}s)" if len(vmaf_results) > 1 else ""
+                    if best.get("windows"):
+                        seek_suffix = " (windows: " + ", ".join(
+                            f"{w:.0f}s {sc if sc is not None else 'failed'}" for w, sc in best["windows"]) + ")"
                     print(f"[CONVERT] VMAF score: {vmaf_score}{suffix}{seek_suffix}", flush=True)
 
                     # If even the BEST run was bimodal, every window we tried
