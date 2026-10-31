@@ -2811,7 +2811,7 @@ class QueueWorker:
             # per job rather than every-progress-line locking.
             _last_db_write = [0.0]
             async def progress_cb(progress: float, fps=None, eta_seconds=None, step=None, speed=None,
-                                  step_key=None, step_params=None):
+                                  step_key=None, step_params=None, encoder_settings=None):
                 now = time.monotonic()
                 is_terminal = progress >= 99.99
                 # Only persist fps during the encoding phase. The same
@@ -2838,6 +2838,7 @@ class QueueWorker:
                     step=step or "converting",
                     step_key=step_key,
                     step_params=step_params,
+                    encoder_settings=encoder_settings,
                     jobs_completed=jobs_completed,
                     jobs_total=jobs_total,
                     total_saved=total_saved,

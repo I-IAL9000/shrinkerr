@@ -461,6 +461,8 @@ def _build_ffmpeg_cmd_impl(
     # v0.10.0: "av1" encodes AV1 with the encoder's AV1 sibling (the caller
     # checked encoder_caps.av1_encoder); anything else is HEVC.
     output_codec: str | None = None,
+    # v0.10.0: the encoded video's width, when known: NVENC's HEVC tier.
+    output_width: int | None = None,
 ) -> list[str]:
     # Hardware-device init for VAAPI / QSV. Both must come BEFORE -i.
     #
@@ -678,6 +680,12 @@ def _build_ffmpeg_cmd_impl(
         ]
         if output_codec != "av1":  # AV1's one profile carries 8- and 10-bit
             cmd += ["-profile:v", _nvenc_profile]
+            # Left to choose, NVENC picks the lowest level the frame size
+            # allows (4.0 for 1080p) and holds the bitrate under it: about
+            # 10 Mbps, whatever the CQ. Grainy films came out the same at CQ
+            # 14 and 23, and short of the VMAF target. 5.1 allows 40 Mbps; a
+            # 4K encode gets the high tier, as UHD Blu-rays (v0.10.0).
+            cmd += ["-level", "5.1"] + (["-tier", "high"] if (output_width or 0) > 2560 else [])
         # v0.5.10: emit -pix_fmt ONLY when frames live in CPU memory
         # (software decode path). With HW decode keeping frames on the
         # GPU, `scale_cuda=format=X` already dictates the surface format
@@ -2263,6 +2271,32 @@ def _is_bimodal_vmaf(result: dict) -> bool:
     return mn is not None and mx is not None and mn < 20 and mx >= 90
 
 
+def vmaf_window(ref: str, dist: str, seek: float, duration: float, frames: tuple[int, int] | None,
+                ref_args: list[str] | None = None) -> dict:
+    """How a comparison reads its window of the reference and the encode
+    (_run_libvmaf_pass, the quality cross-check): by seeking both to `seek`
+    for `duration`, or, with `frames` (first, count), by frame number from
+    the start of both, each branch trimmed to them and its clock restarted.
+    A third output then counts the reference's frames as they're read, so
+    the progress moves while the frames before the window go by (`frames`:
+    the count it reaches; ffmpeg's stats show the first output's).
+    {"inputs", "count" (the counting chain, before the branches), "ref" and
+    "dist" (each branch up to its pipeline), "outputs" (the count's), "limit"
+    (each output's options: -t holds only the output it comes before),
+    "frames"}"""
+    if frames is None:
+        return {"inputs": ["-ss", f"{seek:.3f}", "-i", ref, "-ss", f"{seek:.3f}", "-i", dist],
+                "count": "", "ref": "[0:V]", "dist": "[1:v]", "outputs": [], "limit": ["-t", f"{duration:.3f}"],
+                "frames": None}
+    first, count = frames
+    end = first + count
+    head = f"trim=start_frame={first}:end_frame={end},setpts=PTS-STARTPTS,"
+    return {"inputs": [*(ref_args or []), "-i", ref, "-i", dist],
+            "count": f"[0:V]split[ref_in][ref_count];[ref_count]trim=end_frame={end}[read];",
+            "ref": f"[ref_in]{head}", "dist": f"[1:v]{head}",
+            "outputs": ["-map", "[read]", "-f", "null", "-"], "limit": [], "frames": end}
+
+
 async def _run_libvmaf_pass(
     *,
     input_path: str,
@@ -2275,8 +2309,17 @@ async def _run_libvmaf_pass(
     fps_for_progress: float,
     progress_callback,
     step_label: str,
+    frames: tuple[int, int] | None = None,
+    ref_args: list[str] | None = None,
 ) -> dict:
     """Run libvmaf for a single seek window and return a result dict.
+
+    `frames` (first, count): compare those frames, by number, both read from
+    the start, instead of seeking to `seek` — a disc (v0.10.0), whose
+    timestamps restart in every VOB or start far from zero (a Blu-ray at
+    4200 s): the seek landed on another scene, and Showgirls scored 1.8 on
+    an encode its samples had scored 92. `ref_args`: the reference's input
+    options (the encode's).
 
     Returns:
         {
@@ -2297,23 +2340,22 @@ async def _run_libvmaf_pass(
     import re as _re
     import json as _vjson
 
+    window = vmaf_window(input_path, temp_path, seek, duration, frames, ref_args)
     vmaf_filter = (
-        f"[0:V]{ref_pipeline}[ref_norm];"
-        f"[1:v]{dist_pipeline}[dist_norm];"
+        f"{window['count']}{window['ref']}{ref_pipeline}[ref_norm];"
+        f"{window['dist']}{dist_pipeline}[dist_norm];"
         f"[dist_norm][ref_norm]scale2ref=flags=bicubic[dist][ref];"
         f"[dist][ref]libvmaf=model=version=vmaf_v0.6.1:n_threads=4:"
-        f"log_fmt=json:log_path={json_path}:shortest=1"
+        f"log_fmt=json:log_path={json_path}:shortest=1[vmaf]"
     )
     cmd = [
         "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-stats",
-        "-ss", f"{seek:.3f}", "-i", input_path,
-        "-ss", f"{seek:.3f}", "-i", temp_path,
-        "-t", f"{duration:.3f}",
+        *window["inputs"],
         "-filter_complex", vmaf_filter,
-        "-f", "null", "-",
+        *window["outputs"], "-map", "[vmaf]", *window["limit"], "-f", "null", "-",
     ]
 
-    total_frames = max(1, int(duration * fps_for_progress))
+    total_frames = window["frames"] or max(1, int(duration * fps_for_progress))
     if progress_callback:
         await progress_callback(progress=0, fps=0, eta_seconds=None, step=step_label)
 
@@ -2357,7 +2399,9 @@ async def _run_libvmaf_pass(
                 progress=pct, fps=analyse_fps, eta_seconds=eta, step=step_label,
             )
 
-    timeout = max(300.0, duration * 3.0)
+    # Read from the start, a disc's frames take as long as the decoding
+    # does (at no less than 25 frames a second).
+    timeout = max(300.0, duration * 3.0, (window["frames"] or 0) / 25)
     try:
         await asyncio.wait_for(proc.wait(), timeout=timeout)
     except asyncio.TimeoutError:
@@ -2929,6 +2973,15 @@ def _quality_step(encoder: str, cq: float) -> dict:
     if (encoder or "").lower() == "libx265":
         step["crf"] = quality_settings("libx265", cq)["libx265_crf"]
     return step
+
+
+def _reporting_settings(progress_callback: Callable, settings: dict) -> Callable:
+    """`progress_callback`, each report carrying the encoder settings the
+    encode runs with (`encoder_settings`, encoderLabel.ts's EncoderSettings):
+    a VMAF target's quality replaces the job's (v0.10.0)."""
+    async def report(**kw):
+        await progress_callback(**{"encoder_settings": settings, **kw})
+    return report
 
 
 def _set_aside(temp: Path, input_path: str) -> Path:
@@ -3729,6 +3782,13 @@ async def convert_file(
             qsv_cq = quality_settings("qsv", cq)["qsv_cq"]
             vaapi_qp = quality_settings("vaapi", cq)["vaapi_qp"]
             videotoolbox_quality = quality_settings("videotoolbox", cq)["videotoolbox_quality"]
+    if progress_callback and not command_only and (target is not None or _target_retry):
+        # The Queue's card showed the quality the job was queued with while
+        # the encode ran at the target's.
+        progress_callback = _reporting_settings(progress_callback, {
+            "nvenc_preset": nvenc_preset, "nvenc_cq": cq, "libx265_preset": libx265_preset, "libx265_crf": crf,
+            "qsv_preset": qsv_preset, "qsv_cq": qsv_cq, "vaapi_qp": vaapi_qp,
+            "videotoolbox_quality": videotoolbox_quality})
 
     if encoder == "libx265":
         active_preset, active_quality = libx265_preset, f"crf={crf}"
@@ -4015,6 +4075,8 @@ async def convert_file(
             disc_audio_languages=disc_audio_languages,
             compat_track=compat_track,
             output_codec=output_codec,
+            output_width=(int(RESOLUTION_MAP[target_resolution].split(":")[0]) if target_resolution in RESOLUTION_MAP
+                          else (probe_data or {}).get("video_width")),
         )
         # Append custom ffmpeg flags if configured (before the output path).
         if custom_flags:
@@ -4068,6 +4130,10 @@ async def convert_file(
         # Duration unknown (probe failed) — sample the first 30s.
         vmaf_seek = 0.0
         vmaf_duration = 30.0
+    if disc_type:
+        # A disc's window is read from the start, compared by frame number
+        # (vmaf_window): ten minutes in, not a third of a two-hour film.
+        vmaf_seek = min(vmaf_seek, 600.0)
 
     async def _run_encode(run_cmd: list) -> dict:
         """Run one ffmpeg attempt with live progress streaming.
@@ -4694,7 +4760,20 @@ async def convert_file(
                 # Per-stream normalisation (range fix → fps fix → pixel format,
                 # and the encode moved onto the source's frame grid), then
                 # scale2ref → libvmaf: _vmaf_pipelines says why each is there.
-                ref_pipeline, dist_pipeline, target_fps = _vmaf_pipelines(src_info, dst_info)
+                # A disc's window restarts both clocks (vmaf_window): no
+                # timestamps to line the frames up by.
+                ref_pipeline, dist_pipeline, target_fps = _vmaf_pipelines(
+                    {**src_info, "start_time": None} if disc_type else src_info, dst_info)
+                _window_fps = dst_info.get("fps") or src_info.get("fps") or 24.0
+
+                def _vmaf_frames(at: float) -> Optional[tuple[int, int]]:
+                    """A disc's window at `at` seconds, by frame number (vmaf_window)."""
+                    if not disc_type:
+                        return None
+                    return round(at * _window_fps), max(1, round(vmaf_duration * _window_fps))
+                # The reference read as the encode read it.
+                vmaf_ref_args = (["-analyzeduration", "200M", "-probesize", "200M", *ffmpeg_input_args]
+                                 if disc_type else None)
 
                 # Total frame count for the sampled window — used to map the
                 # frame=NN progress lines to 0–100%. Prefer the real source
@@ -4727,6 +4806,8 @@ async def convert_file(
                     fps_for_progress=vmaf_fps_for_progress,
                     progress_callback=progress_callback,
                     step_label="VMAF analysis",
+                    frames=_vmaf_frames(vmaf_seek),
+                    ref_args=vmaf_ref_args,
                 )
                 vmaf_results = [result_primary]
 
@@ -4746,6 +4827,8 @@ async def convert_file(
                     # `seek + duration` stays within the file.
                     alt_pct = 0.66 if vmaf_seek < duration * 0.5 else 0.33
                     alt_seek = max(0.0, min(duration - vmaf_duration, duration * alt_pct))
+                    if disc_type:  # read from the start: earlier, not further
+                        alt_seek = vmaf_seek / 2
                     if abs(alt_seek - vmaf_seek) >= 60:
                         _vmaf_id_alt = f"{_safe_stem}_{_uuid.uuid4().hex[:8]}"
                         vmaf_json_path_alt = vmaf_dir / f"{_vmaf_id_alt}_vmaf.json"
@@ -4767,6 +4850,8 @@ async def convert_file(
                             fps_for_progress=vmaf_fps_for_progress,
                             progress_callback=progress_callback,
                             step_label="VMAF retry",
+                            frames=_vmaf_frames(alt_seek),
+                            ref_args=vmaf_ref_args,
                         )
                         vmaf_results.append(result_alt)
 
@@ -4846,11 +4931,20 @@ async def convert_file(
                             or vmaf_seek
                         )
                         xcheck_dur = min(30.0, vmaf_duration) if vmaf_duration > 0 else 30.0
+                        # The window VMAF read (a disc's, by frame number, from
+                        # what the encode read — the .iso itself isn't video:
+                        # Showgirls' cross-check read it for four minutes).
+                        # Each comparison gets its own copy of the frames: as
+                        # [dx][rx] twice, psnr took the source's first stream
+                        # twice and measured it against itself (inf dB).
+                        xc_window = vmaf_window(vmaf_ref, temp_path, xcheck_seek, xcheck_dur,
+                                                _vmaf_frames(xcheck_seek), vmaf_ref_args)
                         xcheck_filter = (
-                            f"[0:V]{ref_pipeline}[ref_x];"
-                            f"[1:v]{dist_pipeline}[dist_x];"
+                            f"{xc_window['count']}{xc_window['ref']}{ref_pipeline}[ref_x];"
+                            f"{xc_window['dist']}{dist_pipeline}[dist_x];"
                             f"[dist_x][ref_x]scale2ref=flags=bicubic[dx][rx];"
-                            f"[dx][rx]ssim;[dx][rx]psnr"
+                            f"[dx]split[dx1][dx2];[rx]split[rx1][rx2];"
+                            f"[dx1][rx1]ssim[xc_ssim];[dx2][rx2]psnr[xc_psnr]"
                         )
                         # Dedicated progress phase for the cross-check
                         # — different step label so the UI shows this
@@ -4861,17 +4955,16 @@ async def convert_file(
                                 progress=0, fps=0, eta_seconds=None,
                                 step="Quality cross-check",
                             )
-                        xc_total_frames = max(1, int(xcheck_dur * vmaf_fps_for_progress))
+                        xc_total_frames = xc_window["frames"] or max(1, int(xcheck_dur * vmaf_fps_for_progress))
                         # ffmpeg's `ssim` and `psnr` filters print
                         # results to stderr on exit. `-stats` gives
                         # us frame progress lines alongside.
                         xcheck_cmd = [
                             "ffmpeg", "-y", "-hide_banner", "-loglevel", "info", "-stats",
-                            "-ss", f"{xcheck_seek:.3f}", "-i", input_path,
-                            "-ss", f"{xcheck_seek:.3f}", "-i", temp_path,
-                            "-t", f"{xcheck_dur:.3f}",
-                            "-filter_complex", xcheck_filter,
-                            "-f", "null", "-",
+                            *xc_window["inputs"],
+                            "-filter_complex", xcheck_filter, *xc_window["outputs"],
+                            "-map", "[xc_ssim]", *xc_window["limit"], "-f", "null", "-",
+                            "-map", "[xc_psnr]", *xc_window["limit"], "-f", "null", "-",
                         ]
                         xc_proc = await asyncio.create_subprocess_exec(
                             *xcheck_cmd,

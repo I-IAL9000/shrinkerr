@@ -1,3 +1,4 @@
+import type { EncoderSettings } from "./utils/encoderLabel";
 export interface AudioTrack {
   stream_index: number;
   language: string;
@@ -239,6 +240,9 @@ export interface JobProgress {
   // dropped, since a job can end without a job_complete reaching us.
   received_at?: number;
   step_params?: Record<string, unknown> | null;
+  // The settings the encode runs with when they aren't the job's own: a
+  // VMAF target's quality (v0.10.0). Absent while the target is searched.
+  encoder_settings?: EncoderSettings | null;
   jobs_completed: number;
   jobs_total: number;
   total_saved: number;

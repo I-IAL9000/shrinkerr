@@ -50,10 +50,9 @@ async def test_a_reachable_target_is_unchanged():
     assert score_at(found["cq"], 96) >= 93
 
 
-@pytest.mark.asyncio
-async def test_samples_larger_than_the_originals_are_flagged(tmp_path, monkeypatch):
-    """The search has encoded samples at each quality: their size says
-    whether the file would come out larger, before a full encode."""
+async def _find(tmp_path, monkeypatch, vmaf):
+    """find_quality on three fake samples whose encodes `vmaf` scores (and
+    sizes)."""
     work = tmp_path / "work"
     work.mkdir()
 
@@ -75,21 +74,41 @@ async def test_samples_larger_than_the_originals_are_flagged(tmp_path, monkeypat
     async def run(cmd, timeout, on_proc=None):
         return True
     monkeypatch.setattr(vmaf_target, "_run", run)
+    monkeypatch.setattr(vmaf_target, "_vmaf", vmaf)
 
+    async def available():
+        return True
+    import backend.test_encode as test_encode
+    monkeypatch.setattr(test_encode, "check_vmaf_available", available)
+    monkeypatch.setattr(vmaf_target.tempfile, "mkdtemp", lambda prefix="": str(work))
+    return await vmaf_target.find_quality("/m/show.mkv", "nvenc", 2500.0, 93, start=36)
+
+
+@pytest.mark.asyncio
+async def test_samples_larger_than_the_originals_are_flagged(tmp_path, monkeypatch):
+    """The search has encoded samples at each quality: their size says
+    whether the file would come out larger, before a full encode."""
     async def vmaf(ref, enc, seconds, json_path):
         cq = float(enc.rsplit(".", 2)[-2])
         with open(enc, "wb") as f:  # a lower CQ, a bigger sample: 1100 bytes at CQ 20, 900 at 30
             f.write(b"e" * int(1000 + (25 - cq) * 20))
         return 92.8 - max(0.0, cq - 20) * 0.6
 
-    monkeypatch.setattr(vmaf_target, "_vmaf", vmaf)
-    async def available():
-        return True
-    import backend.test_encode as test_encode
-    monkeypatch.setattr(test_encode, "check_vmaf_available", available)
-    monkeypatch.setattr(vmaf_target.tempfile, "mkdtemp", lambda prefix="": str(work))
-
-    found = await vmaf_target.find_quality("/m/show.mkv", "nvenc", 2500.0, 93, start=36)
+    found = await _find(tmp_path, monkeypatch, vmaf)
 
     assert found["reached"] is False and found["cq"] == 21
     assert found["larger"] is True and found["size_ratio"] == pytest.approx(8.0)  # 1080 bytes vs 1000
+
+
+@pytest.mark.asyncio
+async def test_samples_that_score_low_at_every_quality_arent_trusted(tmp_path, monkeypatch):
+    """The Nest (2002): its samples scored 31 at CQ 14 and at CQ 37 alike —
+    compared with the wrong frames, not encoded badly (the finished file
+    scored 88.7). Out of reach, the search took the highest CQ near that
+    best, 37. Now the job keeps its own quality."""
+    async def vmaf(ref, enc, seconds, json_path):
+        cq = float(enc.rsplit(".", 2)[-2])
+        open(enc, "wb").close()
+        return 31.6 - max(0.0, cq - 20) * 0.05
+
+    assert await _find(tmp_path, monkeypatch, vmaf) is None

@@ -38,6 +38,22 @@ MEMORY_DAYS = 90
 # search takes the highest CQ scoring within this of the best it found, not
 # the best quality, which only bought a bigger file (search).
 KNEE_POINTS = 1.0
+# A first guess's slope (next_cq): VMAF points per CQ step near the target —
+# the maintainer's films lost 0.5 to 0.9 a step around 93.
+GUESS_SLOPE = 0.6
+# The furthest one round moves from the nearest CQ scored (next_cq).
+MAX_JUMP = 8
+# A better quality that scores less than this more is no better (next_cq).
+PLATEAU_GAIN = 0.2
+# A half step is scored unless its whole neighbours, averaged, put it more
+# than this under the target: Sgt. Bilko's 29 and 30 averaged 92.82 for a
+# target of 93, and 29.5 scored 92.77 — a round for nothing.
+HALF_STEP_MARGIN = 0.1
+# The best quality scores well over this on any footage its samples are
+# measured right on: The Nest's scored 31 at CQ 14 and at CQ 37 alike, and
+# the search, taking the target as out of reach, chose 37 (the file scored
+# 88.7). Below it the samples aren't trusted, and the job keeps its quality.
+MIN_TRUSTED_BEST = 80.0
 # A disc's samples start on a Blu-ray aligned unit (32 transport packets of
 # 192 bytes), which is also a whole number of DVD sectors (2048).
 DISC_ALIGN = 6144
@@ -85,6 +101,54 @@ def effective_target(settings: dict) -> float | None:
     return max(float(settings.get("vmaf_target_score") or DEFAULT_TARGET), active_minimum(settings))
 
 
+def judged(scores: dict, cq: float) -> float:
+    """What a scored CQ is held to the target by (search's `scores`): its
+    mean, or its lowest sample's allowance when that's lower — passes()
+    as one number."""
+    s = scores[cq]
+    return min(s["mean"], s["min"] + MAX_SAMPLE_DIP)
+
+
+def next_cq(scores: dict, target: float, lo: float, hi: float, best: float, worst: float, *,
+            bisect: bool = False, value: Callable[[float], float] | None = None) -> int:
+    """The next whole CQ for search to score, strictly between `lo` (the
+    highest that passed, or best - 1) and `hi` (the lowest that failed, or
+    worst + 1): where the line through the scores nearest the target
+    crosses it — between a pass and a fail, the two; on one side, the
+    nearest two there, or the nearest at GUESS_SLOPE — at most MAX_JUMP
+    from the nearest. `bisect`: the middle instead, when the line keeps
+    landing on one side (the search counts it). When a better quality
+    scored no better (PLATEAU_GAIN), the best quality is next. `value`: what
+    a CQ is held to `target` by (judged; the knee's, its mean).
+
+    The steps of 2, 4, 8 … and halving took six rounds on most films; this
+    takes three or four (v0.10.0)."""
+    value = value or (lambda c: judged(scores, c))
+
+    def slope(a: float, b: float) -> float:  # points lost per CQ step from a to b (> a)
+        rise = (value(a) - value(b)) / (b - a)
+        return rise if rise > 0.05 else GUESS_SLOPE  # flat or noisy: the usual slope
+    whole = sorted(c for c in scores if c == int(c))
+    if lo >= best and hi <= worst:
+        nearest = lo
+        x = (lo + (hi - lo) / 2 if bisect
+             else lo + (value(lo) - target) / slope(lo, hi))
+    elif lo >= best:  # every CQ scored passed: further up
+        nearest = lo
+        below = [c for c in whole if c < lo]
+        x = lo + (value(lo) - target) / (slope(below[-1], lo) if below else GUESS_SLOPE)
+    else:  # every CQ scored failed: further down
+        nearest = hi
+        above = [c for c in whole if c > hi]
+        if above and value(hi) - value(above[0]) < PLATEAU_GAIN:
+            # Showgirls' samples scored 92.67 at CQ 25 and 92.68 at 24, 23, 19
+            # and 14: whether any quality reaches the target, the best says.
+            return int(max(best, lo + 1))
+        x = hi - (target - value(hi)) / (slope(hi, above[0]) if above else GUESS_SLOPE)
+    n = round(min(max(x, nearest - MAX_JUMP), nearest + MAX_JUMP))
+    return int(min(max(n, lo + 1, best), hi - 1, worst))
+
+
 def fractional_steps(encoder: str, output_codec: str | None) -> bool:
     """Whether the encoder's quality setting takes half steps: NVENC's -cq
     and libx265's CRF are floats. QSV, VAAPI, VideoToolbox and AV1 output
@@ -97,13 +161,13 @@ async def search(score: Callable[[float], Awaitable[list[float]]], target: float
                  setting_key: Callable[[float], object] = lambda cq: cq) -> dict:
     """Find the highest CQ in [best, worst] whose samples pass `target`,
     starting from `start` (the job's own quality, or where the last search
-    in the folder landed). Steps from `start` towards the answer, by 2, then
-    4, 8, 16 … (clamped to the range), until a CQ passes and the next fails
-    or the range ends, so a far start still takes few rounds; then bisects
-    between the last pass and the first fail; with `half_steps` tries the CQ
-    found + 0.5. Assumes the score falls as CQ rises. `score(cq)` returns
-    the per-sample VMAF values. `setting_key` maps a CQ to the encoder's
-    actual setting: CQs sharing a key are scored once.
+    in the folder landed). Each round scores the CQ where the scores so far
+    say the target is crossed (next_cq), until a CQ passes and the next
+    whole step fails, or the range ends; with `half_steps` the CQ found
+    + 0.5 is tried too, unless its neighbours put it under the target.
+    Assumes the score falls as CQ rises. `score(cq)` returns the per-sample
+    VMAF values. `setting_key` maps a CQ to the encoder's actual setting:
+    CQs sharing a key are scored once.
     {"cq", "vmaf" (mean at cq), "min" (lowest sample at cq), "reached",
     "rounds" (CQs scored), "scores": {cq: {"mean", "min"}}}. When no CQ
     passes, the target is out of reach ("best": the best mean found): the
@@ -121,30 +185,22 @@ async def search(score: Callable[[float], Awaitable[list[float]]], target: float
 
     lo, hi = best - 1, worst + 1  # the last CQ that passed, and that failed; the ends are untried
     cq = min(max(round(start), best), worst)  # a remembered start can be a half step
-    if await at(cq):
-        lo, step = cq, 2
-        while lo < worst:
-            nxt = min(lo + step, worst)
-            if not await at(nxt):
-                hi = nxt
-                break
-            lo, step = nxt, step * 2
-    else:
-        hi, step = cq, 2
-        while hi > best:
-            nxt = max(hi - step, best)
-            if await at(nxt):
-                lo = nxt
-                break
-            hi, step = nxt, step * 2
-    while hi - lo > 1:
-        mid = (lo + hi) // 2
-        if await at(mid):
-            lo = mid
+    last, streak = None, 0  # which end the last rounds moved, and how many in a row
+    while True:
+        passed = await at(cq)
+        if passed:
+            lo = cq
         else:
-            hi = mid
+            hi = cq
+        streak = streak + 1 if passed == last else 1
+        last = passed
+        if hi - lo <= 1:
+            break
+        cq = next_cq(scores, target, lo, hi, best, worst, bisect=streak >= 3)
     found = lo >= best
-    if found and half_steps and lo + 0.5 <= worst and await at(lo + 0.5):
+    if (found and half_steps and lo == int(lo) and lo + 0.5 <= worst
+            and judged(scores, lo) + judged(scores, lo + 1) >= 2 * (target - HALF_STEP_MARGIN)
+            and await at(lo + 0.5)):
         lo += 0.5
     if found:
         return {"cq": lo, "vmaf": scores[lo]["mean"], "min": scores[lo]["min"], "reached": True,
@@ -157,13 +213,18 @@ async def search(score: Callable[[float], Awaitable[list[float]]], target: float
         return scores[c]["mean"] >= top - KNEE_POINTS
     k_lo = max(c for c in scores if close(c))
     k_hi = min([c for c in scores if c > k_lo and not close(c)], default=worst + 1)
+    last, streak = None, 0
     while k_hi - k_lo > 1:
-        mid = (k_lo + k_hi) // 2
+        mid = next_cq(scores, top - KNEE_POINTS, k_lo, k_hi, best, worst, bisect=streak >= 3,
+                      value=lambda c: scores[c]["mean"])
         await at(mid)
-        if close(mid):
+        near = close(mid)
+        if near:
             k_lo = mid
         else:
             k_hi = mid
+        streak = streak + 1 if near == last else 1
+        last = near
     return {"cq": k_lo, "vmaf": scores[k_lo]["mean"], "min": scores[k_lo]["min"], "reached": False, "best": top,
             "rounds": len(scored), "scores": scores}
 
@@ -380,6 +441,11 @@ async def find_quality(input_path: str, encoder: str, duration: float, target: f
             print("[VMAF-TARGET] A sample couldn't be encoded or scored — keeping the job's quality", flush=True)
             return None
         seconds = round(time.monotonic() - began, 1)
+        if not result["reached"] and result["best"] < MIN_TRUSTED_BEST:
+            print(f"[VMAF-TARGET] {os.path.basename(input_path)}: the samples scored {result['best']} at best, "
+                  f"in {result['rounds']} rounds — they can't have been measured right; keeping the job's quality",
+                  flush=True)
+            return None
         reach = "" if result["reached"] else f", out of reach: the best {result['best']}"
         print(f"[VMAF-TARGET] {os.path.basename(input_path)}: CQ {result['cq']} for VMAF {target} "
               f"({result['vmaf']}{reach}) in {result['rounds']} rounds, {seconds}s", flush=True)

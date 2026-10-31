@@ -694,10 +694,14 @@ export default function QueuePage() {
             fileSize={job.original_size}
             // The encoder the node actually runs (it may have swapped the
             // job's encoder for one it has — v0.9.134), else the job's own.
-            encoderLabel={encoderSettingsLabel(
-              progress.encoder || job.encoder || encodingDefaults?.default_encoder,
-              jobEncoderSettings(job, encodingDefaults),
-            )}
+            // A VMAF target's job: the target until the search has chosen,
+            // then the quality it encodes at (v0.10.0).
+            encoderLabel={(job.vmaf_target ?? 0) > 0 && !progress.encoder_settings
+              ? t("queue:item.vmafTargetBadge", { target: job.vmaf_target })
+              : encoderSettingsLabel(
+                progress.encoder || job.encoder || encodingDefaults?.default_encoder,
+                { ...jobEncoderSettings(job, encodingDefaults), ...progress.encoder_settings },
+              )}
             jobType={job.job_type}
             audioCodec={job.audio_codec || encodingDefaults?.audio_codec || "copy"}
             audioBitrate={job.audio_bitrate ?? encodingDefaults?.audio_bitrate ?? 128}

@@ -60,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Add to Queue shows what will happen** — the encoder that will run, what becomes of the originals, the tracks removed — and **Add & start** queues and starts in one go.
 - **Update notices follow your channel** (`:develop` builds hear about develop builds), show it, and can be turned off.
 - **Re-measure suspect VMAF scores is gone**: it needed each job's original, which is rarely kept after a conversion, and counted ordinary scores under 93 as suspect.
+- **The VMAF target search takes fewer rounds**: each round aims where the scores so far cross the target, instead of steps of 2, 4, 8 and halving — about a third fewer rounds for the same answer (Sgt. Bilko: 3 instead of 6), and a half step its neighbours already rule out isn't scored.
 - **Files that came out larger aren't ignored**: they're marked **Came out larger** in the Scanner (when, and at what quality), new downloads and policies still leave them alone, and Add to Queue converts them again — with another quality, no override needed. Files you ignore stay ignored.
 
 ### Security
@@ -68,6 +69,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Demo mode never hands out the API key, backups or download scripts; links in the in-app changelog only open http(s) addresses; scan progress and cancel files live in the data folder instead of fixed names in `/tmp`.
 
 ### Fixed
+- **NVENC encodes aren't held to 10 Mbps**: left to choose, NVENC used HEVC level 4.0 for 1080p and kept every encode under its bitrate, whatever the CQ — grainy films came out the same at CQ 14 and 23 and missed the VMAF target. Encodes now use level 5.1 (4K its high tier, as UHD Blu-rays do).
+- **A disc's VMAF is measured on the right frames**: the after-conversion check jumped by time into the disc and compared another scene (a fine encode scored 1.8). It now compares frames by number, read from the start, ten minutes in at most; the SSIM/PSNR cross-check reads the same frames (it read the raw ISO for minutes, and its PSNR compared the original with itself).
+- **The VMAF target doesn't trust samples it can't measure**: samples scoring 31 at every quality made the search take the most compressed one (CQ 37); the job keeps its own quality instead.
+- **The running card shows the quality really used**: the VMAF target while it searches, then the quality it chose — not the job's queued CQ — and a new step shows at once (the card said "VMAF analysis 99%" while the cross-check ran).
 - **Advanced Search suggests your library's values**: Genre offered only its example, "Documentary"; Genre, TV network, Country, Plex label, Actor, Director and Studio now suggest what's in your library.
 - **VMAF compares each frame with the same frame of the encode**: when a file's video starts off the frame grid (a recording cut at a keyframe), its encode's frames sit a fraction of a frame away, and some sample windows compared every frame with its neighbour — VMAF 43–59 on fine encodes (a good encode could be rejected). The encode is moved onto the source's grid before the compare, in Remeasure and the VMAF target search too.
 - **Cancel stops a health check**: a thorough check ran to the end and recorded its verdict — its ffmpeg wasn't the job's to stop. Cancelled, it stops at once and records nothing, and the prompt and toast say "health check", not "conversion".

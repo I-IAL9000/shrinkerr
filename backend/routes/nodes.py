@@ -183,6 +183,7 @@ class ProgressReport(BaseModel):
     encoder: str | None = None  # v0.9.141: encoder the worker actually runs
     step_key: str | None = None  # v0.10.0: a step with parameters ("VMAF target: CQ 32 (round 3)")
     step_params: dict | None = None
+    encoder_settings: dict | None = None  # v0.10.0: a VMAF target's quality, not the job's
 
 
 class CompletionReport(BaseModel):
@@ -738,6 +739,7 @@ async def report_progress(req: ProgressReport, request: Request):
         "total_saved": srow["saved"] if srow else 0,
         "node_name": node_name,
         "node_id": req.node_id,
+        **({"encoder_settings": req.encoder_settings} if req.encoder_settings else {}),
     })
 
     # Check cancel flag

@@ -299,7 +299,8 @@ class ServerClient:
                               speed: float | None = None,
                               encoder: str | None = None,
                               step_key: str | None = None,
-                              step_params: dict | None = None) -> bool:
+                              step_params: dict | None = None,
+                              encoder_settings: dict | None = None) -> bool:
         """Report progress. Returns True if job was cancelled."""
         resp = await self._post_node("/api/nodes/report-progress", {
             "node_id": node_id, "job_id": job_id,
@@ -312,6 +313,7 @@ class ServerClient:
             "encoder": encoder,
             "step_key": step_key,
             "step_params": step_params,
+            "encoder_settings": encoder_settings,
         })
         resp.raise_for_status()
         return resp.json().get("cancelled", False)
@@ -419,19 +421,23 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
     # Encoder this worker actually runs, reported with progress so the
     # server's running card labels it right (v0.9.141). Set once resolved.
     current_encoder: str | None = None
+    # The step last reported: a new one is reported at once (websocket.py's
+    # send_job_progress).
+    _last_step: tuple | None = None
 
     async def progress_cb(progress: float = 0, fps=None, eta_seconds=None, step=None, speed=None,
-                          step_key=None, step_params=None):
-        nonlocal cancel_flag, _last_report_at
+                          step_key=None, step_params=None, encoder_settings=None):
+        nonlocal cancel_flag, _last_report_at, _last_step
         now = _time_pcb.monotonic()
         is_terminal = progress >= 99.99
-        if not is_terminal and (now - _last_report_at) < _PROGRESS_REPORT_INTERVAL:
+        said = (step, step_key)
+        if not is_terminal and said == _last_step and (now - _last_report_at) < _PROGRESS_REPORT_INTERVAL:
             return
-        _last_report_at = now
+        _last_report_at, _last_step = now, said
         try:
             cancelled = await client.report_progress(
                 node_id, job_id, progress, fps, eta_seconds, step or "converting", speed,
-                current_encoder, step_key, step_params,
+                current_encoder, step_key, step_params, encoder_settings,
             )
             if cancelled and not cancel_flag:
                 cancel_flag = True

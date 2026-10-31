@@ -34,7 +34,7 @@ async def test_the_ceiling_is_42():
 
 
 @pytest.mark.asyncio
-async def test_the_steps_grow_from_a_far_start():  # 2, 4, 8, 16 … from the start
+async def test_a_far_start_takes_few_rounds():
     async def easy(cq):
         return [99.0, 99.0]
     r = await vmaf_target.search(easy, 93, start=14)
@@ -45,21 +45,76 @@ async def test_the_steps_grow_from_a_far_start():  # 2, 4, 8, 16 … from the st
     async def score(cq):  # the answer is CQ 18
         asked.append(cq)
         return [111.0 - cq] * 2
-    for start in (14, 16):  # below the answer: step up until one fails, then bisect
+    for start in (14, 16):  # below the answer
         asked.clear()
         r = await vmaf_target.search(score, 93, start=start)
         assert (r["cq"], r["reached"]) == (18, True)
         assert len(asked) == len(set(asked)) == r["rounds"] <= 6
-    asked.clear()  # above it: the mirror, 42 40 36 28 14 then bisect 21 17 19 18
+    asked.clear()  # above it
     r = await vmaf_target.search(score, 93, start=42)
     assert (r["cq"], r["reached"]) == (18, True)
     assert len(asked) == len(set(asked)) == r["rounds"] <= 9
 
     async def hopeless(cq):
         return [80.0, 80.0]
-    r = await vmaf_target.search(hopeless, 93, start=42)  # the steps end at the floor, which is scored
+    r = await vmaf_target.search(hopeless, 93, start=42)  # 42, 34: no better, so straight to the floor
     # out of reach and flat: no quality does better, so the smallest file (test_vmaf_target_out_of_reach.py)
-    assert (r["cq"], r["reached"], r["rounds"]) == (42, False, 5)
+    assert (r["cq"], r["reached"], r["rounds"]) == (42, False, 3) and 14 in r["scores"]
+
+
+def _curve(points: dict):
+    """Samples scoring along the line through `points` ({cq: (mean, lowest)}),
+    as the maintainer's films did (31 Oct 2026), and the CQs asked for."""
+    asked = []
+
+    async def score(cq):
+        asked.append(cq)
+        ks = sorted(points)
+        a = max([k for k in ks if k <= cq], default=ks[0])
+        b = min([k for k in ks if k >= cq], default=ks[-1])
+        if a == b:
+            mean, low = points[a]
+        else:
+            t = (cq - a) / (b - a)
+            mean, low = (points[a][i] + (points[b][i] - points[a][i]) * t for i in range(2))
+        return [mean + (mean - low) / 5] * 5 + [low]
+    return score, asked
+
+
+@pytest.mark.asyncio
+async def test_a_search_takes_three_or_four_rounds_where_it_took_six_or_eight():
+    """Where the last round's scores say the target is crossed, not steps of
+    2, 4, 8 and halving: Sgt. Bilko took 6 rounds (25 27 31 29 30 29.5)."""
+    score, asked = _curve({25: (95.27, 93.8), 27: (94.33, 92.8), 29: (93.17, 91.7), 29.5: (92.77, 91.3),
+                           30: (92.47, 90.9), 31: (91.73, 90.3)})
+    r = await vmaf_target.search(score, 93, start=25, half_steps=True)
+    assert (r["cq"], r["reached"]) == (29, True) and asked == [25, 29, 30]  # 29.5: 29 and 30 average 92.82
+    # Showgirls' samples levelled off below the target (NVENC's level held its bitrate): 8 rounds
+    score, asked = _curve({14: (92.68, 91.4), 23: (92.68, 91.4), 25: (92.67, 91.4), 27: (91.68, 90.2),
+                           28: (90.85, 89.8), 29: (89.85, 88.9), 34: (84.2, 78.2)})
+    r = await vmaf_target.search(score, 93, start=25, half_steps=True)
+    assert (r["cq"], r["reached"]) == (27, False) and r["rounds"] <= 5 and 14 in asked
+
+
+@pytest.mark.asyncio
+async def test_fewer_rounds_never_a_different_answer():
+    """Against scoring every whole CQ, on 400 made-up films: the same answer
+    (quality comes first), in 4.8 rounds on average where the steps and
+    halving took 7.2 (3000 films, 31 Oct 2026)."""
+    import random
+    rng = random.Random(7)
+    rounds = []
+    for _ in range(400):
+        top, a, p, dip = rng.uniform(94, 99.5), rng.uniform(0.05, 1.2), rng.uniform(1.0, 1.8), rng.uniform(0.5, 2.8)
+
+        async def score(cq, top=top, a=a, p=p, dip=dip):
+            mean = top - a * (cq - 14) ** p
+            return [mean + dip / 5] * 5 + [mean - dip]
+        r = await vmaf_target.search(score, 93, rng.choice([20, 23, 25, 28, 30, 32, 36]), half_steps=True)
+        passing = [cq for cq in range(14, 43) if vmaf_target.passes(await score(cq), 93)]
+        assert (int(r["cq"]) if r["reached"] else None) == (max(passing) if passing else None)
+        rounds.append(r["rounds"])
+    assert sum(rounds) / len(rounds) < 5.5 and max(rounds) <= 10
 
 
 @pytest.mark.asyncio
@@ -126,7 +181,7 @@ async def test_one_scoring_per_encoder_setting():  # VideoToolbox: CQ ≥ 29 is 
         return [99.0, 99.0]
     r = await vmaf_target.search(score, 93, start=30, setting_key=lambda cq: min(cq, 29))
     assert len([cq for cq in asked if cq >= 29]) == 1 and r["rounds"] == 1
-    assert r["cq"] == 42 and set(r["scores"]) == {30, 32, 36, 42}  # every CQ the steps reached
+    assert r["cq"] == 42 and {30, 42} <= set(r["scores"])  # every CQ the search reached
 
 
 def test_sample_points():
@@ -251,6 +306,11 @@ async def test_a_conversion_uses_it(test_db, quick, monkeypatch):
     assert rounds[0]["step"] == "VMAF target: CRF 30 (round 1)"
     assert rounds[0]["step_params"] == {"cq": 28, "round": 1, "encoder": "libx265", "crf": 30}
     assert {s["step_params"]["round"] for s in rounds} == set(range(1, found["rounds"] + 1))
+    # The Queue's card names the quality found once the encode starts, not
+    # the job's (QueuePage: encoder_settings over the job's own).
+    assert not any("encoder_settings" in s for s in rounds)
+    encoding = [s for s in said if s.get("encoder_settings")]
+    assert encoding and encoding[-1]["encoder_settings"]["libx265_crf"] == found["cq"] + 2
     from backend.tests.test_message_codes import _render_en
     assert _render_en("serverJobs", "steps.vmafTargetRound", {**rounds[0]["step_params"], "quality": "CRF 30"}) \
         == rounds[0]["step"]
@@ -404,6 +464,11 @@ async def test_a_workers_round_step_reaches_the_queue(test_db, node_api, monkeyp
             nodes_route.ProgressReport(node_id="node-1", job_id=job_id, step=step, **extra), request)
     assert (sent[0]["step_key"], sent[0]["step_params"]) == ("steps.vmafTargetRound", {"cq": 32, "round": 3})
     assert sent[1]["step_key"] == "steps.vmafAnalysis" and "step_params" not in sent[1]  # as before
+    assert "encoder_settings" not in sent[1]
+    # The quality a worker's encode runs at, when the target chose it.
+    await nodes_route.report_progress(nodes_route.ProgressReport(
+        node_id="node-1", job_id=job_id, step="converting", encoder_settings={"nvenc_cq": 29.5}), request)
+    assert sent[2]["encoder_settings"] == {"nvenc_cq": 29.5}
 
 
 @pytest.mark.asyncio

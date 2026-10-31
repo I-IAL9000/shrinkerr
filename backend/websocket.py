@@ -57,6 +57,8 @@ class ConnectionManager:
         self.active_connections: list[WebSocket] = []
         # Per-job last-emit timestamps for throttling job_progress messages
         self._last_job_progress_emit: dict[int, float] = {}
+        # and the step each last said: a new step always goes through.
+        self._last_job_step: dict[int, tuple] = {}
 
     async def connect(self, websocket: WebSocket) -> None:
         await websocket.accept()
@@ -160,6 +162,7 @@ class ConnectionManager:
         step_params: Optional[dict] = None,
         speed: Optional[float] = None,
         encoder: Optional[str] = None,
+        encoder_settings: Optional[dict] = None,
     ) -> None:
         # `step` stays the English label; `step_key`/`step_params` let the UI
         # translate it (t(`serverJobs:${step_key}`)). Derived from STEP_KEYS when
@@ -169,13 +172,18 @@ class ConnectionManager:
         # updates (progress >= 99.99 — covers both the final ffmpeg frame
         # and our explicit progress=100 emits when switching into VMAF
         # analysis), so the UI never stalls on a stale number just before
-        # the step changes.
+        # the step changes. A new step goes through too: the quality
+        # cross-check's start, right after VMAF's 99%, was dropped, and the
+        # card said "VMAF analysis 99%" for the minutes it ran (v0.10.0).
         now = time.monotonic()
         last = self._last_job_progress_emit.get(job_id)
         is_terminal = progress >= 99.99
-        if last is not None and not is_terminal and (now - last) < _JOB_PROGRESS_MIN_INTERVAL:
+        said = (step, step_key)
+        new_step = self._last_job_step.get(job_id) != said
+        if last is not None and not is_terminal and not new_step and (now - last) < _JOB_PROGRESS_MIN_INTERVAL:
             return
         self._last_job_progress_emit[job_id] = now
+        self._last_job_step[job_id] = said
 
         msg: dict = {
             "type": "job_progress",
@@ -201,6 +209,10 @@ class ConnectionManager:
             msg["step_key"] = step_key
             if step_params:
                 msg["step_params"] = step_params
+        # The settings the encode runs with, when they aren't the job's own
+        # (a VMAF target's quality, v0.10.0).
+        if encoder_settings:
+            msg["encoder_settings"] = encoder_settings
         if node_name:
             msg["node_name"] = node_name
         if node_id:
@@ -217,6 +229,7 @@ class ConnectionManager:
         interval elapses.
         """
         self._last_job_progress_emit.pop(job_id, None)
+        self._last_job_step.pop(job_id, None)
 
     async def send_job_complete(
         self,
