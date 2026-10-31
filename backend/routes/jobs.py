@@ -39,6 +39,21 @@ class BulkUpdateSettingsRequest(BaseModel):
     audio_codec: Optional[str] = None
     audio_bitrate: Optional[int] = None
     priority: Optional[int] = None
+    # The conversions' VMAF target (v0.10.0): 0 off (each job's own quality),
+    # else the score to search for.
+    vmaf_target: Optional[float] = None
+
+
+async def _check_target(target: float) -> None:
+    """A VMAF target set from the queue (Add to Queue, the queue's selection):
+    80 to 99, not below the VMAF minimum in force — as a rule's
+    (routes.rules._check_vmaf_target)."""
+    from backend.routes.rules import _check_vmaf_target
+    db = await connect_db()
+    try:
+        await _check_vmaf_target(db, target, None)
+    finally:
+        await db.close()
 
 
 class BulkMoveRequest(BaseModel):
@@ -108,6 +123,10 @@ class BulkQueueFromScanRequest(BaseModel):
     audio_codec_override: str | None = None
     audio_bitrate_override: int | None = None
     target_resolution_override: str | None = None
+    # Add to Queue's VMAF target (v0.10.0): 0 off — the quality chosen here,
+    # or the rule's / Settings' — else the score to search for, over a
+    # rule's and Settings' target. None: the rule's, else Settings'.
+    vmaf_target_override: float | None = None
     force_reencode: bool = False
     # User-chosen "no video conversion" — runs only the audio/sub cleanup
     # pass on the original file. Same effect as a rule with action="ignore",
@@ -702,6 +721,8 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
                 "target_resolution": target_resolution,
                 "output_codec": output_codec,
                 **job_overrides(rule),
+                **({"vmaf_target": payload.vmaf_target_override}
+                   if payload.vmaf_target_override is not None and job_type in ("convert", "combined") else {}),
                 # The fixes it makes ("" = none chosen); None: the setting's
                 "direct_play": None if payload.direct_play is None else ",".join(sorted(problems)),
                 "audio_codec": audio_codec,
@@ -791,6 +812,8 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
     """Create jobs from scan results — resolves track data from DB automatically."""
     if _queue is None:
         raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
+    if payload.vmaf_target_override:
+        await _check_target(payload.vmaf_target_override)
 
     file_paths = list(payload.file_paths)
 
@@ -995,6 +1018,12 @@ async def bulk_update_settings(payload: BulkUpdateSettingsRequest):
     if payload.priority is not None:
         updates.append("priority = ?")
         params.append(max(0, min(2, payload.priority)))
+    if payload.vmaf_target is not None:
+        if payload.vmaf_target:
+            await _check_target(payload.vmaf_target)
+        # Conversions only: a clean-up encodes nothing (CASE: the others keep theirs).
+        updates.append("vmaf_target = CASE WHEN job_type IN ('convert', 'combined') THEN ? ELSE vmaf_target END")
+        params.append(payload.vmaf_target)
     if not updates:
         return {"updated": 0}
     # v0.5.24: chunked the IN clause so a bulk-reorder of 1000+ pending
@@ -1874,6 +1903,8 @@ class EstimateRequest(BaseModel):
     file_paths: list[str]
     override_rules: bool = False
     filter: str = "all"
+    # The dialog's VMAF target (BulkQueueFromScanRequest.vmaf_target_override)
+    vmaf_target_override: float | None = None
     # v0.10.0: the Add to Queue dialog's encoder (None = the default), for
     # the "what will happen" panel.
     encoder: str | None = None
@@ -2261,12 +2292,15 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             # length isn't known yet is counted.
             if jt in ("convert", "combined") and not 0 < file_dur < MIN_DURATION:
                 rule_target = rule.get("vmaf_target") if rule else None
+                chosen = payload.vmaf_target_override
                 file_target = effective_target({**target_settings, **settings_overrides(
-                    {"vmaf_target": rule_target, "vmaf_min_score": rule.get("vmaf_min_score") if rule else None})})
+                    {"vmaf_target": rule_target if chosen is None else chosen,
+                     "vmaf_min_score": rule.get("vmaf_min_score") if rule else None})})
                 if file_target is not None:
                     key = f"{file_target:g}"
                     vmaf_targets[key] = vmaf_targets.get(key, 0) + 1
-                elif target_settings["vmaf_target_enabled"] and rule_target is not None and float(rule_target) == 0:
+                elif (chosen is None and target_settings["vmaf_target_enabled"]
+                      and rule_target is not None and float(rule_target) == 0):
                     # a rule's Off overriding Settings' target (with Settings' off there's nothing to override)
                     vmaf_fixed_by_rule += 1
 

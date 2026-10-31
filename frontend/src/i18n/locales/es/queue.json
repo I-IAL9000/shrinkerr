@@ -84,7 +84,9 @@
     "rerequestPartial": "{{succeeded}} solicitados de nuevo, {{failed}} fallidos: {{reason}}",
     "clearedFailed_one": "{{count}} trabajo fallido borrado",
     "clearedFailed_many": "{{count}} trabajos fallidos borrados",
-    "clearedFailed_other": "{{count}} trabajos fallidos borrados"
+    "clearedFailed_other": "{{count}} trabajos fallidos borrados",
+    "vmafTargetSet": "Objetivo VMAF {{score}} para las conversiones seleccionadas",
+    "vmafTargetOff": "Objetivo VMAF desactivado para las conversiones seleccionadas"
   },
   "confirm": {
     "ignoreSelected_one": "¿Ignorar {{count}} trabajo seleccionado?",
@@ -276,7 +278,10 @@
       "bluray": "calidad Blu-ray",
       "streaming": "streaming",
       "compact": "compacto"
-    }
+    },
+    "vmafTargetPlaceholder": "Objetivo VMAF...",
+    "vmafTargetOff": "Desactivado: la calidad de cada trabajo",
+    "vmafTargetScore": "Objetivo {{score}}"
   },
   "plan": {
     "title": "Qué va a pasar",

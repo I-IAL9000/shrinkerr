@@ -14,6 +14,10 @@ interface QueueControlPanelProps {
   onChangeVideoPreset: (job: QualityPreset["job"]) => void;
   onChangeAudioPreset: (codec: string, bitrate: number) => void;
   onChangePriority: (priority: number) => void;
+  /** The selected conversions' VMAF target: 0 off (each job's quality), else a score. */
+  onChangeVmafTarget: (target: number) => void;
+  /** Settings' VMAF target, offered with the usual scores (null: off). */
+  settingsTarget?: number | null;
   onIgnore: () => void;
   onRemove: () => void;
   onSelectAll: () => void;
@@ -86,6 +90,8 @@ export default function QueueControlPanel({
   onChangeVideoPreset,
   onChangeAudioPreset,
   onChangePriority,
+  onChangeVmafTarget,
+  settingsTarget = null,
   onIgnore,
   onRemove,
   onSelectAll,
@@ -200,6 +206,15 @@ export default function QueueControlPanel({
             + (p.noteKey ? ` (${t(`queue:panel.audioPresets.${p.noteKey}`)})` : ""),
           onSelect: () => onChangeAudioPreset(p.codec, p.bitrate),
         }))}
+      />
+      <ActionMenu
+        label={t("queue:panel.vmafTargetPlaceholder")}
+        buttonStyle={selectStyle}
+        items={[
+          { label: t("queue:panel.vmafTargetOff"), onSelect: () => onChangeVmafTarget(0) },
+          ...[...new Set([90, 93, 95, ...(settingsTarget ? [settingsTarget] : [])])].sort((a, b) => a - b)
+            .map(score => ({ label: t("queue:panel.vmafTargetScore", { score }), onSelect: () => onChangeVmafTarget(score) })),
+        ]}
       />
       <ActionMenu
         label={t("queue:panel.priorityPlaceholder")}

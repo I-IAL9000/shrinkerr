@@ -72,7 +72,9 @@
     "rerequested_other": "Re-requested {{count}} files from Sonarr/Radarr",
     "rerequestPartial": "{{succeeded}} re-requested, {{failed}} failed: {{reason}}",
     "clearedFailed_one": "Cleared {{count}} failed job",
-    "clearedFailed_other": "Cleared {{count}} failed jobs"
+    "clearedFailed_other": "Cleared {{count}} failed jobs",
+    "vmafTargetSet": "VMAF target {{score}} for the selected conversions",
+    "vmafTargetOff": "VMAF target off for the selected conversions"
   },
   "confirm": {
     "ignoreSelected_one": "Ignore {{count}} selected job?",
@@ -250,7 +252,10 @@
       "bluray": "Blu-ray quality",
       "streaming": "streaming",
       "compact": "compact"
-    }
+    },
+    "vmafTargetPlaceholder": "VMAF target...",
+    "vmafTargetOff": "Off: each job's quality",
+    "vmafTargetScore": "Target {{score}}"
   },
   "plan": {
     "title": "What will happen",

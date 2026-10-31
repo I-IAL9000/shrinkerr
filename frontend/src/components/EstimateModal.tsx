@@ -6,7 +6,7 @@ import i18n from "../i18n";
 import { estimateJobs, startTestEncode, getEncodingSettings, getEncoderCaps, wsUrl, type EncoderCaps } from "../api";
 import { useRangeFill } from "../useRangeFill";
 import { fmtNum, fmtBytes } from "../fmt";
-import { vmafColor, vmafTintBg } from "../utils/vmaf";
+import { vmafColor, vmafTintBg, VMAF_EXCELLENT_MIN } from "../utils/vmaf";
 import { trackLanguageList } from "../utils/languages";
 
 function formatTime(seconds: number): string {
@@ -39,6 +39,9 @@ export interface EncodingOverrides {
   // Fix for direct play (v0.10.0), ticked or not, and the fixes it makes
   direct_play?: boolean;
   direct_play_fixes?: string[];
+  // The VMAF target (v0.10.0): 0 off — encode at the quality chosen — else a
+  // score; absent: the rule's, else Settings'.
+  vmaf_target?: number;
 }
 
 // Fix for direct play's fixes (backend/direct_play.py's problems), in the
@@ -92,11 +95,22 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   // The estimate waits for the settings: one ticking Fix for direct play
   // made it run twice on opening.
   const [settingsRead, setSettingsRead] = useState(false);
+  // The VMAF target (v0.10.0): "" Settings' (or a file's rule's), "off", or a
+  // score; Settings' own target, to name it (null: off).
+  const [vmafChoice, setVmafChoice] = useState("");
+  const [settingsTarget, setSettingsTarget] = useState<number | null>(null);
+  const vmafMode = vmafChoice === "" ? "" : vmafChoice === "off" ? "off" : "custom";
+  const vmafScore = Number(vmafChoice);
+  // What reaches the queue: 0 off, a score from 80 to 99, else nothing chosen.
+  const vmafOverride: number | null = vmafMode === "off" ? 0
+    : vmafMode === "custom" && vmafScore >= 80 && vmafScore <= 99 ? vmafScore : null;
 
   useEffect(() => {
     getEncodingSettings().then(s => {
       if (s?.default_encoder) setDefaultEncoder(s.default_encoder);
       if (s?.direct_play_on_convert) setDirectPlay(true);
+      const on = s?.vmaf_target_enabled === true || s?.vmaf_target_enabled === "true";
+      setSettingsTarget(on ? Number(s?.vmaf_target_score) || VMAF_EXCELLENT_MIN : null);
     }).catch(() => {}).finally(() => setSettingsRead(true));
     getEncoderCaps().then(setEncoderCaps).catch(() => {});
   }, []);
@@ -177,6 +191,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
       overrides.direct_play = true;
       overrides.direct_play_fixes = dpFixes;
     }
+    if (vmafOverride !== null) overrides.vmaf_target_override = vmafOverride;
     estimateJobs(filePaths, overrideRules, overrides).then(data => {
       setEstimate(data);
       setLoading(false);
@@ -185,7 +200,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
       setEstimate({ total_files: 0, error: err?.message || t("scannerModals:estimate.unknownError") });
       setLoading(false);
     });
-  }, [settingsRead, overrideRules, cq, forceReencode, cleanupOnly, isCpu, encoder, directPlay, dpFixes, resolution]);
+  }, [settingsRead, overrideRules, cq, forceReencode, cleanupOnly, isCpu, encoder, directPlay, dpFixes, resolution, vmafOverride]);
   const buildOverrides = (): EncodingOverrides | undefined => {
     const o: EncodingOverrides = {};
     if (encoder !== null) o.encoder = encoder;
@@ -204,6 +219,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
     if (cleanupOnly) o.cleanup_only = true;
     o.direct_play = directPlay;  // either way: unticked overrides the setting
     if (directPlay) o.direct_play_fixes = dpFixes;
+    if (vmafOverride !== null) o.vmaf_target = vmafOverride;
     return o;
   };
   // A clean-up's Dolby Vision (v0.10.0): removed under "Convert to HDR10";
@@ -538,7 +554,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                 </svg>
                 {t("scannerModals:overrides.encodingSettings")}
                 <span style={{ marginLeft: "auto", color: "var(--text-muted)", fontSize: 11 }}>
-                  {cq !== null || encoder !== null || preset !== null || audioCdc !== null ? t("scannerModals:overrides.custom") : t("scannerModals:overrides.defaultSettings")}
+                  {cq !== null || encoder !== null || preset !== null || audioCdc !== null || vmafChoice !== "" ? t("scannerModals:overrides.custom") : t("scannerModals:overrides.defaultSettings")}
                 </span>
               </button>
 
@@ -590,6 +606,35 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       {t("scannerModals:overrides.qualityStartsSearch")}
                     </div>
                   )}
+                  </>}
+
+                  {/* The VMAF target (v0.10.0): Settings' or a rule's, Off — the
+                      quality above, no search — or a score of this batch's own.
+                      With the target on there was no way to queue at a set CQ. */}
+                  {!cleanupOnly && <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.vmafTarget")}</label>
+                    <div style={{ flex: 1, display: "flex", gap: 6, minWidth: 0 }}>
+                      <select aria-label={t("scannerModals:overrides.vmafTarget")} value={vmafMode}
+                        onChange={e => setVmafChoice(e.target.value === "custom" ? String(settingsTarget ?? VMAF_EXCELLENT_MIN) : e.target.value)}
+                        style={{ flex: 1, minWidth: 0, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
+                        <option value="">{settingsTarget !== null
+                          ? t("scannerModals:overrides.vmafTargetSettings", { score: settingsTarget })
+                          : t("scannerModals:overrides.vmafTargetSettingsOff")}</option>
+                        <option value="off">{t("scannerModals:overrides.vmafTargetOff")}</option>
+                        <option value="custom">{t("scannerModals:overrides.vmafTargetCustom")}</option>
+                      </select>
+                      {vmafMode === "custom" && (
+                        <input type="number" min={80} max={99} step={1} value={vmafChoice}
+                          aria-label={t("scannerModals:overrides.vmafTargetScore")}
+                          onChange={e => setVmafChoice(e.target.value)}
+                          style={{ width: 60, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }} />
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "0 0 0 90px" }}>
+                    {t(`scannerModals:overrides.vmafTargetHelp.${vmafMode || "settings"}`)}
+                  </div>
                   </>}
 
                   {/* Preset — hidden for QSV/VAAPI for the same reason as

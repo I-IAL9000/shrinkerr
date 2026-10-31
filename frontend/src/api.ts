@@ -780,6 +780,7 @@ export const bulkUpdateJobSettings = (data: {
   audio_codec?: string;
   audio_bitrate?: number;
   priority?: number;
+  vmaf_target?: number;  // the conversions' VMAF target: 0 off (v0.10.0)
 }) => apiFetch("/jobs/bulk-update-settings", { method: "POST", body: JSON.stringify(data) });
 
 export const bulkMoveJobs = (job_ids: number[], position: "top" | "bottom" | "up" | "down") =>

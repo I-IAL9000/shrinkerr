@@ -1238,6 +1238,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         // Fix for direct play (v0.10.0): ticked or not, the dialog's choice
         if (encodingOverrides.direct_play != null) extra.direct_play = encodingOverrides.direct_play;
         if (encodingOverrides.direct_play) extra.direct_play_fixes = encodingOverrides.direct_play_fixes;
+        if (encodingOverrides.vmaf_target != null) extra.vmaf_target_override = encodingOverrides.vmaf_target;
       }
       if (filter !== "all") extra.filter = filter;
       const result = await addJobsFromScan(estimatePaths, priority, overrideRules, Object.keys(extra).length > 0 ? extra : undefined) as any;

@@ -150,7 +150,18 @@
     "reencode": "Recodificar",
     "forceReencode": "Forzar recodificación de todos los archivos (incluido x265)",
     "audioSub": "Audio/subt.",
-    "cleanupOnly": "Solo limpieza — sin conversión de video"
+    "cleanupOnly": "Solo limpieza — sin conversión de video",
+    "vmafTarget": "Objetivo VMAF",
+    "vmafTargetSettings": "Ajustes: {{score}}",
+    "vmafTargetSettingsOff": "Ajustes: desactivado",
+    "vmafTargetOff": "Desactivado: esta calidad",
+    "vmafTargetCustom": "Una puntuación propia",
+    "vmafTargetScore": "Puntuación del objetivo VMAF",
+    "vmafTargetHelp": {
+      "settings": "El objetivo de Ajustes, o el de la regla de cada archivo.",
+      "off": "Sin búsqueda: cada archivo se codifica con una calidad fija: la elegida aquí, la de su regla o la de Ajustes.",
+      "custom": "La calidad de cada archivo se busca para esta puntuación (de 80 a 99)."
+    }
   },
   "test": {
     "extracting": "Extrayendo muestra...",

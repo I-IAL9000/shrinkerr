@@ -130,7 +130,18 @@
     "reencode": "Re-encode",
     "forceReencode": "Force re-encode all files (including x265)",
     "audioSub": "Audio/sub",
-    "cleanupOnly": "Cleanup only — no video conversion"
+    "cleanupOnly": "Cleanup only — no video conversion",
+    "vmafTarget": "VMAF target",
+    "vmafTargetSettings": "Settings: {{score}}",
+    "vmafTargetSettingsOff": "Settings: off",
+    "vmafTargetOff": "Off: this quality",
+    "vmafTargetCustom": "A score of your own",
+    "vmafTargetScore": "VMAF target score",
+    "vmafTargetHelp": {
+      "settings": "Settings' target, or a file's rule's.",
+      "off": "No search: each file is encoded at a set quality — chosen here, its rule's, or Settings'.",
+      "custom": "Each file's quality is found for this score (80 to 99)."
+    }
   },
   "test": {
     "extracting": "Extracting sample...",

@@ -357,6 +357,22 @@ export default function QueuePage() {
     setPlanEdits(n => n + 1);
   };
 
+  // The selected conversions' VMAF target (v0.10.0): 0 off — each job's own
+  // quality, no search — else the score to search for.
+  const handleBulkVmafTarget = async (target: number) => {
+    const conversions = new Set(jobs.filter(j => selectedJobIds.has(j.id)
+      && (j.job_type === "convert" || j.job_type === "combined")).map(j => j.id));
+    try {
+      await bulkUpdateJobSettings({ job_ids: selectedIds, vmaf_target: target });
+      setJobs(prev => prev.map(j => conversions.has(j.id) ? { ...j, vmaf_target: target } : j));
+      // Not counted: a selection can reach past the jobs loaded here.
+      toast(target ? t("queue:toasts.vmafTargetSet", { score: target }) : t("queue:toasts.vmafTargetOff"), "success");
+      setPlanEdits(n => n + 1);
+    } catch (e: any) {
+      toast(e?.message || String(e), "error");
+    }
+  };
+
   const handleBulkAudioPreset = async (codec: string, bitrate: number) => {
     const selectedSet = new Set(selectedIds);
     setJobs(prev => prev.map(j =>
@@ -950,6 +966,9 @@ export default function QueuePage() {
               onMoveBottom={() => handleBulkMove("bottom")}
               onChangeVideoPreset={handleBulkVideoPreset}
               onChangeAudioPreset={handleBulkAudioPreset}
+              onChangeVmafTarget={handleBulkVmafTarget}
+              settingsTarget={encodingDefaults?.vmaf_target_enabled === true || encodingDefaults?.vmaf_target_enabled === "true"
+                ? Number(encodingDefaults?.vmaf_target_score) || null : null}
               defaultEncoder={encodingDefaults?.default_encoder}
               onChangePriority={async (priority: number) => {
                 await bulkUpdateJobSettings({ job_ids: selectedIds, priority });
