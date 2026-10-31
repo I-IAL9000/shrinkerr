@@ -1763,8 +1763,11 @@ async def undo_conversion(job_id: int):
             "UPDATE jobs SET status = 'reverted' WHERE id = ?", (job_id,)
         )
 
-        # Reset scan_results for this file (a disc row is a disc again).
-        disc_type = {"index.bdmv": "bdmv", "video_ts.ifo": "dvd"}.get(Path(original_path).name.lower())
+        # Reset scan_results for this file (a disc row is a disc again — an
+        # ISO too: by its name alone it wasn't, and the Scanner's Disc / ISO
+        # filter didn't count a restored Showgirls ISO).
+        from backend.scanner import media_input
+        disc_type = (await media_input(original_path))[2]
         await db.execute(
             """UPDATE scan_results SET converted = 0, needs_conversion = 1,
                    video_codec = 'h264', file_path = ?, file_size = ?, disc_type = ?
@@ -1779,6 +1782,8 @@ async def undo_conversion(job_id: int):
                             summary_key="restoredFromBackup")
         except Exception:
             pass
+        from backend.routes.scan import _fire_and_forget
+        _fire_and_forget(_rescan_restored(original_path))
 
         return {
             "status": "reverted",
@@ -1787,6 +1792,27 @@ async def undo_conversion(job_id: int):
         }
     finally:
         await db.close()
+
+
+async def _rescan_restored(path: str) -> None:
+    """Store a restored original's Scanner row from a fresh probe, as the
+    watcher stores a new file's: the row undo moved back kept the converted
+    file's tracks and codec, and the watcher doesn't probe a path it knows.
+    In the background — a Blu-ray ISO over SMB took over a minute to probe."""
+    import backend.database as database
+    from backend.routes.scan import _write_batch
+    from backend.scanner import probe_file
+    from backend.watcher import scan_settings, scanned_from_probe
+    try:
+        probe = await probe_file(path)
+        if not probe:
+            print(f"[UNDO] Couldn't probe the restored original: {path}", flush=True)
+            return
+        source_codecs, global_cq = await scan_settings(database.DB_PATH)
+        scanned = await scanned_from_probe(path, probe, source_codecs, global_cq)
+        await _write_batch(database.DB_PATH, [scanned], datetime.now(timezone.utc).isoformat())
+    except Exception as exc:
+        print(f"[UNDO] Rescanning the restored original failed: {exc}", flush=True)
 
 
 @router.get("/{job_id}/log")

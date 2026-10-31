@@ -159,3 +159,35 @@ def test_restore_only_brings_back_this_discs_companions(tmp_path):
     home = tmp_path / "Movie (2009)"
     moves = _restore_moves(slot / "VIDEO_TS", home / "VIDEO_TS" / "VIDEO_TS.IFO")
     assert [(a.name, b) for a, b in moves] == [("VIDEO_TS", home / "VIDEO_TS"), ("JACKET_P", home / "JACKET_P")]
+
+
+@pytest.mark.asyncio
+async def test_a_restored_iso_is_a_disc_again(test_db, tmp_path, monkeypatch):
+    """A restored Showgirls ISO had no disc type (only disc folders were
+    recognised by name), so the Scanner's Disc / ISO filter didn't count it;
+    and its row kept the converted file's tracks until it's probed again."""
+    import backend.routes.jobs as jobs_route
+    from backend.tests.test_dvd_iso_concat import _make_iso
+    title = tmp_path / "Film (1995)"
+    backups = title / ".shrinkerr_backup"
+    backups.mkdir(parents=True)
+    _make_iso(backups / "Film (1995) DVD.iso", {"VIDEO_TS.IFO": b"DVDVIDEO-VMG" + b"\0" * 2036,
+                                                "VTS_01_0.IFO": b"DVDVIDEO-VTS" + b"\0" * 2036,
+                                                "VTS_01_1.VOB": b"\0" * 4096})
+    converted = title / "Film (1995) 480p DVD AC3 2.0 h265.mkv"
+    converted.write_bytes(b"converted")
+    original = title / "Film (1995) DVD.iso"
+    job_id = await _job(test_db, converted, original, backups / original.name)
+    rescanned = []
+
+    async def rescan(path):
+        rescanned.append(path)
+    monkeypatch.setattr(jobs_route, "_rescan_restored", rescan)
+
+    await undo_conversion(job_id)
+
+    async with aiosqlite.connect(test_db) as db:
+        async with db.execute("SELECT file_path, disc_type FROM scan_results") as cur:
+            assert await cur.fetchall() == [(str(original), "dvd")]
+    await __import__("asyncio").sleep(0)  # the rescan runs in the background
+    assert rescanned == [str(original)]

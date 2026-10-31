@@ -123,8 +123,25 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const [refreshingMetadata, setRefreshingMetadata] = useState(false);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
-  const [sortBy, setSortBy] = useState<"name" | "size" | "files" | "date" | "savings">("name");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  // The sort is kept like the filters (v0.10.0): coming back to the Scanner
+  // went back to A–Z.
+  type ScannerSort = { by: "name" | "size" | "files" | "date" | "savings"; dir: "asc" | "desc" };
+  const [savedSort] = useState<ScannerSort>(() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem("shrinkerr_scanner_sort") || "null");
+      if (["name", "size", "files", "date", "savings"].includes(parsed?.by) && ["asc", "desc"].includes(parsed?.dir)) {
+        return parsed as ScannerSort;
+      }
+    } catch { /* unreadable or blocked storage: the default */ }
+    return { by: "name", dir: "asc" };
+  });
+  const [sortBy, setSortBy] = useState<ScannerSort["by"]>(savedSort.by);
+  const [sortDir, setSortDir] = useState<ScannerSort["dir"]>(savedSort.dir);
+  useEffect(() => {
+    try {
+      localStorage.setItem("shrinkerr_scanner_sort", JSON.stringify({ by: sortBy, dir: sortDir }));
+    } catch { /* same reason as the filters' */ }
+  }, [sortBy, sortDir]);
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");  // raw input, debounced into `search`
   const [advSearchOpen, setAdvSearchOpen] = useState(false);

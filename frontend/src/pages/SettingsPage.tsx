@@ -4433,6 +4433,40 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                               </div>
                             )}
                           </div>
+                          {/* VMAF target (v0.10.0): Settings' (shown), Off — the rule's own
+                              quality, no search — or this rule's score. The minimum check
+                              (a target can't be below it) is the server's refusal. Beside
+                              the quality it replaces, not under More, where turning it off
+                              for a rule was hard to find. */}
+                          {(() => {
+                            const vt = ruleForm.vmaf_target || "";
+                            const mode = vt === "" ? "" : vt === "off" ? "off" : "custom";
+                            const settingsOn = encoding?.vmaf_target_enabled === true || encoding?.vmaf_target_enabled === "true";
+                            const settingsScore = Number(encoding?.vmaf_target_score ?? VMAF_EXCELLENT_MIN) || VMAF_EXCELLENT_MIN;
+                            return (
+                              <div style={{ gridColumn: "span 2" }}>
+                                <label style={labelStyle}>{t("settingsIntegrations:rules.form.more.vmafTarget")}</label>
+                                <div style={{ display: "flex", gap: 6 }}>
+                                  <select aria-label={t("settingsIntegrations:rules.form.more.vmafTarget")} style={{ ...inputStyle, width: "100%" }}
+                                    value={mode} onChange={e => setRuleForm({ ...ruleForm,
+                                      vmaf_target: e.target.value === "custom" ? String(settingsScore) : e.target.value })}>
+                                    <option value="">{settingsOn
+                                      ? t("settingsIntegrations:rules.form.more.vmafTargetSettings", { score: settingsScore })
+                                      : t("settingsIntegrations:rules.form.more.vmafTargetSettingsOff")}</option>
+                                    <option value="off">{t("settingsIntegrations:rules.form.more.vmafTargetOff")}</option>
+                                    <option value="custom">{t("settingsIntegrations:rules.form.more.vmafTargetCustom")}</option>
+                                  </select>
+                                  {mode === "custom" && (
+                                    <input type="number" min={80} max={99} step={1} style={{ ...inputStyle, width: 70 }}
+                                      aria-label={t("settingsIntegrations:rules.form.more.vmafTargetScore")}
+                                      value={Number.isFinite(parseFloat(vt)) ? vt : ""}
+                                      onChange={e => setRuleForm({ ...ruleForm, vmaf_target: e.target.value === "" ? "custom" : e.target.value })} />
+                                  )}
+                                </div>
+                                <div style={helpStyle}>{t(`settingsIntegrations:rules.form.more.vmafTargetHelp.${mode || "settings"}`)}</div>
+                              </div>
+                            );
+                          })()}
                           {/* QSV / VAAPI / VideoToolbox (v0.10.0): a quality on NVENC's
                               CQ scale, translated to the encoder's own setting; their
                               preset stays the global one. */}
@@ -4549,7 +4583,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           VMAF minimum, minimum savings (backend/rule_actions.py). */}
                       {ruleForm.action !== "skip" && (
                         <details open={!!((ruleForm.audio_keep_languages || []).length || ruleForm.sub_policy || ruleForm.originals_policy
-                                          || ruleForm.vmaf_min_score || ruleForm.vmaf_target || ruleForm.min_savings_pct)}>
+                                          || ruleForm.vmaf_min_score || ruleForm.min_savings_pct)}>
                           <summary style={{ ...labelStyle, cursor: "pointer" }}>{t("settingsIntegrations:rules.form.more.title")}</summary>
                           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12, marginTop: 10 }}>
                             <div style={{ gridColumn: "1 / -1" }}>
@@ -4600,38 +4634,6 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                   value={ruleForm.vmaf_min_score || ""} onChange={e => setRuleForm({ ...ruleForm, vmaf_min_score: e.target.value })} />
                                 <div style={helpStyle}>{t("settingsIntegrations:rules.form.more.vmafMinHelp")}</div>
                               </div>
-                              {/* VMAF target (v0.10.0): Settings' (shown), Off — the rule's own
-                                  quality, no search — or this rule's score. The minimum check
-                                  (a target can't be below it) is the server's refusal. */}
-                              {(() => {
-                                const vt = ruleForm.vmaf_target || "";
-                                const mode = vt === "" ? "" : vt === "off" ? "off" : "custom";
-                                const settingsOn = encoding?.vmaf_target_enabled === true || encoding?.vmaf_target_enabled === "true";
-                                const settingsScore = Number(encoding?.vmaf_target_score ?? VMAF_EXCELLENT_MIN) || VMAF_EXCELLENT_MIN;
-                                return (
-                                  <div>
-                                    <label style={labelStyle}>{t("settingsIntegrations:rules.form.more.vmafTarget")}</label>
-                                    <div style={{ display: "flex", gap: 6 }}>
-                                      <select aria-label={t("settingsIntegrations:rules.form.more.vmafTarget")} style={{ ...inputStyle, width: "100%" }}
-                                        value={mode} onChange={e => setRuleForm({ ...ruleForm,
-                                          vmaf_target: e.target.value === "custom" ? String(settingsScore) : e.target.value })}>
-                                        <option value="">{settingsOn
-                                          ? t("settingsIntegrations:rules.form.more.vmafTargetSettings", { score: settingsScore })
-                                          : t("settingsIntegrations:rules.form.more.vmafTargetSettingsOff")}</option>
-                                        <option value="off">{t("settingsIntegrations:rules.form.more.vmafTargetOff")}</option>
-                                        <option value="custom">{t("settingsIntegrations:rules.form.more.vmafTargetCustom")}</option>
-                                      </select>
-                                      {mode === "custom" && (
-                                        <input type="number" min={80} max={99} step={1} style={{ ...inputStyle, width: 70 }}
-                                          aria-label={t("settingsIntegrations:rules.form.more.vmafTargetScore")}
-                                          value={Number.isFinite(parseFloat(vt)) ? vt : ""}
-                                          onChange={e => setRuleForm({ ...ruleForm, vmaf_target: e.target.value === "" ? "custom" : e.target.value })} />
-                                      )}
-                                    </div>
-                                    <div style={helpStyle}>{t(`settingsIntegrations:rules.form.more.vmafTargetHelp.${mode || "settings"}`)}</div>
-                                  </div>
-                                );
-                              })()}
                               <div>
                                 <label style={labelStyle}>{t("settingsIntegrations:rules.form.more.minSavings")}</label>
                                 <input type="number" min={0} max={100} style={{ ...inputStyle, width: "100%" }}
