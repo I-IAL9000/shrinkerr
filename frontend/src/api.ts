@@ -947,6 +947,10 @@ export interface JobPlan {
   // What a conversion does with its lossless audio (v0.10.0): the tracks it
   // converts and to what, and the lossless ones it keeps; null: nothing to say
   lossless?: { convert: number[]; keep: number[]; codec: string; bitrate: number } | null;
+  // What it does with its Dolby Vision (v0.10.0): converted as the HDR under
+  // it ("drop"), kept, removed by a clean-up, or the video isn't converted
+  // ("skip", and why); null: none, or a clean-up copies it
+  dolby_vision?: { profile: string; action: "drop" | "remove" | "keep" | "skip"; hdr: string | null; why: string | null } | null;
 }
 export const getJobPlan = (id: number) => apiFetch<JobPlan>(`/jobs/${id}/plan`);
 export interface PendingSummary {

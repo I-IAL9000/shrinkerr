@@ -3485,19 +3485,14 @@ async def convert_file(
     # v0.10.0: profiles 7 and 8 keep Dolby Vision (dovi.py); the rest aren't
     # re-encoded. The job keeps the video and still does its other work
     # (QueueWorker: VIDEO_KEPT_KEYS), saying why the video wasn't converted.
-    dv_why = dovi.why_not_kept(source_hdr, encoder=encoder, output_codec=output_codec,
-                               target_resolution=_target_res, disc_type=disc_type) if is_dolby_vision(source_hdr) else None
     # Settings → Video → Dolby Vision: drop it and convert the HDR10 / HLG
     # under it — always, or when it can't be kept (a 4K remux resized to
     # 1080p came out as nothing; it's 1080p HDR10 now).
-    dv_mode = live_settings.get("dolby_vision_mode") or "keep"
-    drop_dv = None
-    if is_dolby_vision(source_hdr) and not disc_type and (dv_mode == "hdr10" or (dv_mode == "keep_or_hdr10" and dv_why)):
-        drop_dv = dovi.drop_to(source_hdr, probe_data.get("dv_base"))
-        if drop_dv and not dovi.can_strip():
-            print("[CONVERT] Can't drop Dolby Vision: this ffmpeg has no dovi_rpu filter (7.1 or later)", flush=True)
-            drop_dv = None
-            dv_why = dv_why and "ffmpeg"
+    drop_dv, dv_why = dovi.encode_outcome(
+        source_hdr, probe_data.get("dv_base"), live_settings.get("dolby_vision_mode") or "keep", encoder=encoder,
+        output_codec=output_codec, target_resolution=_target_res, disc_type=disc_type)
+    if dv_why == "ffmpeg":
+        print("[CONVERT] Can't drop Dolby Vision: this ffmpeg has no dovi_rpu filter (7.1 or later)", flush=True)
     if drop_dv:
         print(f"[CONVERT] Dropping Dolby Vision ({source_hdr}): converting the {drop_dv.upper()} under it", flush=True)
         source_hdr, dv_why = drop_dv, None

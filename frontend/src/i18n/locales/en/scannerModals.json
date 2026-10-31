@@ -70,6 +70,14 @@
         "profile5_one": "{{num}} file keeps Dolby Vision: it's profile 5, with no HDR10 under it",
         "profile5_other": "{{num}} files keep Dolby Vision: they're profile 5, with no HDR10 under it"
       },
+      "dolbyVisionConverted": {
+        "dropped_one": "{{num}} file loses its Dolby Vision as it's converted, and becomes {{hdr}}",
+        "dropped_other": "{{num}} files lose their Dolby Vision as they're converted, and become {{hdr}}",
+        "kept_one": "{{num}} file keeps its Dolby Vision as it's converted",
+        "kept_other": "{{num}} files keep their Dolby Vision as they're converted",
+        "notConverted_one": "{{num}} Dolby Vision file isn't converted: {{why}}",
+        "notConverted_other": "{{num}} Dolby Vision files aren't converted: {{why}}"
+      },
       "directPlay": {
         "container_one": "{{num}} file is remuxed to MKV",
         "container_other": "{{num}} files are remuxed to MKV",

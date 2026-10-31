@@ -265,6 +265,22 @@
     "videoTargetNoPreset": "Converts the video with {{encoder}}, at the quality the VMAF target {{target}} finds for it",
     "losslessConvert": "Converts its {{tracks}} audio to {{target}}",
     "losslessKeep": "Keeps its {{tracks}} audio lossless",
+    "dolbyVision": {
+      "drop": "Removes its Dolby Vision (profile {{profile}}) and converts the {{hdr}} under it",
+      "remove": "Removes its Dolby Vision (profile {{profile}}) without re-encoding: the {{hdr}} stays",
+      "keep": "Keeps its Dolby Vision (profile {{profile}})",
+      "keepWhy": "Keeps its Dolby Vision (profile {{profile}}): {{why}}",
+      "skip": "The video isn't converted: {{why}}"
+    },
+    "dolbyVisionWhy": {
+      "disc": "Dolby Vision on a disc isn't re-encoded",
+      "profile": "only profiles 7 and 8 have HDR10 under their Dolby Vision",
+      "tools": "keeping Dolby Vision needs dovi_tool and mkvmerge, which aren't installed",
+      "encoder": "Dolby Vision is kept with NVENC, libx265 or VideoToolbox only",
+      "codec": "Dolby Vision is kept only when converting to HEVC",
+      "resize": "Dolby Vision is kept only at the same resolution",
+      "ffmpeg": "removing Dolby Vision needs ffmpeg 7.1 or later"
+    },
     "noVideo": "The video isn't re-encoded; only the tracks change",
     "nativeFirst": "Moves the original-language audio ({{language}}) first, so it plays by default",
     "size": "{{before}} → about {{after}} (saves about {{saved}})",

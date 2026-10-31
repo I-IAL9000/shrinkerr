@@ -82,8 +82,13 @@ export default function PendingJobPlan({ job, encodingDefaults, onChanged }: {
   // A VMAF target job's quality is the search's to find (v0.10.0): it said
   // "P3 / CQ 27", the job's queued quality.
   const preset = encoderPresetLabel(encoder, settings);
+  // Its Dolby Vision (v0.10.0): Settings → Video → Dolby Vision, as the encode
+  // decides it. One it can't keep or drop keeps the video as it is.
+  const dv = plan.dolby_vision;
+  const dvParams = dv && { profile: dv.profile, hdr: (dv.hdr || "").toUpperCase(),
+    why: dv.why ? t(`queue:plan.dolbyVisionWhy.${dv.why}`) : "" };
   const lines: { text: string; warn?: boolean }[] = [
-    {
+    dv?.action === "skip" ? { text: t("queue:plan.dolbyVision.skip", dvParams!), warn: true } : {
       text: !converts ? t("queue:plan.noVideo")
         : (job.vmaf_target ?? 0) > 0
           ? preset
@@ -91,6 +96,8 @@ export default function PendingJobPlan({ job, encodingDefaults, onChanged }: {
             : t("queue:plan.videoTargetNoPreset", { encoder: encoderName, target: job.vmaf_target })
           : t("queue:plan.video", { encoder: encoderName, settings: encoderSettingsLabel(encoder, settings) }),
     },
+    ...(dv && dv.action !== "skip"
+      ? [{ text: t(`queue:plan.dolbyVision.${dv.action === "keep" && dv.why ? "keepWhy" : dv.action}`, dvParams!) }] : []),
     // Its lossless audio (v0.10.0): Settings' or Add to Queue's choice.
     ...(plan.lossless?.convert.length ? [{ text: t("queue:plan.losslessConvert", {
       tracks: losslessNames(plan.audio, plan.lossless.convert),

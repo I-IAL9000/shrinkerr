@@ -275,6 +275,17 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
       .filter(outcome => (dv[outcome] || 0) > 0 && (outcome === "removed" || cleanupOnly))
       .map(outcome => t(`scannerModals:estimate.whatHappens.dolbyVision.${outcome}`,
         { count: dv[outcome], num: fmtNum(dv[outcome]) }));
+  // A conversion's Dolby Vision (v0.10.0): dropped, by the HDR under it that's
+  // converted; kept; or not converted, by why.
+  const dvConvertedRows = (dv?: { dropped?: Record<string, number>; kept?: number; not_converted?: Record<string, number> }) =>
+    !dv || cleanupOnly ? [] : [
+      ...Object.entries(dv.dropped || {}).map(([hdr, n]) => t("scannerModals:estimate.whatHappens.dolbyVisionConverted.dropped",
+        { count: n, num: fmtNum(n), hdr: hdr.toUpperCase() })),
+      ...((dv.kept || 0) > 0 ? [t("scannerModals:estimate.whatHappens.dolbyVisionConverted.kept",
+        { count: dv.kept, num: fmtNum(dv.kept || 0) })] : []),
+      ...Object.entries(dv.not_converted || {}).map(([why, n]) => t("scannerModals:estimate.whatHappens.dolbyVisionConverted.notConverted",
+        { count: n, num: fmtNum(n), why: t(`queue:plan.dolbyVisionWhy.${why}`) })),
+    ];
   // The VMAF target's files (v0.10.0): how many convert with a search, per
   // target, and how many a rule's Off keeps at a fixed quality. Both keys are
   // missing from the estimate's error fallback.
@@ -502,6 +513,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                 }
               }
               rows.push(...dolbyVisionRows(estimate.dolby_vision));
+              rows.push(...dvConvertedRows(estimate.dolby_vision_converted));
               // (a file with a fix to make is queued for it)
               if (cleanupOnly) rows.push(t(`scannerModals:estimate.whatHappens.${fixing ? "cleanupSkipsFixes" : "cleanupSkips"}`));
               if (estimate.hardlinked > 0) rows.push(t("scannerModals:estimate.whatHappens.hardlinked", { count: estimate.hardlinked, num: fmtNum(estimate.hardlinked) }));

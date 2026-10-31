@@ -371,7 +371,44 @@ def _job_savings(job: dict, row: dict, audio: list[dict], quality: dict) -> int:
 
 
 _JOB_PLAN_COLS = ("id, file_path, job_type, encoder, nvenc_cq, libx265_crf, target_resolution, original_size, "
-                  "audio_tracks_to_remove, subtitle_tracks_to_remove, direct_play, lossless_audio")
+                  "audio_tracks_to_remove, subtitle_tracks_to_remove, direct_play, lossless_audio, output_codec")
+
+
+def _dv_base(row: dict) -> Optional[str]:
+    """The HDR under a file's Dolby Vision ("hdr10", "hlg" or None), from the
+    probe its scan stored. Probes stored before scans read it (18 Oct) don't
+    say: HDR10, as profile 7's always is and nearly every profile 8 film's."""
+    try:
+        probe = json.loads(row.get("probe_json") or "{}").get("probe") or {}
+    except (ValueError, TypeError, AttributeError):
+        probe = {}
+    return probe["dv_base"] if "dv_base" in probe else "hdr10"
+
+
+def _dolby_vision_plan(job: dict, row: dict, live: dict) -> Optional[dict]:
+    """What a pending job does with its file's Dolby Vision (v0.10.0), as the
+    encode (dovi.encode_outcome) or the clean-up (dovi.remux_drop) decides
+    it: {"profile", "action", "hdr", "why"}. Actions: "drop" (converted as
+    the HDR under it), "keep", "skip" (the video isn't converted, `why`) and,
+    for a clean-up under "Convert to HDR10", "remove" (the video's copied).
+    None: no Dolby Vision, or a clean-up copies it as Settings keep it."""
+    hdr = row.get("hdr_format")
+    if not (hdr or "").startswith("dv"):
+        return None
+    mode = live.get("dolby_vision_mode") or "keep"
+    out = {"profile": hdr[2:], "hdr": None, "why": None}
+    if job["job_type"] in ("convert", "combined"):
+        drop, why = dovi.encode_outcome(
+            hdr, _dv_base(row), mode, encoder=job.get("encoder") or live.get("default_encoder") or "nvenc",
+            output_codec=job.get("output_codec"), target_resolution=job.get("target_resolution") or live.get("target_resolution"),
+            disc_type=row.get("disc_type"))
+        return {**out, "action": "drop" if drop else "skip" if why else "keep", "hdr": drop, "why": why}
+    if job["job_type"] != "audio" or mode != "hdr10":
+        return None
+    drop = dovi.drop_to(hdr, _dv_base(row))
+    if drop and dovi.can_strip():
+        return {**out, "action": "remove", "hdr": drop}
+    return {**out, "action": "keep", "why": "ffmpeg" if drop else "profile"}
 
 
 def _lossless_plan(job: dict, audio: list[dict], live: dict) -> Optional[dict]:
@@ -470,7 +507,7 @@ async def job_plan(job_id: int):
         if job is None:
             raise ApiError(status_code=404, detail="Job not found", code="jobs.notFound")
         job = dict(job)
-        row = (await _scan_rows_for(db, [job["file_path"]])).get(job["file_path"])
+        row = (await _scan_rows_for(db, [job["file_path"]], f"{_TRACK_COLS}, hdr_format, probe_json")).get(job["file_path"])
         quality = await load_quality_settings(db)
         originals = await _originals_setting(db)
         # The direct-play fixes it makes on its file (v0.10.0: a clean-up for
@@ -485,7 +522,7 @@ async def job_plan(job_id: int):
     if row is None:
         return {"scan_id": None, "job_type": job["job_type"], "audio": [], "subtitles": [], "native_first": None,
                 "file_size": job.get("original_size") or 0, "estimated_savings": 0, "originals": originals,
-                "direct_play": fixes, "image_subs_keep_original": keep_image_subs, "lossless": None}
+                "direct_play": fixes, "image_subs_keep_original": keep_image_subs, "lossless": None, "dolby_vision": None}
     audio = json.loads(row["audio_tracks_json"] or "[]")
     subs = json.loads(row["subtitle_tracks_json"] or "[]")
     remove_a = set(json.loads(job["audio_tracks_to_remove"] or "[]"))
@@ -495,13 +532,18 @@ async def job_plan(job_id: int):
         t["remove"] = t.get("stream_index") in remove_a
     for t in subs:
         t["remove"] = t.get("stream_index") in remove_s
+    live = await get_live_encoding_settings()
+    dolby_vision = _dolby_vision_plan(job, row, live)
+    kept_video = (dolby_vision or {}).get("action") == "skip"  # saves only what the tracks do
     return {
         "scan_id": row["id"], "job_type": job["job_type"], "audio": audio, "subtitles": subs,
         "native_first": reorder,  # the original language's audio moved first
-        "file_size": row["file_size"] or 0, "estimated_savings": _job_savings(job, row, audio, quality),
+        "file_size": row["file_size"] or 0,
+        "estimated_savings": _job_savings({**job, "job_type": "audio"} if kept_video else job, row, audio, quality),
         "originals": originals,
         "direct_play": fixes, "image_subs_keep_original": keep_image_subs,
-        "lossless": _lossless_plan(job, audio, await get_live_encoding_settings()),
+        "lossless": None if kept_video else _lossless_plan(job, audio, live),
+        "dolby_vision": dolby_vision,
     }
 
 
@@ -2115,7 +2157,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         est_keys = ('backup_original_days', 'trash_original_after_conversion', 'skip_hardlinked', 'maintainerr_skip',
                     'target_resolution', 'image_subs_keep_original', 'vmaf_target_enabled', 'vmaf_target_score',
                     'vmaf_analysis_enabled', 'vmaf_min_score', 'nvenc_preset', 'libx265_preset', 'audio_codec',
-                    'audio_bitrate', *SMART_CQ_KEYS, *QUALITY_KEYS)
+                    'audio_bitrate', 'dolby_vision_mode', *SMART_CQ_KEYS, *QUALITY_KEYS)
         est_settings = {}
         async with db.execute(
             f"SELECT key, value FROM settings WHERE key IN ({','.join('?' for _ in est_keys)})", est_keys
@@ -2199,7 +2241,8 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                     f"subtitle_tracks_json, COALESCE(video_height, 0) as video_height, "
                     f"COALESCE(video_width, 0) as video_width, "
                     f"COALESCE(duration, 0) as duration, native_language, disc_type, link_count, "
-                    f"video_conv_savings_bytes, video_codec, hdr_format "
+                    f"video_conv_savings_bytes, video_codec, hdr_format, "
+                    f"CASE WHEN hdr_format LIKE 'dv%' THEN probe_json END AS probe_json "  # its _dv_base
                     f"FROM scan_results WHERE file_path IN ({placeholders})",
                     chunk,
                 ) as cur:
@@ -2218,6 +2261,9 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         # The files a clean-up copies the video of, by what becomes of their
         # Dolby Vision (dovi.remux_outcome, v0.10.0).
         dolby_vision = {"removed": 0, "kept": 0, "ffmpeg": 0, "profile5": 0}
+        # And the conversions', as the encode decides (dovi.encode_outcome):
+        # dropped (by the HDR under it), kept, or not converted (by why).
+        dv_converted: dict = {"dropped": {}, "kept": 0, "not_converted": {}}
 
         # The VMAF target (v0.10.0): the files the search runs on, by the
         # target each is held to, and those a rule fixes at its own quality.
@@ -2333,6 +2379,21 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
 
             # The encoder the job gets: the dialog's, a rule's, the default.
             file_encoder = payload.encoder or (rule.get("encoder") if rule else None) or default_encoder
+
+            if jt in ("convert", "combined") and (row.get("hdr_format") or "").startswith("dv"):
+                drop, why = dovi.encode_outcome(
+                    row["hdr_format"], _dv_base(row), est_settings.get("dolby_vision_mode") or "keep",
+                    encoder=file_encoder, output_codec=(rule or {}).get("output_codec"),
+                    target_resolution=(payload.target_resolution_override
+                                       if payload.target_resolution_override is not None
+                                       else (rule or {}).get("target_resolution") or est_settings.get("target_resolution")),
+                    disc_type=row.get("disc_type"))
+                if drop:
+                    dv_converted["dropped"][drop] = dv_converted["dropped"].get(drop, 0) + 1
+                elif why:
+                    dv_converted["not_converted"][why] = dv_converted["not_converted"].get(why, 0) + 1
+                else:
+                    dv_converted["kept"] += 1
 
             if jt in ("convert", "combined"):
                 r = rule or {}
@@ -2526,6 +2587,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             "direct_play_files": direct_play_files,
             "direct_play_container": direct_play_container,
             "dolby_vision": dolby_vision,
+            "dolby_vision_converted": dv_converted,
             "cq": representative_cq,
             "savings_pct": round((estimated_savings / total_size * 100) if total_size > 0 else 0),
             "learned_from": savings_model.current().samples,  # v0.10.0

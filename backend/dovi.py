@@ -188,6 +188,27 @@ def why_not_kept(hdr_format: str | None, *, encoder: str, output_codec: str | No
     return None
 
 
+def encode_outcome(hdr_format: str | None, dv_base: str | None, mode: str | None, *, encoder: str,
+                   output_codec: str | None, target_resolution: str | None,
+                   disc_type: str | None) -> tuple[str | None, str | None]:
+    """What a conversion does with a file's Dolby Vision under the setting
+    (`mode`): (the HDR it converts when it drops it — "hdr10" or "hlg" — else
+    None; why the video isn't converted — why_not_kept's reasons, or "ffmpeg"
+    when this ffmpeg can't drop it — else None). (None, None): it's kept, or
+    there's none. convert_file decides with it, and the queue's plans say it
+    (v0.10.0)."""
+    if not (hdr_format or "").startswith("dv"):
+        return None, None
+    why = why_not_kept(hdr_format, encoder=encoder, output_codec=output_codec,
+                       target_resolution=target_resolution, disc_type=disc_type)
+    if disc_type or not (mode == "hdr10" or (mode == "keep_or_hdr10" and why)):
+        return None, why
+    drop = drop_to(hdr_format, dv_base)
+    if drop and not can_strip():
+        return None, why and "ffmpeg"
+    return (drop, None) if drop else (None, why)
+
+
 def can_keep(hdr_format: str | None, *, encoder: str, output_codec: str | None, target_resolution: str | None,
              disc_type: str | None) -> bool:
     return why_not_kept(hdr_format, encoder=encoder, output_codec=output_codec,

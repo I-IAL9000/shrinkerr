@@ -82,6 +82,17 @@
         "profile5_many": "{{num}} archivos conservan Dolby Vision: son perfil 5, sin HDR10 debajo",
         "profile5_other": "{{num}} archivos conservan Dolby Vision: son perfil 5, sin HDR10 debajo"
       },
+      "dolbyVisionConverted": {
+        "dropped_one": "{{num}} archivo pierde su Dolby Vision al convertirse y queda en {{hdr}}",
+        "dropped_many": "{{num}} archivos pierden su Dolby Vision al convertirse y quedan en {{hdr}}",
+        "dropped_other": "{{num}} archivos pierden su Dolby Vision al convertirse y quedan en {{hdr}}",
+        "kept_one": "{{num}} archivo conserva su Dolby Vision al convertirse",
+        "kept_many": "{{num}} archivos conservan su Dolby Vision al convertirse",
+        "kept_other": "{{num}} archivos conservan su Dolby Vision al convertirse",
+        "notConverted_one": "{{num}} archivo con Dolby Vision no se convierte: {{why}}",
+        "notConverted_many": "{{num}} archivos con Dolby Vision no se convierten: {{why}}",
+        "notConverted_other": "{{num}} archivos con Dolby Vision no se convierten: {{why}}"
+      },
       "directPlay": {
         "container_one": "{{num}} archivo se remuxa a MKV",
         "container_many": "{{num}} archivos se remuxan a MKV",

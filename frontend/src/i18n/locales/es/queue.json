@@ -291,6 +291,22 @@
     "videoTargetNoPreset": "Convierte el vídeo con {{encoder}}, con la calidad que el objetivo VMAF {{target}} encuentre para él",
     "losslessConvert": "Convierte su audio {{tracks}} a {{target}}",
     "losslessKeep": "Mantiene su audio {{tracks}} sin pérdida",
+    "dolbyVision": {
+      "drop": "Quita su Dolby Vision (perfil {{profile}}) y convierte el {{hdr}} que hay debajo",
+      "remove": "Quita su Dolby Vision (perfil {{profile}}) sin recodificar: se conserva el {{hdr}}",
+      "keep": "Conserva su Dolby Vision (perfil {{profile}})",
+      "keepWhy": "Conserva su Dolby Vision (perfil {{profile}}): {{why}}",
+      "skip": "El vídeo no se convierte: {{why}}"
+    },
+    "dolbyVisionWhy": {
+      "disc": "Dolby Vision en un disco no se recodifica",
+      "profile": "solo los perfiles 7 y 8 tienen HDR10 debajo de su Dolby Vision",
+      "tools": "conservar Dolby Vision requiere dovi_tool y mkvmerge, que no están instalados",
+      "encoder": "Dolby Vision solo se conserva con NVENC, libx265 o VideoToolbox",
+      "codec": "Dolby Vision solo se conserva al convertir a HEVC",
+      "resize": "Dolby Vision solo se conserva con la misma resolución",
+      "ffmpeg": "quitar Dolby Vision requiere ffmpeg 7.1 o posterior"
+    },
     "noVideo": "El vídeo no se recodifica; solo cambian las pistas",
     "nativeFirst": "Pone primero el audio del idioma original ({{language}}), para que se reproduzca por defecto",
     "size": "{{before}} → unos {{after}} (ahorra unos {{saved}})",
