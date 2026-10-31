@@ -9,6 +9,8 @@ encode. Now: the highest CQ within a point of the best score, no re-encode
 original's isn't encoded at all.
 """
 import os
+import shutil
+import subprocess
 
 import pytest
 
@@ -105,10 +107,48 @@ async def test_samples_that_score_low_at_every_quality_arent_trusted(tmp_path, m
     """The Nest (2002): its samples scored 31 at CQ 14 and at CQ 37 alike —
     compared with the wrong frames, not encoded badly (the finished file
     scored 88.7). Out of reach, the search took the highest CQ near that
-    best, 37. Now the job keeps its own quality."""
+    best, 37. Now the job keeps its own quality, and its report says how low
+    they scored (it said a sample couldn't be cut or scored)."""
     async def vmaf(ref, enc, seconds, json_path):
         cq = float(enc.rsplit(".", 2)[-2])
         open(enc, "wb").close()
         return 31.6 - max(0.0, cq - 20) * 0.05
 
-    assert await _find(tmp_path, monkeypatch, vmaf) is None
+    found = await _find(tmp_path, monkeypatch, vmaf)
+    assert found["untrusted"] is True and found["best"] == 31.6 and "cq" not in found
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmpeg")
+async def test_the_report_says_the_samples_werent_trusted(test_db, tmp_path, monkeypatch):
+    """Stolen Kisses' report said "a sample couldn't be cut or scored": its
+    samples had scored, too low at every quality to be trusted (a 4K film
+    resized to 1080p, compared at 4K)."""
+    import aiosqlite
+    from backend.converter import convert_file
+    async with aiosqlite.connect(test_db) as db:
+        for k, v in (("vmaf_target_enabled", "true"), ("vmaf_target_score", "93"),
+                     ("vmaf_analysis_enabled", "false")):
+            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (k, v))
+        await db.commit()
+    clip = tmp_path / "Film (2020).mkv"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x240:r=24:d=130",
+                    "-c:v", "libx264", "-preset", "ultrafast", str(clip)], check=True)
+    outcomes = iter([{"untrusted": True, "best": 68.8, "rounds": 3, "seconds": 40.0}, None])
+
+    async def search(*a, **kw):
+        return next(outcomes)
+    monkeypatch.setattr(vmaf_target, "find_quality", search)
+
+    untrusted = await convert_file(str(clip), "libx265", 130.0, override_crf=30, override_libx265_preset="ultrafast")
+    assert untrusted["success"], untrusted.get("error")
+    stats = untrusted["encoding_stats"]
+    assert stats["vmaf_target"] is None and stats["crf"] == 30  # the job's own quality
+    assert stats["vmaf_target_untested"] == 93.0 and stats["vmaf_target_untrusted"] == 68.8
+
+    clip2 = tmp_path / "Film (2021).mkv"
+    shutil.copy(clip, clip2)
+    failed = await convert_file(str(clip2), "libx265", 130.0, override_crf=30, override_libx265_preset="ultrafast")
+    assert failed["success"], failed.get("error")
+    assert failed["encoding_stats"]["vmaf_target_untested"] == 93.0  # a sample failed: no score to say
+    assert failed["encoding_stats"]["vmaf_target_untrusted"] is None

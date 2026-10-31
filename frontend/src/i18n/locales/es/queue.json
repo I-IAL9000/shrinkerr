@@ -197,6 +197,7 @@
       "vmafTargetSearch_other": "{{count}} rondas, {{time}}",
       "vmafTargetLowest": "La muestra más baja puntuó {{min}}",
       "vmafTargetUntested": "Objetivo {{target}}: no se pudo probar ninguna calidad (no se pudo cortar o puntuar una muestra), así que el archivo se codificó con su propia calidad",
+      "vmafTargetUntrusted": "Objetivo {{target}}: las muestras puntuaron {{best}} como mucho, demasiado poco para fiarse, así que el archivo se codificó con su propia calidad",
       "vmafTargetReencoded": "Recodificado con {{quality}}: la primera codificación ({{from}}) puntuó {{fromVmaf}}",
       "vmafTargetFirstKept": "Se conservó la primera codificación: la recodificación ({{quality}}, puntuó {{vmaf}}) fue rechazada",
       "vmafTargetFirstKeptLarger": "Se conservó la primera codificación: la recodificación ({{quality}}) era más grande que el original",

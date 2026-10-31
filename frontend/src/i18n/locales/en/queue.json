@@ -175,6 +175,7 @@
       "vmafTargetSearch_other": "{{count}} rounds, {{time}}",
       "vmafTargetLowest": "Lowest sample scored {{min}}",
       "vmafTargetUntested": "Target {{target}}: no quality could be tested (a sample couldn't be cut or scored), so the file was encoded at its own quality",
+      "vmafTargetUntrusted": "Target {{target}}: the samples scored {{best}} at best, too low to be trusted, so the file was encoded at its own quality",
       "vmafTargetReencoded": "Re-encoded at {{quality}}: the first encode ({{from}}) scored {{fromVmaf}}",
       "vmafTargetFirstKept": "Kept the first encode: the re-encode ({{quality}}, scored {{vmaf}}) was rejected",
       "vmafTargetFirstKeptLarger": "Kept the first encode: the re-encode ({{quality}}) was larger than the original",

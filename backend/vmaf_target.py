@@ -403,7 +403,9 @@ async def find_quality(input_path: str, encoder: str, duration: float, target: f
     """The CQ to encode `input_path` at for VMAF `target` (search's dict,
     plus "target", "samples" and "seconds", the search's wall time), or None
     when the file is too short, VMAF isn't available or a sample fails — the
-    job then keeps its own quality. `start`: where the search begins (the
+    job then keeps its own quality, as it does when the samples score too
+    low at every quality to be trusted ({"untrusted": True, "best", "rounds",
+    "seconds"}: MIN_TRUSTED_BEST). `start`: where the search begins (the
     job's quality, or where the last search in the folder landed).
     `convert_kwargs`: the job's convert_file overrides (preset, resolution,
     settings) so samples encode exactly as the job will; `output_codec` the
@@ -495,7 +497,7 @@ async def find_quality(input_path: str, encoder: str, duration: float, target: f
             print(f"[VMAF-TARGET] {os.path.basename(input_path)}: the samples scored {result['best']} at best, "
                   f"in {result['rounds']} rounds — they can't have been measured right; keeping the job's quality",
                   flush=True)
-            return None
+            return {"untrusted": True, "best": result["best"], "rounds": result["rounds"], "seconds": seconds}
         reach = "" if result["reached"] else f", out of reach: the best {result['best']}"
         print(f"[VMAF-TARGET] {os.path.basename(input_path)}: CQ {result['cq']} for VMAF {target} "
               f"({result['vmaf']}{reach}) in {result['rounds']} rounds, {seconds}s", flush=True)

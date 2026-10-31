@@ -3780,6 +3780,8 @@ async def convert_file(
     # The target applied, but no quality could be tested (a sample couldn't
     # be cut or scored, or a disc can't be sampled): the report says so.
     target_untested: Optional[float] = None
+    # Its samples scored, too low at every quality to be trusted: their best.
+    target_untrusted: Optional[float] = None
     from backend.vmaf_target import MIN_DURATION, effective_target
     target = effective_target(live_settings)
     search_duration = float((probe_data or {}).get("duration") or duration or 0)
@@ -3824,6 +3826,8 @@ async def convert_file(
                             "override_target_resolution": override_target_resolution, "pre_settings": live_settings},
             output_codec=output_codec, on_round=say_round, on_sample=say_sample, on_proc=proc_callback,
             disc_input=encode_input_path if disc_type else None))
+        if vmaf_target and vmaf_target.get("untrusted"):
+            target_untrusted, vmaf_target = vmaf_target["best"], None
         if not vmaf_target:
             # Files under MIN_DURATION are never searched; not "untested".
             target_untested = target if search_duration >= MIN_DURATION else None
@@ -4730,6 +4734,7 @@ async def convert_file(
                 "had_track_removal": had_track_removal,
                 "vmaf_target": _target_stats(None),  # v0.10.0: the quality the search chose
                 "vmaf_target_untested": target_untested,
+                "vmaf_target_untrusted": target_untrusted,
             },
         }
         if held_state:
@@ -5351,6 +5356,7 @@ async def convert_file(
                 "encode_seconds": time.monotonic() - encode_start_time,
                 "vmaf_target": _target_stats(vmaf_score),  # v0.10.0: and the re-encode, if one was tried
                 "vmaf_target_untested": target_untested,
+                "vmaf_target_untrusted": target_untrusted,
             },
         }
 
@@ -5400,6 +5406,7 @@ async def convert_file(
             # finished file's score, and what its check did (_target_stats).
             "vmaf_target": _target_stats(vmaf_score),
             "vmaf_target_untested": target_untested,  # the target applied but nothing could be tested
+            "vmaf_target_untrusted": target_untrusted,  # ...because the samples scored too low to trust
             "input_size": original_size,
             "output_size": output_size,
             # v0.10.0: what the savings estimate learns from (savings_model)

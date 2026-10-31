@@ -454,11 +454,15 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
                     first_kept in backend/converter.py's _target_stats). Qualities
                     are named as the "Settings:" line names them (encoderLabel). */}
                 {/* The target applied but no quality could be tested (a sample
-                    couldn't be cut or scored, a disc couldn't be sampled). */}
+                    couldn't be cut or scored, a disc couldn't be sampled), or
+                    the samples scored too low at every quality to be trusted. */}
                 {logData.encoding_stats.vmaf_target_untested != null && <>
                   <span style={{ color: "var(--text-muted)" }}>{t("queue:item.stats.vmafTarget")}</span>
                   <span style={{ color: "var(--text-secondary)", gridColumn: "2 / span 2" }}>
-                    {t("queue:item.stats.vmafTargetUntested", { target: logData.encoding_stats.vmaf_target_untested })}
+                    {logData.encoding_stats.vmaf_target_untrusted != null
+                      ? t("queue:item.stats.vmafTargetUntrusted", { target: logData.encoding_stats.vmaf_target_untested,
+                          best: logData.encoding_stats.vmaf_target_untrusted })
+                      : t("queue:item.stats.vmafTargetUntested", { target: logData.encoding_stats.vmaf_target_untested })}
                   </span>
                 </>}
                 {logData.encoding_stats.vmaf_target && (() => {

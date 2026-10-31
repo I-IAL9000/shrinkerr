@@ -94,6 +94,17 @@ def test_the_report_says_when_no_quality_could_be_tested():
                      src)
 
 
+def test_the_report_says_when_the_samples_werent_trusted():
+    """Samples that scored too low at every quality to be trusted (a misaligned
+    or resized compare) are named as such, with how low, not as a sample that
+    couldn't be cut or scored."""
+    for lang in ("en", "es"):
+        assert all(p == {"target", "best"} for p in _placeholders(lang, "queue:item.stats.vmafTargetUntrusted")), lang
+    src = (Path(__file__).resolve().parents[2] / "frontend/src/components/JobListItem.tsx").read_text()
+    assert re.search(r'"queue:item\.stats\.vmafTargetUntrusted",\s*\{\s*target: logData\.encoding_stats\.vmaf_target_untested,'
+                     r'\s*best: logData\.encoding_stats\.vmaf_target_untrusted', src)
+
+
 def test_the_search_says_which_sample_it_is_scoring():
     for lang in ("en", "es"):
         assert all({"quality", "round", "sample", "samples"} <= p
