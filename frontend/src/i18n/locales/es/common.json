@@ -104,5 +104,9 @@
       "desc": "Los archivos más pequeños; la pérdida se nota en una pantalla grande."
     },
     "savings": "aprox. un {{pct}} % más pequeño"
+  },
+  "settingHelp": {
+    "more": "Más",
+    "less": "Menos"
   }
 }

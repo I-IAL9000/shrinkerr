@@ -56,7 +56,11 @@
       "restart": "Después ejecuta <code>docker compose down && up -d</code> y pulsa <em>Volver a detectar</em> arriba.",
       "verify": "Ejecuta <code>docker exec shrinkerr vainfo</code> para comprobar los perfiles de codificación que expone tu hardware."
     },
-    "outputCodec": {"label": "Códec de salida", "help": "A qué codifican las conversiones. Los archivos AV1 quedan más pequeños con la misma calidad, pero AV1 solo codifica rápido en una GPU compatible (NVENC en una RTX 40 o posterior, Intel Arc QSV); si no, lo hace la CPU (SVT-AV1), mucho más lento. Una regla de codificación puede elegir el otro códec para sus archivos."},
+    "outputCodec": {
+      "label": "Códec de salida",
+      "help": "A qué codifican las conversiones. Los archivos AV1 quedan más pequeños con la misma calidad, pero AV1 solo codifica rápido en una GPU compatible (NVENC en una RTX 40 o posterior, Intel Arc QSV); si no, lo hace la CPU (SVT-AV1), mucho más lento. Una regla de codificación puede elegir el otro códec para sus archivos.",
+      "summary": "AV1 ocupa menos con la misma calidad, pero solo es rápido en una GPU compatible con AV1."
+    },
     "dolbyVision": {
       "label": "Dolby Vision",
       "options": {
@@ -79,12 +83,14 @@
     "ffmpegThreads": "Hilos de FFmpeg por trabajo",
     "auto": "auto",
     "ffmpegThreadsHelp": "<b>auto (0)</b> permite que ffmpeg use todos los núcleos disponibles en cada trabajo: bien para un solo trabajo, pero con <b>Trabajos en paralelo > 1</b>, dos trabajos en una CPU de 8 núcleos intentan usar los 8 cada uno y compiten entre sí, reduciendo el rendimiento. <b>1–2</b> es un buen límite para CPU antiguas con codificaciones por software (libx265) en paralelo. Con <b>NVENC / QSV / VAAPI</b> también se puede dejar en <b>1–2</b>: la GPU hace el trabajo pesado y ffmpeg solo necesita hilos para el muxing y los filtros. Súbelo si quieres que un solo trabajo aproveche por completo una CPU moderna de muchos núcleos.",
+    "ffmpegThreadsSummary": "Hilos de CPU que puede usar cada trabajo (0 = todos); 1–2 va bien con trabajos en paralelo.",
     "targetResolution": "Resolución de destino",
     "convertFrom": "Convertir desde (códecs de origen)",
     "always": "(siempre)",
     "convertFromHelp": "Selecciona qué códecs de origen se convertirán al códec de destino.",
     "directPlayOnConvert": "Arreglar para reproducción directa al convertir",
     "directPlayOnConvertHelp": "Marca \"Arreglar para reproducción directa\" en Añadir a la cola, y cada conversión que se pone en cola de otra forma (descargas nuevas, políticas) también hace sus arreglos donde el archivo los necesita: copias SRT de los subtítulos de imagen (PGS, VobSub) y una pista estéreo de compatibilidad cuando el audio del idioma principal no es AAC, AC3, E-AC3 ni MP3.",
+    "directPlayOnConvertSummary": "Cada conversión añade también copias SRT de los subtítulos de imagen y una pista estéreo donde haga falta.",
     "scale": {
       "highestQuality": "{{value}} (máxima calidad)",
       "smallestFile": "{{value}} (archivo más pequeño)",
@@ -96,6 +102,7 @@
     "nvdec": {
       "label": "Usar NVDEC para decodificar",
       "help": "Decodifica el origen en la GPU antes de que NVENC lo codifique. Los fotogramas se quedan en el dispositivo, sin transferencia PCIe. Si el códec de origen no es compatible (MS-MPEG4v3, formatos exóticos), recurre en silencio a la decodificación por software.",
+      "summary": "También decodifica en la GPU, así que los fotogramas no salen de ella.",
       "notDetected": "No se ha detectado NVDEC en este host."
     },
     "bitDepth": {
@@ -103,19 +110,23 @@
       "10bit": "10 bits (main10 / p010le) — predeterminado",
       "8bit": "8 bits (main / nv12) — compatible con Maxwell",
       "auto": "Igual que el origen (10 bits de entrada → 10 bits de salida; si no, 8 bits)",
-      "help": "<b>10 bits</b> ofrece la mejor calidad (menos bandas, archivos algo más grandes en la mayoría de orígenes), pero requiere <b>NVIDIA Pascal o posterior</b> (GTX 10xx / Quadro serie P / RTX). <b>8 bits</b> es la única opción para Maxwell de segunda generación (GTX 950 en adelante, la mayoría de Quadro serie M), genera archivos más pequeños con la mayoría del material y codifica algo más rápido. <b>Igual que el origen</b> usa 10 bits solo si el origen ya es de 10 bits y, si no, 8 bits: evita el coste de la conversión cuando la entrada no se beneficia de ella."
+      "help": "<b>10 bits</b> ofrece la mejor calidad (menos bandas, archivos algo más grandes en la mayoría de orígenes), pero requiere <b>NVIDIA Pascal o posterior</b> (GTX 10xx / Quadro serie P / RTX). <b>8 bits</b> es la única opción para Maxwell de segunda generación (GTX 950 en adelante, la mayoría de Quadro serie M), genera archivos más pequeños con la mayoría del material y codifica algo más rápido. <b>Igual que el origen</b> usa 10 bits solo si el origen ya es de 10 bits y, si no, 8 bits: evita el coste de la conversión cuando la entrada no se beneficia de ella.",
+      "summary": "10 bits producen menos bandas; necesita una NVIDIA GTX serie 10 o más nueva."
     },
     "nvencPreset": "Preajuste de NVENC",
     "nvencCq": "Calidad constante de NVENC (CQ)",
     "nvencCqHelp": "Controla la calidad frente al tamaño del archivo. Menor = más calidad y archivos más grandes. <b>18-20:</b> calidad transparente (recomendado). <b>21-24:</b> buena calidad, ahorro notable. <b>25+:</b> pérdida de calidad visible, compresión máxima.",
+    "nvencCqSummary": "Menos = más calidad y archivos más grandes; 18–20 se ve como el original.",
     "cpuFallback": {
       "title": "Alternativa en CPU",
       "help": "Cuando un worker solo con CPU recoge un trabajo NVENC, usa estos ajustes de libx265 en lugar de traducir automáticamente el preajuste/CQ de NVENC. Déjalo en blanco para la traducción automática.",
+      "summary": "Ajustes de libx265 para los trabajos NVENC que toma un worker solo con CPU; en blanco se traducen.",
       "autoTranslate": "Auto (traducir)"
     },
     "gpuFallback": {
       "title": "Alternativa en GPU",
       "help": "Cuando un worker con GPU recoge un trabajo libx265, usa estos ajustes de NVENC en lugar de los valores predeterminados fijos. Déjalo en blanco para el modo automático.",
+      "summary": "Ajustes de NVENC para los trabajos libx265 que toma un worker con GPU; en blanco, los predeterminados.",
       "auto": "Auto"
     },
     "preset": "Preajuste",
@@ -140,43 +151,54 @@
     },
     "cpuPreset": "Preajuste de CPU",
     "cpuPresetHelp": "Controla la velocidad de codificación frente a la eficiencia de compresión. Los preajustes más lentos generan archivos más pequeños a la misma calidad. <b>medium:</b> equilibrio entre velocidad y calidad (recomendado). <b>slow/slower:</b> mejor compresión, bastante más lento. <b>fast/veryfast:</b> codificaciones rápidas, archivos más grandes.",
+    "cpuPresetSummary": "Los presets más lentos dan archivos más pequeños con la misma calidad; medium es un buen equilibrio.",
     "crf": "Factor de tasa constante (CRF)",
     "crfHelp": "Controla la calidad frente al tamaño del archivo. Menor = más calidad y archivos más grandes. CRF 18-20 suele ser transparente respecto al original.",
     "qsvDecode": {
       "label": "Usar QSV para decodificar",
       "help": "Decodifica el origen en la iGPU Intel antes de que QSV lo codifique. Los fotogramas se quedan en el chip, sin coste de subida. Si el códec de origen no es compatible, recurre en silencio a la decodificación por software.",
+      "summary": "También decodifica en la GPU de Intel, así que los fotogramas no salen de ella.",
       "notDetected": "No se ha detectado la decodificación QSV en este host."
     },
     "qsvPreset": "Preajuste de QSV",
     "qsvPresetHelp": "Profundidad de análisis del codificador. <b>Nota:</b> a diferencia de libx265, la curva de coste de los preajustes de QSV es casi plana: `slower` suele ser solo un ~10-20 % más lento que `medium`, con mejoras de calidad modestas. Lo que más influye en la calidad de QSV es la opción de look-ahead de abajo. <b>medium</b> sirve para la mayoría del hardware.",
+    "qsvPresetSummary": "Cuánto analiza el codificador; medium va bien — el look-ahead importa más.",
     "qsvQuality": "Calidad de QSV (global_quality)",
     "qsvQualityHelp": "Objetivo de calidad del modo ICQ de QSV. Menor = más calidad y archivos más grandes. <b>20-22</b> suele ser transparente; <b>23-26</b> da buena calidad con un ahorro notable. Equivalencia aproximada entre codificadores: CQ de QSV ≈ CQ de NVENC (±1) ≈ CRF de libx265 + 1.",
+    "qsvQualitySummary": "Menos = más calidad y archivos más grandes; 20–22 se ve como el original.",
     "lookahead": {
       "label": "Control de tasa con look-ahead",
-      "help": "Sacrifica un ~10–20 % de velocidad de codificación a cambio de una pequeña mejora visual en escenas de movimiento rápido. Útil si el hardware tiene rendimiento de sobra (Arc / 11.ª gen. o posterior); aporta poco en iGPU Intel antiguas."
+      "help": "Sacrifica un ~10–20 % de velocidad de codificación a cambio de una pequeña mejora visual en escenas de movimiento rápido. Útil si el hardware tiene rendimiento de sobra (Arc / 11.ª gen. o posterior); aporta poco en iGPU Intel antiguas.",
+      "summary": "Un poco más de calidad en movimiento rápido, a cambio de un 10–20 % de velocidad."
     },
     "vaapiDecode": {
       "label": "Usar VAAPI para decodificar",
       "help": "Decodifica el origen en la GPU/iGPU mediante VAAPI antes de codificar. Los fotogramas se quedan en el dispositivo DRM. Si el códec de origen no es compatible, recurre en silencio a la decodificación por software.",
+      "summary": "También decodifica en la GPU, así que los fotogramas se quedan en ella.",
       "notDetected": "No se ha detectado la decodificación VAAPI en este host."
     },
     "vaapiCompression": "Nivel de compresión de VAAPI",
     "vaapiCompressionHelp": "Profundidad de análisis del driver, de 0 a 7. El significado varía según el driver (Mesa AMD o Intel iHD), pero los valores bajos generan siempre archivos más pequeños a costa de velocidad. <b>4</b> es un término medio razonable. En hardware Intel donde funcionan VAAPI y QSV, QSV suele dar mejor calidad por bit con un rendimiento similar; VAAPI es más útil en GPU AMD (donde QSV no es una opción).",
+    "vaapiCompressionSummary": "Profundidad de análisis del controlador, 0–7: menos es más pequeño y más lento; 4 es un buen punto medio.",
     "vaapiQp": "Cuantizador de VAAPI (QP)",
     "vaapiQpHelp": "Objetivo de cuantizador constante (CQP). Menor = más calidad y archivos más grandes. <b>20-22</b> suele ser transparente; <b>23-26</b> equilibra calidad y tamaño de forma sensata.",
     "videotoolboxDecode": {
       "label": "Usar VideoToolbox para decodificar",
       "help": "Decodifica las fuentes H.264 y HEVC en el motor multimedia del Mac antes de codificar. Otros códecs (MPEG-2, VC-1, …) pasan automáticamente a decodificación por software.",
+      "summary": "Decodifica H.264 y HEVC en el motor multimedia del Mac.",
       "notDetected": "No se detectó decodificación VideoToolbox en este equipo."
     },
     "videotoolboxQuality": "Calidad VideoToolbox (q:v)",
     "videotoolboxQualityHelp": "Calidad constante de 1 a 100: <b>más alto = mejor calidad, archivos más grandes</b> (al revés que CQ/CRF). <b>55</b> dio de media VMAF ~92 con ~50% de ahorro en fuentes 1080p reales de prueba; <b>45–50</b> ahorra un 65–75%, pero en películas con grano se nota la pérdida; <b>60–65</b> se ve mejor pero ahorra mucho menos, y por encima de ~65 los archivos pueden salir más grandes que el original. Sin preajustes: la velocidad la fija el hardware.",
+    "videotoolboxQualitySummary": "Más = más calidad y archivos más grandes (al revés que CQ); 55 es un buen equilibrio.",
     "smart": {
       "title": "Codificación inteligente",
       "contentType": "Detección del tipo de contenido",
       "contentTypeHelp": "Reconoce anime, animación, grano de película y remux por los nombres de archivos y carpetas y les da su propia calidad (CQ) en la tabla de abajo — por defecto algo más de calidad que el contenido habitual, porque los artefactos se notan más en la animación limpia y el grano es lo primero que un codificador suaviza. Se usa cuando ni una regla de codificación ni el diálogo «Añadir a la cola» fijan la calidad; QSV, VAAPI y VideoToolbox la reciben traducida a su propia escala de calidad.",
+      "contentTypeSummary": "Da al anime, la animación, el grano y los remux su propia calidad.",
       "vmaf": "Análisis de calidad VMAF",
       "vmafHelp": "<b>VMAF</b> (Video Multi-Method Assessment Fusion) es una métrica de calidad de vídeo perceptual desarrollada por Netflix. Puntúa el vídeo codificado de 0 a 100 comparándolo con el origen y estimando cómo valoraría la calidad un espectador humano. Si está activado, Shrinkerr realiza tras la conversión una comparación VMAF precisa a nivel de fotograma entre el archivo original y el codificado. Shrinkerr solo analiza una muestra de 30 segundos (centrada en torno al 33 % del archivo), no toda la codificación, así que normalmente añade bastante menos de un minuto por trabajo en una GPU moderna y te da la seguridad de que tus ajustes de CQ producen una calidad aceptable.",
+      "vmafSummary": "Puntúa cada archivo terminado frente al original, de 0 a 100.",
       "score": "Puntuación",
       "quality": "Calidad",
       "tiers": {
@@ -187,10 +209,13 @@
       },
       "minScore": "Rechazar codificaciones por debajo de una puntuación VMAF mínima",
       "minScoreHelp": "Si está activado, se descarta cualquier codificación cuya puntuación VMAF medida quede por debajo del umbral: se elimina el archivo temporal codificado, se conserva el original y el trabajo se registra como <b>rechazado</b>, con la puntuación y el umbral visibles en los detalles del trabajo. Útil como red de seguridad frente a ajustes de CQ/CRF demasiado agresivos.",
+      "minScoreSummary": "Conserva el original cuando una codificación puntúa por debajo del mínimo.",
       "resAware": "Calidad según la resolución",
       "resAwareHelp": "Usa valores de CQ distintos para cada resolución. El 4K admite un CQ más alto porque el reescalado durante la reproducción oculta los artefactos. Se usa cuando ni una regla, ni el diálogo «Añadir a la cola», ni la detección de contenido fijan la calidad (traducida para QSV, VAAPI y VideoToolbox).",
+      "resAwareSummary": "Una calidad distinta por resolución: el 4K puede usar un CQ más alto.",
       "cqTable": "CQ por resolución",
       "cqTableHelp": "Más bajo = mejor calidad, archivos más grandes. libx265 usa un CRF 2 más alto. Un tipo desactivado se trata como el resto. «Regla…» añade una regla de codificación para ese tipo: su propio codificador, preset, resolución o audio.",
+      "cqTableSummary": "Menos = más calidad, archivos más grandes. «Regla…» añade una regla para ese tipo.",
       "resetRecommended": "Restablecer lo recomendado",
       "ruleFor": "Regla…",
       "ruleForTitle": "Añadir una regla de codificación para este tipo de contenido (codificador, preset, resolución, audio)",
@@ -202,9 +227,11 @@
         "other": "Otro (imagen real)"
       },
       "target": "Apuntar a una puntuación VMAF",
-      "targetHelp": "Elige la calidad de cada título en lugar de una misma calidad para todos: antes de codificar, se codifican de 3 a 6 muestras de 10 segundos (según la duración) con varios ajustes de calidad y se puntúan con VMAF, y el archivo se codifica con la mayor compresión cuyas muestras aún alcanzan el objetivo; las películas con grano reciben más bits y la animación limpia, menos. La calidad de los ajustes predefinidos, las reglas y el tipo de contenido es el punto de partida de la búsqueda. Un archivo terminado con más de un punto por debajo del objetivo se codifica una vez más. Añade unos minutos por archivo (más con un codificador de CPU). Los archivos de menos de dos minutos y los discos conservan su calidad. Una regla puede fijar su propio objetivo o desactivarlo para conservar su calidad. Requiere ffmpeg con VMAF.",
+      "targetHelp": "Elige la calidad de cada título en lugar de una misma calidad para todos: antes de codificar, se codifican de 3 a 6 muestras de 10 segundos (según la duración) con varios ajustes de calidad y se puntúan con VMAF, y el archivo se codifica con la mayor compresión cuyas muestras aún alcanzan el objetivo; las películas con grano reciben más bits y la animación limpia, menos. La calidad de los ajustes predefinidos, las reglas y el tipo de contenido es el punto de partida de la búsqueda. Un archivo terminado con más de un punto por debajo del objetivo se codifica una vez más. Añade unos minutos por archivo (más con un codificador de CPU). Los archivos de menos de dos minutos conservan su calidad. Una regla puede fijar su propio objetivo o desactivarlo para conservar su calidad. Requiere ffmpeg con VMAF.",
+      "targetSummary": "Encuentra la calidad de cada archivo con unas codificaciones de prueba antes.",
       "compareFrames": "Guardar fotogramas de antes / después",
-      "compareFramesHelp": "Cada conversión toma tres momentos del original y del archivo convertido, para compararlos en los detalles del trabajo (Cola → Completados). Los últimos 100 trabajos conservan los suyos, unos 0,5 MB cada uno."
+      "compareFramesHelp": "Cada conversión toma tres momentos del original y del archivo convertido, para compararlos en los detalles del trabajo (Cola → Completados). Los últimos 100 trabajos conservan los suyos, unos 0,5 MB cada uno.",
+      "compareFramesSummary": "Tres imágenes de cada conversión, para comparar en los detalles del trabajo."
     },
     "timeouts": {
       "title": "Tiempos de espera",

@@ -56,7 +56,11 @@
       "restart": "Then <code>docker compose down && up -d</code> and click <em>Re-detect</em> above.",
       "verify": "Run <code>docker exec shrinkerr vainfo</code> to verify the encoder profiles your hardware exposes."
     },
-    "outputCodec": {"label": "Output codec", "help": "What conversions encode to. AV1 files come out smaller at the same quality, but AV1 encodes fast only on an AV1-capable GPU (NVENC on an RTX 40 or later, Intel Arc QSV); otherwise it's the CPU (SVT-AV1), much slower. An encoding rule can choose the other codec for its files."},
+    "outputCodec": {
+      "label": "Output codec",
+      "help": "What conversions encode to. AV1 files come out smaller at the same quality, but AV1 encodes fast only on an AV1-capable GPU (NVENC on an RTX 40 or later, Intel Arc QSV); otherwise it's the CPU (SVT-AV1), much slower. An encoding rule can choose the other codec for its files.",
+      "summary": "AV1 is smaller at the same quality, but fast only on an AV1-capable GPU."
+    },
     "dolbyVision": {
       "label": "Dolby Vision",
       "options": {
@@ -79,12 +83,14 @@
     "ffmpegThreads": "FFmpeg Threads Per Job",
     "auto": "auto",
     "ffmpegThreadsHelp": "<b>auto (0)</b> lets ffmpeg use every available core per job — fine for a single job, but with <b>Parallel Jobs > 1</b> two jobs on an 8-core CPU each try to use all 8 cores and fight each other, eroding throughput. <b>1–2</b> is a good cap for older CPUs running parallel software (libx265) encodes. <b>NVENC / QSV / VAAPI</b> users can usually leave this at <b>1–2</b> too — the GPU does the heavy lifting, ffmpeg just needs threads for muxing and filtering. Set higher if you want a single job to fully saturate a modern many-core CPU.",
+    "ffmpegThreadsSummary": "CPU threads each job may use (0 = all); 1–2 suits parallel jobs.",
     "targetResolution": "Target Resolution",
     "convertFrom": "Convert From (source codecs)",
     "always": "(always)",
     "convertFromHelp": "Select which source codecs should be converted to the target codec.",
     "directPlayOnConvert": "Fix for direct play when converting",
     "directPlayOnConvertHelp": "Ticks \"Fix for direct play\" in Add to Queue, and every conversion queued another way (new downloads, policies) also makes its fixes where the file needs them: SRT copies of image subtitles (PGS, VobSub) and a stereo compatibility track when the main language's audio isn't AAC, AC3, E-AC3 or MP3.",
+    "directPlayOnConvertSummary": "Every conversion also adds SRT copies of image subtitles and a stereo track where needed.",
     "scale": {
       "highestQuality": "{{value}} (Highest quality)",
       "smallestFile": "{{value}} (Smallest file)",
@@ -96,6 +102,7 @@
     "nvdec": {
       "label": "Use NVDEC for decode",
       "help": "Decodes the source on the GPU before NVENC encodes it. Frames stay on-device — no PCIe transfer. Falls back silently to software decode for unsupported source codecs (MS-MPEG4v3, exotic formats).",
+      "summary": "Decodes on the GPU too, so frames never leave it.",
       "notDetected": "NVDEC not detected on this host."
     },
     "bitDepth": {
@@ -103,19 +110,23 @@
       "10bit": "10-bit (main10 / p010le) — default",
       "8bit": "8-bit (main / nv12) — Maxwell-compatible",
       "auto": "Match source (10-bit in → 10-bit out, else 8-bit)",
-      "help": "<b>10-bit</b> is best for quality (less banding, slightly larger files on most sources) but requires <b>Pascal-or-newer NVIDIA</b> (GTX 10xx / Quadro P-series / RTX). <b>8-bit</b> is the only option for second-generation Maxwell (GTX 950 and up, most Quadro M-series), produces smaller files on most material, and encodes a little faster. <b>Match source</b> uses 10-bit only when the source is already 10-bit, otherwise 8-bit — avoids the upconvert overhead when the input doesn't benefit from it."
+      "help": "<b>10-bit</b> is best for quality (less banding, slightly larger files on most sources) but requires <b>Pascal-or-newer NVIDIA</b> (GTX 10xx / Quadro P-series / RTX). <b>8-bit</b> is the only option for second-generation Maxwell (GTX 950 and up, most Quadro M-series), produces smaller files on most material, and encodes a little faster. <b>Match source</b> uses 10-bit only when the source is already 10-bit, otherwise 8-bit — avoids the upconvert overhead when the input doesn't benefit from it.",
+      "summary": "10-bit bands less; it needs an NVIDIA GTX 10-series or newer."
     },
     "nvencPreset": "NVENC Preset",
     "nvencCq": "NVENC Constant Quality (CQ)",
     "nvencCqHelp": "Controls quality vs file size. Lower = higher quality, larger files. <b>18-20:</b> Transparent quality (recommended). <b>21-24:</b> Good quality, noticeable savings. <b>25+:</b> Visible quality loss, maximum compression.",
+    "nvencCqSummary": "Lower = better quality, larger files; 18–20 looks like the original.",
     "cpuFallback": {
       "title": "CPU fallback",
       "help": "When an NVENC job is picked up by a CPU-only worker, use these libx265 settings instead of auto-translating from the NVENC preset/CQ. Leave blank for automatic translation.",
+      "summary": "libx265 settings for NVENC jobs a CPU-only worker takes; blank translates them.",
       "autoTranslate": "Auto (translate)"
     },
     "gpuFallback": {
       "title": "GPU fallback",
       "help": "When a libx265 job is picked up by a GPU-capable worker, use these NVENC settings instead of the hardcoded defaults. Leave blank for automatic.",
+      "summary": "NVENC settings for libx265 jobs a GPU worker takes; blank uses the defaults.",
       "auto": "Auto"
     },
     "preset": "Preset",
@@ -140,43 +151,54 @@
     },
     "cpuPreset": "CPU Preset",
     "cpuPresetHelp": "Controls encoding speed vs compression efficiency. Slower presets produce smaller files at the same quality. <b>medium:</b> Balanced speed and quality (recommended). <b>slow/slower:</b> Better compression, significantly slower. <b>fast/veryfast:</b> Quick encodes, larger files.",
+    "cpuPresetSummary": "Slower presets make smaller files at the same quality; medium is a good balance.",
     "crf": "Constant Rate Factor (CRF)",
     "crfHelp": "Controls quality vs file size. Lower = higher quality, larger files. CRF 18-20 is typically transparent to the original.",
     "qsvDecode": {
       "label": "Use QSV for decode",
       "help": "Decodes the source on the Intel iGPU before QSV encodes it. Frames stay on-die — no upload overhead. Falls back silently to software decode for unsupported source codecs.",
+      "summary": "Decodes on the Intel GPU too, so frames never leave it.",
       "notDetected": "QSV decode not detected on this host."
     },
     "qsvPreset": "QSV Preset",
     "qsvPresetHelp": "Encoder analysis depth. <b>Note:</b> unlike libx265, QSV's preset cost curve is nearly flat — `slower` is typically only ~10-20% slower than `medium` with modest quality gains. The bigger lever for QSV quality is the look-ahead toggle below. <b>medium</b> is fine for most hardware.",
+    "qsvPresetSummary": "How hard the encoder looks; medium is fine — look-ahead matters more.",
     "qsvQuality": "QSV Quality (global_quality)",
     "qsvQualityHelp": "QSV's ICQ-mode quality target. Lower = higher quality, larger files. <b>20-22</b> is typically transparent; <b>23-26</b> is good quality with noticeable savings. Rough cross-encoder mapping: QSV CQ ≈ NVENC CQ (within ±1) ≈ libx265 CRF + 1.",
+    "qsvQualitySummary": "Lower = better quality, larger files; 20–22 looks like the original.",
     "lookahead": {
       "label": "Look-ahead rate control",
-      "help": "Trades ~10–20% encode speed for a small visual quality bump on rapid-motion scenes. Useful when the hardware has throughput to spare (Arc / 11th-gen+); diminishing returns on older Intel iGPUs."
+      "help": "Trades ~10–20% encode speed for a small visual quality bump on rapid-motion scenes. Useful when the hardware has throughput to spare (Arc / 11th-gen+); diminishing returns on older Intel iGPUs.",
+      "summary": "A little more quality on fast motion, for 10–20% of the speed."
     },
     "vaapiDecode": {
       "label": "Use VAAPI for decode",
       "help": "Decodes the source on the GPU/iGPU via VAAPI before encoding. Frames stay on the DRM device. Falls back silently to software decode for unsupported source codecs.",
+      "summary": "Decodes on the GPU too, so frames stay on it.",
       "notDetected": "VAAPI decode not detected on this host."
     },
     "vaapiCompression": "VAAPI Compression Level",
     "vaapiCompressionHelp": "Driver-side analysis depth, 0–7. Semantics vary by driver (Mesa AMD vs Intel iHD), but lower values consistently produce smaller files at the cost of speed. <b>4</b> is a sane median. On Intel hardware where both VAAPI and QSV work, QSV usually produces better quality per bit at similar throughput — VAAPI is most useful on AMD GPUs (where QSV isn't an option).",
+    "vaapiCompressionSummary": "Driver analysis depth, 0–7: lower is smaller and slower; 4 is a good middle.",
     "vaapiQp": "VAAPI Quantizer (QP)",
     "vaapiQpHelp": "Constant quantizer (CQP) target. Lower = higher quality, larger files. <b>20-22</b> is typically transparent; <b>23-26</b> trades quality for size sensibly.",
     "videotoolboxDecode": {
       "label": "Use VideoToolbox for decode",
       "help": "Decodes H.264 and HEVC sources on the Mac's media engine before encoding. Other codecs (MPEG-2, VC-1, …) fall back to software decode automatically.",
+      "summary": "Decodes H.264 and HEVC on the Mac's media engine.",
       "notDetected": "VideoToolbox decode not detected on this host."
     },
     "videotoolboxQuality": "VideoToolbox Quality (q:v)",
     "videotoolboxQualityHelp": "Constant quality from 1 to 100: <b>higher = better quality, larger files</b> (the reverse of CQ/CRF). <b>55</b> averaged VMAF ~92 with ~50% savings on real 1080p test sources; <b>45–50</b> saves 65–75% but grainy films show visible loss; <b>60–65</b> looks better but saves much less, and above ~65 files can come out larger than the source. No presets: speed is fixed by the hardware.",
+    "videotoolboxQualitySummary": "Higher = better quality, larger files (the reverse of CQ); 55 is a good balance.",
     "smart": {
       "title": "Smart Encoding",
       "contentType": "Content type detection",
       "contentTypeHelp": "Recognises anime, animation, film grain and remuxes from file and folder names and gives them their own quality (CQ) below — by default a little more quality than everyday content, because artifacts show most on clean animation and grain is the first thing an encoder smooths away. Used when no encoding rule or the Add to Queue dialog sets the quality; QSV, VAAPI and VideoToolbox get it translated to their own quality scale.",
+      "contentTypeSummary": "Gives anime, animation, grain and remuxes their own quality.",
       "vmaf": "VMAF quality analysis",
       "vmafHelp": "<b>VMAF</b> (Video Multi-Method Assessment Fusion) is a perceptual video quality metric developed by Netflix. It scores encoded video from 0-100 by comparing it against the original source, predicting how a human viewer would rate the quality. When enabled, Shrinkerr runs a frame-accurate VMAF comparison between the original and encoded file after conversion. Shrinkerr only analyses a 30-second sample window (centred at ~33% into the file), not the whole encode — so this typically adds well under a minute per job on a modern GPU, and gives you confidence that your CQ settings produce acceptable quality.",
+      "vmafSummary": "Scores each finished file against the original, 0–100.",
       "score": "Score",
       "quality": "Quality",
       "tiers": {
@@ -187,10 +209,13 @@
       },
       "minScore": "Reject encodes below a minimum VMAF score",
       "minScoreHelp": "When enabled, any encode whose measured VMAF score is below the threshold is discarded — the encoded temp file is deleted, the original is left in place, and the job is recorded as <b>rejected</b> with the score and threshold visible in the job details. Useful as a safety net against overly-aggressive CQ/CRF settings.",
+      "minScoreSummary": "Keeps the original when an encode scores below the minimum.",
       "resAware": "Resolution-aware quality",
       "resAwareHelp": "Use different CQ values per resolution. 4K benefits from higher CQ since downsampling during playback hides artifacts. Used when no rule, the Add to Queue dialog or content detection sets the quality (translated for QSV, VAAPI and VideoToolbox).",
+      "resAwareSummary": "A different quality per resolution — 4K can use a higher CQ.",
       "cqTable": "CQ by resolution",
       "cqTableHelp": "Lower = better quality, bigger files. libx265 uses CRF 2 higher. A type that's switched off is treated like everything else. \"Rule…\" adds an encoding rule for that type: its own encoder, preset, resolution or audio.",
+      "cqTableSummary": "Lower = better quality, bigger files. “Rule…” adds a rule for that type.",
       "resetRecommended": "Reset to recommended",
       "ruleFor": "Rule…",
       "ruleForTitle": "Add an encoding rule for this content type (encoder, preset, resolution, audio)",
@@ -202,9 +227,11 @@
         "other": "Other (live action)"
       },
       "target": "Target a VMAF score",
-      "targetHelp": "Choose each title's quality for it instead of one quality for all: before encoding, 3 to 6 ten-second samples (by length) are encoded at a few quality settings and scored with VMAF, and the file is encoded at the highest compression whose samples still reach the target — grainy films get more bits, clean animation fewer. The quality from presets, rules and content type is where the search starts. A finished file more than a point under the target is encoded once more. It adds a few minutes per file (more on a CPU encoder). Files under two minutes and discs keep their quality. A rule can set its own target, or switch it off to keep its own quality. Needs ffmpeg with VMAF.",
+      "targetHelp": "Choose each title's quality for it instead of one quality for all: before encoding, 3 to 6 ten-second samples (by length) are encoded at a few quality settings and scored with VMAF, and the file is encoded at the highest compression whose samples still reach the target — grainy films get more bits, clean animation fewer. The quality from presets, rules and content type is where the search starts. A finished file more than a point under the target is encoded once more. It adds a few minutes per file (more on a CPU encoder). Files under two minutes keep their quality. A rule can set its own target, or switch it off to keep its own quality. Needs ffmpeg with VMAF.",
+      "targetSummary": "Finds each file's own quality with a few test encodes first.",
       "compareFrames": "Keep before / after frames",
-      "compareFramesHelp": "Each conversion grabs three moments from the original and the converted file, to compare in the job's details (Queue → Completed). The last 100 jobs keep theirs, about 0.5 MB each."
+      "compareFramesHelp": "Each conversion grabs three moments from the original and the converted file, to compare in the job's details (Queue → Completed). The last 100 jobs keep theirs, about 0.5 MB each.",
+      "compareFramesSummary": "Three stills from each conversion, to compare in the job's details."
     },
     "timeouts": {
       "title": "Timeouts",

@@ -104,5 +104,9 @@
       "desc": "The smallest files; the loss shows on a big screen."
     },
     "savings": "about {{pct}}% smaller"
+  },
+  "settingHelp": {
+    "more": "More",
+    "less": "Less"
   }
 }

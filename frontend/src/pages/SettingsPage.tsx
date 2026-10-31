@@ -3,6 +3,7 @@ import { useBlocker, useLocation, useNavigate } from "react-router-dom";
 import { useRangeFill } from "../useRangeFill";
 import FolderBrowser from "../components/FolderBrowser";
 import RenamingSettings, { type SaveBarPart } from "../components/RenamingSettings";
+import SettingHelp from "../components/SettingHelp";
 import { vmafColor, VMAF_EXCELLENT_MIN } from "../utils/vmaf";
 import { copyText } from "../utils/clipboard";
 import { shortcutsEnabled, setShortcutsEnabled } from "../shortcuts";
@@ -883,7 +884,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       <option value="hevc">HEVC (H.265)</option>
                       <option value="av1">AV1</option>
                     </select>
-                    <div style={{ ...helpStyle, marginTop: 4 }}>{t("settingsMedia:video.outputCodec.help")}</div>
+                    <SettingHelp style={{ ...helpStyle, marginTop: 4 }} summary={t("settingsMedia:video.outputCodec.summary")}>{t("settingsMedia:video.outputCodec.help")}</SettingHelp>
                     {encoding?.output_codec === "av1" && encoderCaps?.av1 && !encoderCaps.av1[encoding?.default_encoder || "nvenc"] && (
                       <div style={{ ...helpStyle, marginTop: 4, color: "var(--caution)" }}>
                         {t(encoderCaps.av1.libx265 ? "settingsIntegrations:rules.form.av1Unavailable" : "settingsIntegrations:rules.form.av1None")}
@@ -922,9 +923,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
                       <span>{t("settingsMedia:video.auto")}</span><span>2</span><span>4</span><span>8</span><span>12</span><span>16</span>
                     </div>
-                    <div style={helpStyle}>
+                    <SettingHelp summary={t("settingsMedia:video.ffmpegThreadsSummary")}>
                       <Trans i18nKey="settingsMedia:video.ffmpegThreadsHelp" components={{ b: <strong /> }} />
-                    </div>
+                    </SettingHelp>
                   </div>
 
                   {/* Target Resolution */}
@@ -994,32 +995,30 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         style={{ accentColor: "var(--accent)" }} />
                       <span style={checkboxLabelStyle}>{t("settingsMedia:video.directPlayOnConvert")}</span>
                     </label>
-                    <div style={helpStyle}>{t("settingsMedia:video.directPlayOnConvertHelp")}</div>
+                    <SettingHelp summary={t("settingsMedia:video.directPlayOnConvertSummary")}>{t("settingsMedia:video.directPlayOnConvertHelp")}</SettingHelp>
                   </div>
 
                   {encoding.default_encoder === "nvenc" && (
                     <>
                       {/* v0.5.7: NVDEC hardware decode pairing */}
-                      <div style={{ marginBottom: 16, padding: "10px 12px", backgroundColor: "var(--bg-secondary)",
-                                    border: "1px solid var(--border)", borderRadius: 4 }}>
-                        <label style={{ display: "flex", alignItems: "center", gap: 10,
+                      {/* A plain row: a card is for settings with controls of their own */}
+                      <div style={{ marginBottom: 16 }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8,
                                         cursor: encoderCaps?.nvdec_available ? "pointer" : "not-allowed",
                                         opacity: encoderCaps?.nvdec_available ? 1 : 0.5 }}>
                           <input type="checkbox"
                             checked={encoding?.nvenc_hw_decode ?? true}
                             disabled={!encoderCaps?.nvdec_available}
                             onChange={e => setEncoding({ ...encoding, nvenc_hw_decode: e.target.checked })}
-                            style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
-                          <span style={{ fontSize: 14, fontWeight: 500 }}>{t("settingsMedia:video.nvdec.label")}</span>
+                            style={{ accentColor: "var(--accent)" }} />
+                          <span style={checkboxLabelStyle}>{t("settingsMedia:video.nvdec.label")}</span>
                         </label>
-                        <div style={{ ...helpStyle, marginTop: 6 }}>
-                          {t("settingsMedia:video.nvdec.help")}
-                          {!encoderCaps?.nvdec_available && (
-                            <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
-                              {t("settingsMedia:video.nvdec.notDetected")}
-                            </span>
-                          )}
-                        </div>
+                        <SettingHelp summary={t("settingsMedia:video.nvdec.summary")}>{t("settingsMedia:video.nvdec.help")}</SettingHelp>
+                        {!encoderCaps?.nvdec_available && (
+                          <span style={{ color: "var(--warning)", display: "block", marginTop: 4, fontSize: 12 }}>
+                            {t("settingsMedia:video.nvdec.notDetected")}
+                          </span>
+                        )}
                       </div>
 
                       {/* v0.5.9: NVENC bit-depth choice */}
@@ -1032,9 +1031,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           <option value="8bit">{t("settingsMedia:video.bitDepth.8bit")}</option>
                           <option value="auto">{t("settingsMedia:video.bitDepth.auto")}</option>
                         </select>
-                        <div style={{ ...helpStyle, marginTop: 6 }}>
+                        <SettingHelp style={{ ...helpStyle, marginTop: 6 }} summary={t("settingsMedia:video.bitDepth.summary")}>
                           <Trans i18nKey="settingsMedia:video.bitDepth.help" components={{ b: <strong /> }} />
-                        </div>
+                        </SettingHelp>
                       </div>
 
                       {/* NVENC Preset */}
@@ -1067,9 +1066,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
                           <span>{t("settingsMedia:video.scale.highestQuality", { value: 15 })}</span><span>23</span><span>32</span><span>{t("settingsMedia:video.scale.smallestFile", { value: 40 })}</span>
                         </div>
-                        <div style={helpStyle}>
+                        <SettingHelp summary={t("settingsMedia:video.nvencCqSummary")}>
                           <Trans i18nKey="settingsMedia:video.nvencCqHelp" components={{ b: <strong /> }} />
-                        </div>
+                        </SettingHelp>
                       </div>
 
                       {/* CPU fallback for NVENC jobs picked up by CPU-only workers */}
@@ -1077,9 +1076,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         <div style={{ fontSize: 13, fontWeight: 600, color: "white", marginBottom: 4 }}>
                           {t("settingsMedia:video.cpuFallback.title")}
                         </div>
-                        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>
+                        <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }} summary={t("settingsMedia:video.cpuFallback.summary")}>
                           {t("settingsMedia:video.cpuFallback.help")}
-                        </div>
+                        </SettingHelp>
                         <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
                           <div style={{ flex: 1 }}>
                             <div style={labelStyle}>{t("settingsMedia:video.preset")}</div>
@@ -1116,17 +1115,17 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   {encoding.default_encoder === "libx265" && (
                     <>
                       {/* v0.5.7: libx265 + NVDEC mixed mode (cross-bus opt-in) */}
-                      <div style={{ marginBottom: 16, padding: "10px 12px", backgroundColor: "var(--bg-secondary)",
-                                    border: "1px solid var(--border)", borderRadius: 4 }}>
-                        <label style={{ display: "flex", alignItems: "center", gap: 10,
+                      {/* A plain row: a card is for settings with controls of their own */}
+                      <div style={{ marginBottom: 16 }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8,
                                         cursor: encoderCaps?.nvdec_available ? "pointer" : "not-allowed",
                                         opacity: encoderCaps?.nvdec_available ? 1 : 0.5 }}>
                           <input type="checkbox"
                             checked={encoding?.libx265_use_nvdec ?? false}
                             disabled={!encoderCaps?.nvdec_available}
                             onChange={e => setEncoding({ ...encoding, libx265_use_nvdec: e.target.checked })}
-                            style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
-                          <span style={{ fontSize: 14, fontWeight: 500 }}>{t("settingsMedia:video.x265Nvdec.label")}</span>
+                            style={{ accentColor: "var(--accent)" }} />
+                          <span style={checkboxLabelStyle}>{t("settingsMedia:video.x265Nvdec.label")}</span>
                         </label>
                         <div style={{ ...helpStyle, marginTop: 6 }}>
                           {t("settingsMedia:video.x265Nvdec.help")}
@@ -1157,9 +1156,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           <option value="slower">{t("settingsMedia:video.presetNames.slower")}</option>
                           <option value="veryslow">{t("settingsMedia:video.presetNames.veryslowBest")}</option>
                         </select>
-                        <div style={helpStyle}>
+                        <SettingHelp summary={t("settingsMedia:video.cpuPresetSummary")}>
                           <Trans i18nKey="settingsMedia:video.cpuPresetHelp" components={{ b: <strong /> }} />
-                        </div>
+                        </SettingHelp>
                       </div>
 
                       {/* libx265 CRF */}
@@ -1184,9 +1183,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         <div style={{ fontSize: 13, fontWeight: 600, color: "white", marginBottom: 4 }}>
                           {t("settingsMedia:video.gpuFallback.title")}
                         </div>
-                        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>
+                        <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }} summary={t("settingsMedia:video.gpuFallback.summary")}>
                           {t("settingsMedia:video.gpuFallback.help")}
-                        </div>
+                        </SettingHelp>
                         <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
                           <div style={{ flex: 1 }}>
                             <div style={labelStyle}>{t("settingsMedia:video.preset")}</div>
@@ -1226,26 +1225,24 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   {encoding.default_encoder === "qsv" && (
                     <>
                       {/* v0.5.7: QSV hardware decode pairing */}
-                      <div style={{ marginBottom: 16, padding: "10px 12px", backgroundColor: "var(--bg-secondary)",
-                                    border: "1px solid var(--border)", borderRadius: 4 }}>
-                        <label style={{ display: "flex", alignItems: "center", gap: 10,
+                      {/* A plain row: a card is for settings with controls of their own */}
+                      <div style={{ marginBottom: 16 }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8,
                                         cursor: encoderCaps?.qsv_decode_available ? "pointer" : "not-allowed",
                                         opacity: encoderCaps?.qsv_decode_available ? 1 : 0.5 }}>
                           <input type="checkbox"
                             checked={encoding?.qsv_hw_decode ?? true}
                             disabled={!encoderCaps?.qsv_decode_available}
                             onChange={e => setEncoding({ ...encoding, qsv_hw_decode: e.target.checked })}
-                            style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
-                          <span style={{ fontSize: 14, fontWeight: 500 }}>{t("settingsMedia:video.qsvDecode.label")}</span>
+                            style={{ accentColor: "var(--accent)" }} />
+                          <span style={checkboxLabelStyle}>{t("settingsMedia:video.qsvDecode.label")}</span>
                         </label>
-                        <div style={{ ...helpStyle, marginTop: 6 }}>
-                          {t("settingsMedia:video.qsvDecode.help")}
-                          {!encoderCaps?.qsv_decode_available && (
-                            <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
-                              {t("settingsMedia:video.qsvDecode.notDetected")}
-                            </span>
-                          )}
-                        </div>
+                        <SettingHelp summary={t("settingsMedia:video.qsvDecode.summary")}>{t("settingsMedia:video.qsvDecode.help")}</SettingHelp>
+                        {!encoderCaps?.qsv_decode_available && (
+                          <span style={{ color: "var(--warning)", display: "block", marginTop: 4, fontSize: 12 }}>
+                            {t("settingsMedia:video.qsvDecode.notDetected")}
+                          </span>
+                        )}
                       </div>
 
                       <div>
@@ -1264,9 +1261,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           <option value="slower">{t("settingsMedia:video.presetNames.slower")}</option>
                           <option value="veryslow">{t("settingsMedia:video.presetNames.veryslowBest")}</option>
                         </select>
-                        <div style={helpStyle}>
+                        <SettingHelp summary={t("settingsMedia:video.qsvPresetSummary")}>
                           <Trans i18nKey="settingsMedia:video.qsvPresetHelp" components={{ b: <strong /> }} />
-                        </div>
+                        </SettingHelp>
                       </div>
 
                       <div>
@@ -1280,9 +1277,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
                           <span>{t("settingsMedia:video.scale.highestQuality", { value: 15 })}</span><span>22</span><span>26</span><span>{t("settingsMedia:video.scale.smallestFile", { value: 32 })}</span>
                         </div>
-                        <div style={helpStyle}>
+                        <SettingHelp summary={t("settingsMedia:video.qsvQualitySummary")}>
                           <Trans i18nKey="settingsMedia:video.qsvQualityHelp" components={{ b: <strong /> }} />
-                        </div>
+                        </SettingHelp>
                       </div>
 
                       {/* QSV look-ahead — opt-in lookahead rate control. Slight
@@ -1300,9 +1297,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           />
                           <span style={checkboxLabelStyle}>{t("settingsMedia:video.lookahead.label")}</span>
                         </label>
-                        <div style={helpStyle}>
+                        <SettingHelp summary={t("settingsMedia:video.lookahead.summary")}>
                           {t("settingsMedia:video.lookahead.help")}
-                        </div>
+                        </SettingHelp>
                       </div>
                     </>
                   )}
@@ -1311,26 +1308,24 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   {encoding.default_encoder === "vaapi" && (
                     <>
                       {/* v0.5.7: VAAPI hardware decode pairing */}
-                      <div style={{ marginBottom: 16, padding: "10px 12px", backgroundColor: "var(--bg-secondary)",
-                                    border: "1px solid var(--border)", borderRadius: 4 }}>
-                        <label style={{ display: "flex", alignItems: "center", gap: 10,
+                      {/* A plain row: a card is for settings with controls of their own */}
+                      <div style={{ marginBottom: 16 }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8,
                                         cursor: encoderCaps?.vaapi_decode_available ? "pointer" : "not-allowed",
                                         opacity: encoderCaps?.vaapi_decode_available ? 1 : 0.5 }}>
                           <input type="checkbox"
                             checked={encoding?.vaapi_hw_decode ?? true}
                             disabled={!encoderCaps?.vaapi_decode_available}
                             onChange={e => setEncoding({ ...encoding, vaapi_hw_decode: e.target.checked })}
-                            style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
-                          <span style={{ fontSize: 14, fontWeight: 500 }}>{t("settingsMedia:video.vaapiDecode.label")}</span>
+                            style={{ accentColor: "var(--accent)" }} />
+                          <span style={checkboxLabelStyle}>{t("settingsMedia:video.vaapiDecode.label")}</span>
                         </label>
-                        <div style={{ ...helpStyle, marginTop: 6 }}>
-                          {t("settingsMedia:video.vaapiDecode.help")}
-                          {!encoderCaps?.vaapi_decode_available && (
-                            <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
-                              {t("settingsMedia:video.vaapiDecode.notDetected")}
-                            </span>
-                          )}
-                        </div>
+                        <SettingHelp summary={t("settingsMedia:video.vaapiDecode.summary")}>{t("settingsMedia:video.vaapiDecode.help")}</SettingHelp>
+                        {!encoderCaps?.vaapi_decode_available && (
+                          <span style={{ color: "var(--warning)", display: "block", marginTop: 4, fontSize: 12 }}>
+                            {t("settingsMedia:video.vaapiDecode.notDetected")}
+                          </span>
+                        )}
                       </div>
 
                       <div>
@@ -1344,9 +1339,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
                           <span>{t("settingsMedia:video.scale.bestQualitySlowest", { value: 0 })}</span><span>4</span><span>{t("settingsMedia:video.scale.fastest", { value: 7 })}</span>
                         </div>
-                        <div style={helpStyle}>
+                        <SettingHelp summary={t("settingsMedia:video.vaapiCompressionSummary")}>
                           <Trans i18nKey="settingsMedia:video.vaapiCompressionHelp" components={{ b: <strong /> }} />
-                        </div>
+                        </SettingHelp>
                       </div>
 
                       <div>
@@ -1382,14 +1377,12 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
                           <span style={{ fontSize: 14, fontWeight: 500 }}>{t("settingsMedia:video.videotoolboxDecode.label")}</span>
                         </label>
-                        <div style={{ ...helpStyle, marginTop: 6 }}>
-                          {t("settingsMedia:video.videotoolboxDecode.help")}
-                          {!encoderCaps?.videotoolbox_decode_available && (
-                            <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
-                              {t("settingsMedia:video.videotoolboxDecode.notDetected")}
-                            </span>
-                          )}
-                        </div>
+                        <SettingHelp summary={t("settingsMedia:video.videotoolboxDecode.summary")}>{t("settingsMedia:video.videotoolboxDecode.help")}</SettingHelp>
+                        {!encoderCaps?.videotoolbox_decode_available && (
+                          <span style={{ color: "var(--warning)", display: "block", marginTop: 4, fontSize: 12 }}>
+                            {t("settingsMedia:video.videotoolboxDecode.notDetected")}
+                          </span>
+                        )}
                       </div>
 
                       <div>
@@ -1403,9 +1396,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
                           <span>{t("settingsMedia:video.scale.smallestFile", { value: 30 })}</span><span>55</span><span>65</span><span>{t("settingsMedia:video.scale.highestQuality", { value: 85 })}</span>
                         </div>
-                        <div style={helpStyle}>
+                        <SettingHelp summary={t("settingsMedia:video.videotoolboxQualitySummary")}>
                           <Trans i18nKey="settingsMedia:video.videotoolboxQualityHelp" components={{ b: <strong /> }} />
-                        </div>
+                        </SettingHelp>
                       </div>
                     </>
                   )}
@@ -1422,9 +1415,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         style={{ accentColor: "var(--accent)" }} />
                       <span style={checkboxLabelStyle}>{t("settingsMedia:video.smart.contentType")}</span>
                     </label>
-                    <div style={helpStyle}>
+                    <SettingHelp summary={t("settingsMedia:video.smart.contentTypeSummary")}>
                       {t("settingsMedia:video.smart.contentTypeHelp")}
-                    </div>
+                    </SettingHelp>
 
                     {/* Per-type quality (v0.10.0): recommended values, editable,
                         a switch per type, and a shortcut to a rule for everything
@@ -1474,7 +1467,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             })}
                           </div>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
-                            <span style={{ fontSize: 11, color: "var(--text-muted)", flex: "1 1 240px" }}>{t("settingsMedia:video.smart.cqTableHelp")}</span>
+                            <SettingHelp style={{ fontSize: 11, marginTop: 0, flex: "1 1 240px" }} summary={t("settingsMedia:video.smart.cqTableSummary")}>{t("settingsMedia:video.smart.cqTableHelp")}</SettingHelp>
                             <button className="btn btn-xs btn-secondary"
                               onClick={() => setEncoding({ ...encoding, content_type_cq: encoding.content_type_cq_recommended })}>
                               {t("settingsMedia:video.smart.resetRecommended")}
@@ -1492,9 +1485,30 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         style={{ accentColor: "var(--accent)" }} />
                       <span style={checkboxLabelStyle}>{t("settingsMedia:video.smart.vmaf")}</span>
                     </label>
-                    <div style={helpStyle}>
+                    <SettingHelp summary={t("settingsMedia:video.smart.vmafSummary")}>
                       <Trans i18nKey="settingsMedia:video.smart.vmafHelp" components={{ b: <strong /> }} />
-                    </div>
+                      <table style={{ fontSize: 12, borderCollapse: "collapse", marginTop: 8, width: "100%" }}>
+                        <thead>
+                          <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                            <th style={{ textAlign: "left", padding: "4px 0 4px 28px", color: "var(--text-secondary)", fontWeight: 600, width: 120 }}>{t("settingsMedia:video.smart.score")}</th>
+                            <th style={{ textAlign: "left", padding: "4px 0", color: "var(--text-secondary)", fontWeight: 600 }}>{t("settingsMedia:video.smart.quality")}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[
+                            ["93+", t("settingsMedia:video.smart.tiers.transparent"), "var(--success)"],
+                            ["87–93", t("settingsMedia:video.smart.tiers.highQuality"), "var(--accent-text)"],
+                            ["80–87", t("settingsMedia:video.smart.tiers.acceptable"), "var(--caution)"],
+                            ["< 80", t("settingsMedia:video.smart.tiers.degradation"), "var(--danger)"],
+                          ].map(([score, desc, color]) => (
+                            <tr key={score as string} style={{ borderBottom: "1px solid var(--border)" }}>
+                              <td style={{ padding: "4px 0 4px 28px", color: color as string, fontWeight: 600 }}>{score}</td>
+                              <td style={{ padding: "4px 0", color: "var(--text-muted)" }}>{desc}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </SettingHelp>
                     {/* Before / after frames (v0.10.0; #before-after: the Queue's "No frames" links here) */}
                     <label id="before-after" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, cursor: "pointer", scrollMarginTop: 20 }}>
                       <input type="checkbox" checked={encoding.compare_frames ?? true}
@@ -1502,28 +1516,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         style={{ accentColor: "var(--accent)" }} />
                       <span style={checkboxLabelStyle}>{t("settingsMedia:video.smart.compareFrames")}</span>
                     </label>
-                    <div style={helpStyle}>{t("settingsMedia:video.smart.compareFramesHelp")}</div>
-                    <table style={{ fontSize: 12, borderCollapse: "collapse", marginTop: 8, width: "100%" }}>
-                      <thead>
-                        <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                          <th style={{ textAlign: "left", padding: "4px 0 4px 28px", color: "var(--text-secondary)", fontWeight: 600, width: 120 }}>{t("settingsMedia:video.smart.score")}</th>
-                          <th style={{ textAlign: "left", padding: "4px 0", color: "var(--text-secondary)", fontWeight: 600 }}>{t("settingsMedia:video.smart.quality")}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[
-                          ["93+", t("settingsMedia:video.smart.tiers.transparent"), "var(--success)"],
-                          ["87–93", t("settingsMedia:video.smart.tiers.highQuality"), "var(--accent-text)"],
-                          ["80–87", t("settingsMedia:video.smart.tiers.acceptable"), "var(--caution)"],
-                          ["< 80", t("settingsMedia:video.smart.tiers.degradation"), "var(--danger)"],
-                        ].map(([score, desc, color]) => (
-                          <tr key={score as string} style={{ borderBottom: "1px solid var(--border)" }}>
-                            <td style={{ padding: "4px 0 4px 28px", color: color as string, fontWeight: 600 }}>{score}</td>
-                            <td style={{ padding: "4px 0", color: "var(--text-muted)" }}>{desc}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <SettingHelp summary={t("settingsMedia:video.smart.compareFramesSummary")}>{t("settingsMedia:video.smart.compareFramesHelp")}</SettingHelp>
 
                     {/* ─────────────────────────────────────────────────────
                         VMAF minimum-score threshold. Only relevant when the
@@ -1550,9 +1543,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             />
                             <span style={checkboxLabelStyle}>{t("settingsMedia:video.smart.minScore")}</span>
                           </label>
-                          <div style={{ ...helpStyle, marginLeft: 26 }}>
+                          <SettingHelp style={{ ...helpStyle, marginLeft: 26 }} summary={t("settingsMedia:video.smart.minScoreSummary")}>
                             <Trans i18nKey="settingsMedia:video.smart.minScoreHelp" components={{ b: <strong /> }} />
-                          </div>
+                          </SettingHelp>
                           {enabled && (
                             <div style={{ marginTop: 10, marginLeft: 26, display: "flex", alignItems: "center", gap: 12 }}>
                               <input
@@ -1591,7 +1584,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                               style={{ accentColor: "var(--accent)" }} />
                             <span style={checkboxLabelStyle}>{t("settingsMedia:video.smart.target")}</span>
                           </label>
-                          <div style={{ ...helpStyle, marginLeft: 26 }}>{t("settingsMedia:video.smart.targetHelp")}</div>
+                          <SettingHelp style={{ ...helpStyle, marginLeft: 26 }} summary={t("settingsMedia:video.smart.targetSummary")}>{t("settingsMedia:video.smart.targetHelp")}</SettingHelp>
                           {on && (
                             <div style={{ marginTop: 10, marginLeft: 26, display: "flex", alignItems: "center", gap: 12 }}>
                               <input type="range" aria-label={t("settingsMedia:video.smart.target")} min={80} max={99} step={1}
@@ -1615,9 +1608,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         style={{ accentColor: "var(--accent)" }} />
                       <span style={checkboxLabelStyle}>{t("settingsMedia:video.smart.resAware")}</span>
                     </label>
-                    <div style={helpStyle}>
+                    <SettingHelp summary={t("settingsMedia:video.smart.resAwareSummary")}>
                       {t("settingsMedia:video.smart.resAwareHelp")}
-                    </div>
+                    </SettingHelp>
 
                     {(encoding.resolution_aware_cq === true || encoding.resolution_aware_cq === "true") && (
                       <div style={{ display: "grid", gridTemplateColumns: "70px 1fr 40px", gap: "6px 12px", alignItems: "center", marginTop: 10, padding: 12, background: "var(--bg-primary)", borderRadius: 4 }}>
