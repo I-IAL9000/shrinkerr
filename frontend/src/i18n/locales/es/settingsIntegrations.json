@@ -39,7 +39,8 @@
     "testFailed": "La prueba falló",
     "requestFailed": "La solicitud falló",
     "connectedUser": "Conectado: usando tu clave",
-    "connectedBundled": "Conectado: usando la clave incluida"
+    "connectedBundled": "Conectado: usando la clave incluida",
+    "introSummary": "Pósteres, valoraciones y el idioma original de cada título, desde TMDB."
   },
   "plex": {
     "intro": "Conecta tu servidor Plex para actualizar automáticamente la biblioteca tras cada conversión, crear reglas de codificación basadas en etiquetas, colecciones y géneros de Plex, priorizar el contenido no visto en la cola y pausar la codificación cuando alguien esté reproduciendo.",
@@ -84,19 +85,23 @@
       "timedOut": "Se agotó el tiempo de espera del inicio de sesión en Plex. Inténtalo de nuevo.",
       "pinExpired": "El PIN de inicio de sesión de Plex caducó. Inténtalo de nuevo.",
       "listServersFailed": "No se pudieron listar tus servidores Plex: {{error}}"
-    }
+    },
+    "introSummary": "Actualiza Plex tras cada conversión, añade condiciones de Plex a las reglas y pausa mientras alguien reproduce.",
+    "prioritizeUnwatchedSummary": "Se ponen en la cola con prioridad alta, para que se conviertan primero."
   },
   "jellyfin": {
     "intro": "Conecta tu servidor Jellyfin para actualizar automáticamente la biblioteca tras cada conversión, crear reglas de codificación basadas en etiquetas y géneros de Jellyfin, sincronizar el estado de visto para priorizar la cola y pausar la codificación durante las reproducciones activas.",
     "url": "URL de Jellyfin",
     "apiKeyPlaceholder": "Tu clave de API de Jellyfin",
-    "pathMappingHelp": "Asigna rutas del contenedor a rutas de Jellyfin. Formato: /container=/jellyfin"
+    "pathMappingHelp": "Asigna rutas del contenedor a rutas de Jellyfin. Formato: /container=/jellyfin",
+    "introSummary": "Actualiza Jellyfin tras cada conversión, añade condiciones de Jellyfin a las reglas y pausa mientras alguien reproduce."
   },
   "emby": {
     "intro": "Conecta tu servidor Emby para actualizar automáticamente la biblioteca tras cada conversión, crear reglas de codificación basadas en etiquetas y géneros de Emby, sincronizar el estado de visto para priorizar la cola y pausar la codificación durante las reproducciones activas.",
     "url": "URL de Emby",
     "apiKeyPlaceholder": "Tu clave de API de Emby",
-    "pathMappingHelp": "Asigna rutas del contenedor a rutas de Emby. Formato: /container=/emby"
+    "pathMappingHelp": "Asigna rutas del contenedor a rutas de Emby. Formato: /container=/emby",
+    "introSummary": "Actualiza Emby tras cada conversión, añade condiciones de Emby a las reglas y pausa mientras alguien reproduce."
   },
   "arr": {
     "intro": "Tras la conversión, Shrinkerr puede avisar a Sonarr/Radarr para que vuelvan a escanear la carpeta del título y actualicen su base de datos con el nuevo archivo.",
@@ -123,7 +128,8 @@
       "copy": "Copiar",
       "copied": "Copiado",
       "step3": "Password: tu clave de API de Shrinkerr (Ajustes → Sistema); el usuario puede ser cualquiera. O añade la cabecera X-Api-Key con la clave.",
-      "hardlinks": "Las importaciones de torrents suelen ser enlaces duros mientras se comparten. Con «Omitir archivos que siguen con enlaces duros (p. ej. en siembra)» activado (Ajustes → Automatización), se dejan fuera hasta que termina la compartición: convertirlos no ahorraría nada."
+      "hardlinks": "Las importaciones de torrents suelen ser enlaces duros mientras se comparten. Con «Omitir archivos que siguen con enlaces duros (p. ej. en siembra)» activado (Ajustes → Automatización), se dejan fuera hasta que termina la compartición: convertirlos no ahorraría nada.",
+      "introSummary": "Sonarr y Radarr ponen en la cola cada archivo que importan, sin los scripts del cliente de descargas."
     }
   },
   "downloaders": {
@@ -180,7 +186,8 @@
       "notThere": "Si el archivo no está ahí, tus dos contenedores no coinciden en adónde apunta <code>/Downloads</code>. Alinea los montajes de volúmenes (arriba) o añade un mapeo de rutas que traduzca la vista del script a la de Shrinkerr",
       "isThere": "Si el archivo SÍ está ahí, simplemente añádelo como directorio de medios (Tipo=Otro, Escanear=desactivado)"
     },
-    "tip": "<tip>Consejo:</tip> Usa las <b>reglas de codificación</b> de Shrinkerr para definir distintos perfiles de conversión (CQ, preajuste, códec de audio) según las etiquetas de Sonarr/Radarr. Las descargas etiquetadas seguirán tus reglas de codificación automáticamente."
+    "tip": "<tip>Consejo:</tip> Usa las <b>reglas de codificación</b> de Shrinkerr para definir distintos perfiles de conversión (CQ, preajuste, códec de audio) según las etiquetas de Sonarr/Radarr. Las descargas etiquetadas seguirán tus reglas de codificación automáticamente.",
+    "introSummary": "Convierte las descargas cuando NZBGet o SABnzbd las terminan."
   },
   "rules": {
     "title": "Reglas de codificación",
@@ -372,7 +379,8 @@
           "description": "Los archivos con «sample» en el nombre no se tocan."
         }
       }
-    }
+    },
+    "introSummary": "Da a los archivos sus propios ajustes por carpeta, etiqueta y más. Gana la primera regla que coincide."
   },
   "conditions": {
     "groups": {
@@ -500,7 +508,8 @@
     "intro": "Cuando Shrinkerr reescribe un archivo —subtítulos incorporados, subtítulos de imagen leídos a SRT, el archivo renombrado—, se pide a Bazarr que vuelva a sincronizar la serie o la película y examine sus subtítulos, para que no los descargue de nuevo. Requiere Sonarr / Radarr configurados arriba.",
     "url": "URL de Bazarr",
     "apiKey": "Clave de API",
-    "test": "Probar Bazarr"
+    "test": "Probar Bazarr",
+    "introSummary": "Avisa a Bazarr cuando se reescribe un archivo, para que no vuelva a descargar sus subtítulos."
   },
   "mqtt": {
     "intro": "Muestra Shrinkerr en Home Assistant mediante el descubrimiento MQTT: sensores de la cola, el espacio ahorrado y el archivo actual, y un interruptor que inicia y pausa la cola. Necesita un broker MQTT (Mosquitto, por ejemplo) que también use Home Assistant.",
@@ -515,6 +524,7 @@
     "baseTopic": "Tema base",
     "test": "Probar conexión",
     "connected": "Conectado al broker MQTT",
-    "failed": "MQTT: {{error}}"
+    "failed": "MQTT: {{error}}",
+    "introSummary": "Muestra Shrinkerr en Home Assistant: sensores de la cola y un interruptor para iniciarla y pausarla."
   }
 }

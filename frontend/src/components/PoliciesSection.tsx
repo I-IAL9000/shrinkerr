@@ -4,6 +4,7 @@ import { createPolicy, deletePolicy, getPolicies, runPolicy, updatePolicy,
   type Policy, type PolicyInput, type PolicyRunResult, type SavedView } from "../api";
 import { fmtBytes, fmtDateTime, fmtNum } from "../fmt";
 import { useConfirm } from "./ConfirmModal";
+import SettingHelp from "./SettingHelp";
 import { useToast } from "../useToast";
 
 const BLANK: PolicyInput = { name: "", view_id: 0, action: "queue", every: "daily", weekday: null, at: "01:00",
@@ -83,7 +84,7 @@ export default function PoliciesSection({ views, inputStyle, labelStyle }: {
 
   return (
     <div>
-      <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>{t("settingsSystem:policies.intro")}</div>
+      <SettingHelp style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }} summary={t("settingsSystem:policies.introSummary")}>{t("settingsSystem:policies.intro")}</SettingHelp>
       {policies.length > 0 && (
         <ul style={{ listStyle: "none", margin: "0 0 12px", padding: 0, display: "flex", flexDirection: "column", gap: 6 }}>
           {policies.map(p => (

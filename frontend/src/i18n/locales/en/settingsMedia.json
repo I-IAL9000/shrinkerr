@@ -115,8 +115,8 @@
     },
     "nvencPreset": "NVENC Preset",
     "nvencCq": "NVENC Constant Quality (CQ)",
-    "nvencCqHelp": "Controls quality vs file size. Lower = higher quality, larger files. <b>18-20:</b> Transparent quality (recommended). <b>21-24:</b> Good quality, noticeable savings. <b>25+:</b> Visible quality loss, maximum compression.",
-    "nvencCqSummary": "Lower = better quality, larger files; 18–20 looks like the original.",
+    "nvencCqHelp": "The quality files are encoded at when the VMAF target is off; with a target, it's where each title's search starts. Lower = higher quality, larger files. No single CQ fits every file: a clean Blu-ray remux often looks the same as the original at CQ 28–32, while grain and already-compressed web releases need 20–24. <b>20–24</b> holds up on any source; higher values save more on clean ones. The VMAF target measures each title and finds its own CQ.",
+    "nvencCqSummary": "Lower = better quality, larger files. The CQ that looks like the original depends on the source.",
     "cpuFallback": {
       "title": "CPU fallback",
       "help": "When an NVENC job is picked up by a CPU-only worker, use these libx265 settings instead of auto-translating from the NVENC preset/CQ. Leave blank for automatic translation.",
@@ -147,13 +147,14 @@
     },
     "x265Nvdec": {
       "label": "Use NVDEC for decode (mixed mode)",
-      "help": "Decodes the source on NVIDIA GPU (NVDEC), then transfers frames to CPU for libx265 encoding. Net win on slow CPUs paired with a dGPU; on modern CPUs the PCIe transfer overhead usually exceeds the savings. Falls back silently to software decode for unsupported source codecs. Defaults off."
+      "help": "Decodes the source on NVIDIA GPU (NVDEC), then transfers frames to CPU for libx265 encoding. Net win on slow CPUs paired with a dGPU; on modern CPUs the PCIe transfer overhead usually exceeds the savings. Falls back silently to software decode for unsupported source codecs. Defaults off.",
+      "summary": "Decodes on the NVIDIA GPU, encodes on the CPU: helps only slow CPUs."
     },
     "cpuPreset": "CPU Preset",
     "cpuPresetHelp": "Controls encoding speed vs compression efficiency. Slower presets produce smaller files at the same quality. <b>medium:</b> Balanced speed and quality (recommended). <b>slow/slower:</b> Better compression, significantly slower. <b>fast/veryfast:</b> Quick encodes, larger files.",
     "cpuPresetSummary": "Slower presets make smaller files at the same quality; medium is a good balance.",
     "crf": "Constant Rate Factor (CRF)",
-    "crfHelp": "Controls quality vs file size. Lower = higher quality, larger files. CRF 18-20 is typically transparent to the original.",
+    "crfHelp": "Controls quality vs file size. Lower = higher quality, larger files. CRF 18–22 holds up on any source; a clean remux often looks the same as the original well above that.",
     "qsvDecode": {
       "label": "Use QSV for decode",
       "help": "Decodes the source on the Intel iGPU before QSV encodes it. Frames stay on-die — no upload overhead. Falls back silently to software decode for unsupported source codecs.",
@@ -164,8 +165,8 @@
     "qsvPresetHelp": "Encoder analysis depth. <b>Note:</b> unlike libx265, QSV's preset cost curve is nearly flat — `slower` is typically only ~10-20% slower than `medium` with modest quality gains. The bigger lever for QSV quality is the look-ahead toggle below. <b>medium</b> is fine for most hardware.",
     "qsvPresetSummary": "How hard the encoder looks; medium is fine — look-ahead matters more.",
     "qsvQuality": "QSV Quality (global_quality)",
-    "qsvQualityHelp": "QSV's ICQ-mode quality target. Lower = higher quality, larger files. <b>20-22</b> is typically transparent; <b>23-26</b> is good quality with noticeable savings. Rough cross-encoder mapping: QSV CQ ≈ NVENC CQ (within ±1) ≈ libx265 CRF + 1.",
-    "qsvQualitySummary": "Lower = better quality, larger files; 20–22 looks like the original.",
+    "qsvQualityHelp": "QSV's ICQ-mode quality target. Lower = higher quality, larger files. <b>20–24</b> holds up on any source; a clean remux often looks the same as the original at 28–32. Rough cross-encoder mapping: QSV CQ ≈ NVENC CQ (within ±1) ≈ libx265 CRF + 1.",
+    "qsvQualitySummary": "Lower = better quality, larger files. The value that looks like the original depends on the source.",
     "lookahead": {
       "label": "Look-ahead rate control",
       "help": "Trades ~10–20% encode speed for a small visual quality bump on rapid-motion scenes. Useful when the hardware has throughput to spare (Arc / 11th-gen+); diminishing returns on older Intel iGPUs.",
@@ -181,7 +182,7 @@
     "vaapiCompressionHelp": "Driver-side analysis depth, 0–7. Semantics vary by driver (Mesa AMD vs Intel iHD), but lower values consistently produce smaller files at the cost of speed. <b>4</b> is a sane median. On Intel hardware where both VAAPI and QSV work, QSV usually produces better quality per bit at similar throughput — VAAPI is most useful on AMD GPUs (where QSV isn't an option).",
     "vaapiCompressionSummary": "Driver analysis depth, 0–7: lower is smaller and slower; 4 is a good middle.",
     "vaapiQp": "VAAPI Quantizer (QP)",
-    "vaapiQpHelp": "Constant quantizer (CQP) target. Lower = higher quality, larger files. <b>20-22</b> is typically transparent; <b>23-26</b> trades quality for size sensibly.",
+    "vaapiQpHelp": "Constant quantizer (CQP) target. Lower = higher quality, larger files. <b>20–24</b> holds up on any source; a clean remux often looks the same as the original at higher values.",
     "videotoolboxDecode": {
       "label": "Use VideoToolbox for decode",
       "help": "Decodes H.264 and HEVC sources on the Mac's media engine before encoding. Other codecs (MPEG-2, VC-1, …) fall back to software decode automatically.",
@@ -263,10 +264,11 @@
         "bestPractical": "Best practical",
         "diminishingReturns": "Diminishing returns",
         "overkill": "Overkill",
-        "transparent": "Transparent",
         "excellent": "Excellent",
         "good": "Good",
-        "noticeableLoss": "Noticeable loss"
+        "noticeableLoss": "Noticeable loss",
+        "anySource": "Like the original on any source",
+        "cleanSources": "Like the original on clean sources"
       },
       "nvencPresets": {
         "title": "NVENC presets (GPU)",
@@ -280,7 +282,7 @@
       },
       "cqCrf": {
         "title": "Understanding CQ / CRF",
-        "desc": "CQ (NVENC) and CRF (libx265) control the quality target. Lower = higher quality, larger files. The encoder allocates more bits to complex scenes and fewer to simple ones."
+        "desc": "CQ (NVENC) and CRF (libx265) control the quality target. Lower = higher quality, larger files. The encoder allocates more bits to complex scenes and fewer to simple ones. Where a file looks like the original depends on its source: a clean remux holds up at far higher values than grain or a web release. The VMAF target finds each title's."
       },
       "tipsTitle": "Tips",
       "tips": {
@@ -298,16 +300,14 @@
       "current": {
         "x265": "Current: libx265 {{preset}} / CRF {{crf}}",
         "nvenc": "Current: NVENC {{preset}} / CQ {{cq}}",
-        "maxQuality": "Maximum quality, conservative compression",
-        "highQuality": "High quality, moderate compression",
-        "greatQuality": "Great quality with good space savings",
-        "goodSolid": "Good quality, solid compression",
-        "goodAggressive": "Good quality, aggressive compression",
-        "maxCompression": "Maximum compression, some quality tradeoff",
         "videotoolbox": "Current: VideoToolbox q:v {{q}}",
         "vtSavings": "typically {{savings}} smaller",
         "qsv": "Current: QSV {{preset}} / Q {{q}}",
-        "vaapi": "Current: VAAPI QP {{qp}} (compression level {{level}})"
+        "vaapi": "Current: VAAPI QP {{qp}} (compression level {{level}})",
+        "overkill": "Beyond what anyone can see; the largest files",
+        "anySource": "Looks like the original on any source",
+        "cleanSources": "Looks like the original on clean sources; grain and web releases may show loss",
+        "noticeableLoss": "Noticeable loss on most sources"
       },
       "vtQuality": {
         "title": "VideoToolbox quality (q:v)",
@@ -316,18 +316,20 @@
       },
       "qsv": {
         "title": "Intel Quick Sync (QSV)",
-        "desc": "Presets run veryfast → veryslow: slower presets compress a little better at the cost of speed. Quality (global_quality) works like NVENC's CQ: lower = higher quality and larger files; 20–22 is typically transparent, 23–26 good quality with real savings. No measured tables for QSV yet: run a test encode from Add to Queue to calibrate on your own files."
+        "desc": "Presets run veryfast → veryslow: slower presets compress a little better at the cost of speed. Quality (global_quality) works like NVENC's CQ: lower = higher quality and larger files; 20–24 holds up on any source, and a clean remux often looks like the original at 28–32. No measured tables for QSV yet: run a test encode from Add to Queue to calibrate on your own files."
       },
       "vaapi": {
         "title": "VAAPI (Intel / AMD)",
-        "desc": "QP is a constant quantizer: lower = higher quality and larger files; 20–22 is typically transparent, 23–26 trades quality for size sensibly. Compression level (0–7) is driver-specific analysis depth; lower usually means smaller files at some speed cost. On Intel hardware QSV is usually the better choice. No measured tables for VAAPI yet: run a test encode to calibrate."
+        "desc": "QP is a constant quantizer: lower = higher quality and larger files; 20–24 holds up on any source, and a clean remux often looks like the original at higher values. Compression level (0–7) is driver-specific analysis depth; lower usually means smaller files at some speed cost. On Intel hardware QSV is usually the better choice. No measured tables for VAAPI yet: run a test encode to calibrate."
       },
       "presets": {
         "title": "Quality presets",
         "desc": "The presets the setup wizard and the queue panel offer. They set the quality only — the speed preset stays as you set it. Savings are typical for H.264 sources.",
         "descLearned": "The presets the setup wizard and the queue panel offer. They set the quality only — the speed preset stays as you set it. Savings are for files like yours, learned from {{count}} of your conversions."
       }
-    }
+    },
+    "crfSummary": "Lower = better quality, larger files. The CRF that looks like the original depends on the source.",
+    "vaapiQpSummary": "Lower = better quality, larger files. The value that looks like the original depends on the source."
   },
   "audio": {
     "title": "Audio Settings",
@@ -338,19 +340,23 @@
     "alwaysKeepHelp": "Audio tracks in these languages are kept by default. You can override per-track in the file detail editor.",
     "dedup": {
       "label": "Keep only the best track per always-keep language",
-      "help": "When a file has multiple tracks in the same always-keep language (e.g. EAC3 5.1 + AAC 2.0 + commentary, all English), keep only the highest-quality one by default (ranked by channels, then codec: TrueHD > FLAC/PCM > DTS-HD MA > DTS > EAC3 > AC3 > AAC). Turn off to keep every track in always-keep languages — you can still uncheck individual tracks in the file detail editor."
+      "help": "When a file has multiple tracks in the same always-keep language (e.g. EAC3 5.1 + AAC 2.0 + commentary, all English), keep only the highest-quality one by default (ranked by channels, then codec: TrueHD > FLAC/PCM > DTS-HD MA > DTS > EAC3 > AC3 > AAC). Turn off to keep every track in always-keep languages — you can still uncheck individual tracks in the file detail editor.",
+      "summary": "Ranked by channels, then codec (TrueHD first, AAC last); off keeps them all."
     },
     "keepNative": {
       "label": "Auto-keep native language audio tracks",
-      "help": "Automatically keep audio tracks matching each file's detected native language. Disable if you only want to keep dubbed / specified language tracks. (Subtitles have their own toggle in the Subtitles section — they're off by default.)"
+      "help": "Automatically keep audio tracks matching each file's detected native language. Disable if you only want to keep dubbed / specified language tracks. (Subtitles have their own toggle in the Subtitles section — they're off by default.)",
+      "summary": "Even when it isn't in the list above; off keeps only the languages listed."
     },
     "reorderNative": {
       "label": "Reorder native language to first audio stream",
-      "help": "During conversion or audio cleanup, move native-language audio tracks to the first position so they become the default playback stream. Files where native isn't first will be tagged for audio cleanup."
+      "help": "During conversion or audio cleanup, move native-language audio tracks to the first position so they become the default playback stream. Files where native isn't first will be tagged for audio cleanup.",
+      "summary": "So players choose it; files where it isn't first get an audio clean-up."
     },
     "autoDetect": {
       "label": "Auto-detect languages for unknown tracks before converting",
-      "help": "Before converting or cleaning up audio, run language detection on \"und\"/unknown audio and text-subtitle tracks so keep/remove rules use real languages. You can also run detection manually per file from the file detail view."
+      "help": "Before converting or cleaning up audio, run language detection on \"und\"/unknown audio and text-subtitle tracks so keep/remove rules use real languages. You can also run detection manually per file from the file detail view.",
+      "summary": "Tracks marked “und” get a real language, so keep and remove apply to them."
     },
     "model": {
       "label": "Audio detection model",
@@ -359,7 +365,8 @@
       "small": "Small — best accuracy, ~460 MB, slower",
       "medium": "Medium — higher accuracy, ~1.5 GB, GPU recommended",
       "large-v3": "Large-v3 — best accuracy (incl. low-resource langs), ~3 GB, GPU strongly recommended",
-      "help": "faster-whisper model for spoken-language ID. Larger is more accurate on non-English speech at the cost of download size, RAM, and speed. Medium/Large-v3 are practical only with an NVIDIA GPU (the :nvenc image). Downloads on first use; takes effect on the next detection (no restart)."
+      "help": "faster-whisper model for spoken-language ID. Larger is more accurate on non-English speech at the cost of download size, RAM, and speed. Medium/Large-v3 are practical only with an NVIDIA GPU (the :nvenc image). Downloads on first use; takes effect on the next detection (no restart).",
+      "summary": "Larger models are more accurate but need more memory and time."
     },
     "audioConfidence": "Audio confidence",
     "subtitleConfidence": "Subtitle confidence",
@@ -368,7 +375,8 @@
       "title": "Audio Conversion",
       "codec": "Audio Codec",
       "bitrate": "Audio Bitrate",
-      "bitrateHelp": "Higher bitrate = better audio quality, larger files. <b>128 kbps:</b> Good for stereo. <b>256 kbps:</b> Good for 5.1 surround. <b>384-640 kbps:</b> High quality surround."
+      "bitrateHelp": "Higher bitrate = better audio quality, larger files. <b>128 kbps:</b> Good for stereo. <b>256 kbps:</b> Good for 5.1 surround. <b>384-640 kbps:</b> High quality surround.",
+      "bitrateSummary": "Higher = better audio, larger files; 256 kbps suits 5.1."
     },
     "lossless": {
       "label": "Auto-convert lossless audio",
@@ -377,7 +385,8 @@
       "targetBitrate": "Target Bitrate",
       "keepObjects": "Keep Atmos and DTS:X tracks lossless",
       "keepObjectsHelp": "Converting them keeps the 5.1 / 7.1 channels but loses the height and object information. On by default; turn off to convert them too.",
-      "convertDts": "Also convert lossy DTS"
+      "convertDts": "Also convert lossy DTS",
+      "summary": "TrueHD, DTS-HD MA, FLAC and PCM become a smaller codec; lossy tracks stay."
     },
     "guide": {
       "title": "Audio Guide",
@@ -448,8 +457,10 @@
       "help": "Keeps the original audio and adds a stereo track made from it, so TVs, phones and browsers that can't play surround or DTS / TrueHD direct-play instead of transcoding. Only when the main track is surround and there's no stereo track in its language yet.",
       "codec": "Codec",
       "bitrate": "Bitrate",
-      "loudnorm": "Even out loudness (EBU R128) — quiet dialogue and loud effects closer together"
-    }
+      "loudnorm": "Even out loudness (EBU R128) — quiet dialogue and loud effects closer together",
+      "summary": "For TVs, phones and browsers that can't play surround; the original stays."
+    },
+    "confidenceSummary": "How sure a detection must be before a track is tagged."
   },
   "subtitles": {
     "title": "Subtitles",
@@ -464,25 +475,30 @@
     },
     "keepNative": {
       "label": "Auto-keep native language subtitle tracks",
-      "help": "Keep subtitle tracks whose language matches the file's detected native language, even if it's not in the keep list above. Defaults <b>off</b> — for most setups, native-language subs on a same-language audio track are noise. Turn on if you want them for SDH / hearing-impaired reasons."
+      "help": "Keep subtitle tracks whose language matches the file's detected native language, even if it's not in the keep list above. Defaults <b>off</b> — for most setups, native-language subs on a same-language audio track are noise. Turn on if you want them for SDH / hearing-impaired reasons.",
+      "summary": "Even when it isn't in the list above; useful for hearing-impaired (SDH) subtitles."
     },
     "autoDetect": {
       "label": "Auto-detect languages for unknown tracks before converting",
-      "help": "Before converting or cleaning up subtitles, run language detection on \"und\"/unknown audio and text-subtitle tracks so keep/remove rules use real languages. This is the same setting as in the Audio section. You can also run detection manually per file from the file detail view."
+      "help": "Before converting or cleaning up subtitles, run language detection on \"und\"/unknown audio and text-subtitle tracks so keep/remove rules use real languages. This is the same setting as in the Audio section. You can also run detection manually per file from the file detail view.",
+      "summary": "Tracks marked “und” get a real language; the same setting as in Audio."
     },
     "external": {
       "title": "External Subtitles",
       "merge": "Merge external subtitles into video",
       "mergeHelp": "During conversion or remux, embed external .srt, .ass, .ssa, .sub, .vtt files found alongside the video into the MKV container. Language is detected from the filename (e.g. <code>.eng.srt</code>, <code>.en.forced.srt</code>).",
       "deleteAfter": "Delete external subtitle files after merge",
-      "deleteWarning": "The original .srt/.ass files will be permanently deleted after a successful merge."
+      "deleteWarning": "The original .srt/.ass files will be permanently deleted after a successful merge.",
+      "mergeSummary": "Files like Movie.eng.srt beside the video go into the MKV, with the language from their name."
     },
     "imageSubs": {
       "title": "Image subtitles",
       "toSrt": "Convert image subtitles to text (SRT)",
       "toSrtHelp": "PGS (Blu-ray) and VobSub (DVD) subtitles make many players transcode to burn them in. When a file is converted or cleaned up, the image subtitles it keeps are read with OCR and added as SRT tracks in the same language (titled \"OCR\"), unless it already has a text track in that language. Reading takes a few minutes per track and isn't perfect. Languages need their OCR language pack (the image includes the common ones).",
-      "keepOriginal": "Keep the image subtitles too"
-    }
+      "keepOriginal": "Keep the image subtitles too",
+      "toSrtSummary": "Blu-ray and DVD subtitles are read with OCR into SRT tracks, so players don't transcode."
+    },
+    "keepSummary": "Subtitles in these languages are kept; the rest are removed."
   },
   "options": {
     "presets": {

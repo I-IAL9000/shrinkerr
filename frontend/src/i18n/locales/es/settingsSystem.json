@@ -12,7 +12,8 @@
       "priorityHelp": "Los archivos recién detectados usan esta prioridad, o la prioridad en cola de una regla cuando es mayor.",
       "view": "Solo archivos de:",
       "allFiles": "Todos los archivos nuevos",
-      "viewHelp": "Una vista guardada del menú Vistas del Escáner."
+      "viewHelp": "Una vista guardada del menú Vistas del Escáner.",
+      "newFilesSummary": "Se aplican tus reglas, los filtros de conversión y los ajustes de audio y subtítulos, como en Añadir a la cola."
     },
     "filters": {
       "title": "Filtros de conversión",
@@ -24,7 +25,10 @@
       "skipHardlinkedHelp": "Un archivo con otro enlace duro —un cliente torrent que aún lo siembra— conserva su espacio cuando Shrinkerr escribe uno nuevo, así que convertirlo o limpiarlo no libera nada y ocupa más. «Incluir archivos ignorados y anular reglas» en Añadir a la cola los añade igualmente.",
       "importDelay": "Esperar tras una importación",
       "minutes": "minutos",
-      "importDelayHelp": "Los archivos recién importados —encolados automáticamente, desde los scripts del cliente de descargas o desde el webhook de Sonarr / Radarr— esperan este tiempo antes de convertirse, para que Bazarr añada antes sus subtítulos (y se integren). 0: de inmediato."
+      "importDelayHelp": "Los archivos recién importados —encolados automáticamente, desde los scripts del cliente de descargas o desde el webhook de Sonarr / Radarr— esperan este tiempo antes de convertirse, para que Bazarr añada antes sus subtítulos (y se integren). 0: de inmediato.",
+      "summary": "Los archivos fuera de estas tasas de bits no se convierten (0: sin límite).",
+      "skipHardlinkedSummary": "Convertir un archivo que un cliente torrent aún siembra no libera nada.",
+      "importDelaySummary": "Las importaciones nuevas esperan este tiempo, para que Bazarr añada antes sus subtítulos."
     },
     "filename": {
       "title": "Nombre del archivo de salida",
@@ -58,14 +62,17 @@
       "deletedResult_many": "Se eliminaron {{count}} archivos; se liberaron {{size}}",
       "deletedResult_other": "Se eliminaron {{count}} archivos; se liberaron {{size}}",
       "review": "Revisar las conversiones antes de que reemplacen al original",
-      "reviewHelp": "Los archivos convertidos esperan en Cola → Revisión —el original intacto y el nuevo en una carpeta oculta a su lado— hasta que los apruebes (se colocan) o los rechaces (se borran). Mientras tanto ocupan el espacio de ambos."
+      "reviewHelp": "Los archivos convertidos esperan en Cola → Revisión —el original intacto y el nuevo en una carpeta oculta a su lado— hasta que los apruebes (se colocan) o los rechaces (se borran). Mientras tanto ocupan el espacio de ambos.",
+      "reviewSummary": "Esperan en Cola → Revisión, ocupando mientras tanto el espacio de ambos.",
+      "summary": "Dónde se guardan los originales (vacío: una carpeta oculta a su lado). Deshacer conversión los necesita."
     },
     "stability": {
       "title": "Estabilidad de archivos",
       "delay": "Retrasar los archivos modificados recientemente",
       "delayHelp": "Los archivos modificados dentro de este intervalo se posponen durante el escaneo y la cola automática. Se procesarán en el siguiente escaneo, una vez pasado el intervalo. Así se evita convertir archivos que aún se están descargando, transfiriendo o procesando con otras herramientas como Sonarr/Radarr. Recomendado en sistemas compartidos.",
       "delayNewerThan": "Retrasar archivos de menos de",
-      "minutes": "minutos"
+      "minutes": "minutos",
+      "delaySummary": "Los archivos que aún se descargan o se mueven no se convierten; los recoge el siguiente escaneo."
     },
     "health": {
       "title": "Comprobaciones de integridad",
@@ -77,7 +84,9 @@
       "clearPending": "Borrar trabajos de comprobación pendientes",
       "clearPendingConfirm": "¿Eliminar TODOS los trabajos de comprobación de integridad pendientes? Los trabajos en curso y los de otros tipos no se verán afectados.",
       "afterConversion": "Comprobar automáticamente tras la conversión",
-      "afterConversionHelp": "Verifica cada archivo convertido. La <b>rápida</b> confirma que el contenedor y las pistas se leen correctamente. La <b>exhaustiva</b> detecta artefactos visuales (errores del decodificador) a costa de aproximadamente duración/10 por archivo."
+      "afterConversionHelp": "Verifica cada archivo convertido. La <b>rápida</b> confirma que el contenedor y las pistas se leen correctamente. La <b>exhaustiva</b> detecta artefactos visuales (errores del decodificador) a costa de aproximadamente duración/10 por archivo.",
+      "afterScanSummary": "Comprueba tras cada escaneo los archivos detectados en las últimas 24 h.",
+      "afterConversionSummary": "Comprueba cada archivo convertido: la rápida lo lee, la exhaustiva decodifica cada fotograma."
     },
     "advanced": {
       "title": "Avanzado",
@@ -307,6 +316,7 @@
     "deleteConfirm": "¿Eliminar la política «{{name}}»?",
     "errors": {
       "viewMissing": "su vista guardada ya no existe"
-    }
+    },
+    "introSummary": "Ejecuta una vista guardada con un horario y un presupuesto."
   }
 }

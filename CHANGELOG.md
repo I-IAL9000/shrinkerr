@@ -61,6 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Update notices follow your channel** (`:develop` builds hear about develop builds), show it, and can be turned off.
 - **Re-measure suspect VMAF scores is gone**: it needed each job's original, which is rarely kept after a conversion, and counted ordinary scores under 93 as suspect.
 - **The VMAF target search takes fewer rounds**: each round aims where the scores so far cross the target, instead of steps of 2, 4, 8 and halving — about a third fewer rounds for the same answer (Sgt. Bilko: 3 instead of 6), and a half step its neighbours already rule out isn't scored.
+- **Settings explain themselves in a line**: each setting says what it does in one line, the full explanation opens in place under **More**, and Settings search still finds it (and opens it).
+- **The quality (CQ) help no longer says 25 and up loses quality**: which CQ looks like the original depends on the source — a clean remux often holds up at 28–32, grain and web releases need 20–24 — as the VMAF target finds. The encoding guide's table says so too.
 - **The Scanner remembers its sort** when you come back to it, as it does its filters (it went back to A–Z).
 - **Files that came out larger aren't ignored**: they're marked **Came out larger** in the Scanner (when, and at what quality), new downloads and policies still leave them alone, and Add to Queue converts them again — with another quality, no override needed. Files you ignore stay ignored.
 
@@ -73,6 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **NVENC encodes aren't held to 10 Mbps**: left to choose, NVENC used HEVC level 4.0 for 1080p and kept every encode under its bitrate, whatever the CQ — grainy films came out the same at CQ 14 and 23 and missed the VMAF target. Encodes now use level 5.1 (4K its high tier, as UHD Blu-rays do).
 - **A disc's VMAF is measured on the right frames**: the after-conversion check jumped by time into the disc and compared another scene (a fine encode scored 1.8). It now compares frames by number, read from the start, ten minutes in at most; the SSIM/PSNR cross-check reads the same frames (it read the raw ISO for minutes, and its PSNR compared the original with itself).
 - **The VMAF target doesn't trust samples it can't measure**: samples scoring 31 at every quality made the search take the most compressed one (CQ 37); the job keeps its own quality instead.
+- **A rule's folder condition fits the page**: its list was as wide as the longest media folder's path and pushed the page sideways.
 - **A restored ISO is a disc again**: Restore original brought an ISO back without its disc type, so the Scanner's Disc / ISO filter didn't count it, and its row kept the converted file's tracks; a restored original is now read again.
 - **The running card shows the quality really used**: the VMAF target while it searches, then the quality it chose — not the job's queued CQ — and a new step shows at once (the card said "VMAF analysis 99%" while the cross-check ran).
 - **Advanced Search suggests your library's values**: Genre offered only its example, "Documentary"; Genre, TV network, Country, Plex label, Actor, Director and Studio now suggest what's in your library.

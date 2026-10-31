@@ -12,7 +12,8 @@
       "priorityHelp": "Newly-detected files use this priority, or a rule's Queue Priority when that is higher.",
       "view": "Only files in:",
       "allFiles": "Every new file",
-      "viewHelp": "A saved view from the Scanner's Views menu."
+      "viewHelp": "A saved view from the Scanner's Views menu.",
+      "newFilesSummary": "Your rules, conversion filters and audio / subtitle settings apply, as in Add to Queue."
     },
     "filters": {
       "title": "Conversion Filters",
@@ -24,7 +25,10 @@
       "skipHardlinkedHelp": "A file with another hardlink — a torrent client still seeding it — keeps its space when Shrinkerr writes a new one, so converting or cleaning it frees nothing and uses more. Add to Queue's “Include ignored files and override rules” still queues them.",
       "importDelay": "Wait after an import",
       "minutes": "minutes",
-      "importDelayHelp": "Newly imported files — auto-queued, from the download-client scripts or the Sonarr / Radarr webhook — wait this long before converting, so Bazarr can add their subtitles first (and they're merged in). 0: right away."
+      "importDelayHelp": "Newly imported files — auto-queued, from the download-client scripts or the Sonarr / Radarr webhook — wait this long before converting, so Bazarr can add their subtitles first (and they're merged in). 0: right away.",
+      "summary": "Files outside these bitrates aren't converted (0: no limit).",
+      "skipHardlinkedSummary": "Converting a file a torrent client still seeds frees nothing.",
+      "importDelaySummary": "New imports wait this long, so Bazarr can add their subtitles first."
     },
     "filename": {
       "title": "Output Filename",
@@ -56,14 +60,17 @@
       "deletedResult_one": "Deleted {{count}} file, freed {{size}}",
       "deletedResult_other": "Deleted {{count}} files, freed {{size}}",
       "review": "Review conversions before they replace the original",
-      "reviewHelp": "Converted files wait in Queue → Review — the original untouched, the new file in a hidden folder beside it — until you approve them (put in place) or reject them (deleted). Takes the room of both meanwhile."
+      "reviewHelp": "Converted files wait in Queue → Review — the original untouched, the new file in a hidden folder beside it — until you approve them (put in place) or reject them (deleted). Takes the room of both meanwhile.",
+      "reviewSummary": "They wait in Queue → Review, taking the room of both meanwhile.",
+      "summary": "Where originals are kept (empty: a hidden folder beside them). Undo needs them."
     },
     "stability": {
       "title": "File Stability",
       "delay": "Delay recently modified files",
       "delayHelp": "Files modified within this window are postponed during scanning and auto-queue. They'll be picked up on the next scan once the window has passed. This prevents converting files that are still being downloaded, transferred, or processed by other tools like Sonarr/Radarr. Recommended for shared systems.",
       "delayNewerThan": "Delay files newer than",
-      "minutes": "minutes"
+      "minutes": "minutes",
+      "delaySummary": "Files still downloading or being moved aren't converted; the next scan takes them."
     },
     "health": {
       "title": "Health Checks",
@@ -75,7 +82,9 @@
       "clearPending": "Clear pending health-check jobs",
       "clearPendingConfirm": "Delete ALL pending health-check jobs? Running jobs and other job types are not affected.",
       "afterConversion": "Auto-check after conversion",
-      "afterConversionHelp": "Verify each converted output. <b>Quick</b> confirms the container/streams parse. <b>Thorough</b> catches visual artifacts (decoder errors) at the cost of roughly duration/10 per file."
+      "afterConversionHelp": "Verify each converted output. <b>Quick</b> confirms the container/streams parse. <b>Thorough</b> catches visual artifacts (decoder errors) at the cost of roughly duration/10 per file.",
+      "afterScanSummary": "Checks files found in the last 24 hours after each scan.",
+      "afterConversionSummary": "Checks each converted file: Quick reads it, Thorough decodes every frame."
     },
     "advanced": {
       "title": "Advanced",
@@ -303,6 +312,7 @@
     "deleteConfirm": "Delete the policy “{{name}}”?",
     "errors": {
       "viewMissing": "its saved view no longer exists"
-    }
+    },
+    "introSummary": "Runs a saved view on a schedule, within a budget."
   }
 }

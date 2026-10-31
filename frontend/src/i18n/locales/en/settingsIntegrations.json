@@ -38,7 +38,8 @@
     "testFailed": "Test failed",
     "requestFailed": "Request failed",
     "connectedUser": "Connected — using your key",
-    "connectedBundled": "Connected — using bundled key"
+    "connectedBundled": "Connected — using bundled key",
+    "introSummary": "Posters, ratings and each title's original language, from TMDB."
   },
   "plex": {
     "intro": "Connect your Plex server to automatically refresh your library after each conversion, create encoding rules based on Plex labels, collections, and genres, prioritize unwatched content in the queue, and pause encoding when someone is streaming.",
@@ -82,19 +83,23 @@
       "timedOut": "Timed out waiting for Plex sign-in. Please try again.",
       "pinExpired": "Plex sign-in PIN expired. Please try again.",
       "listServersFailed": "Couldn't list your Plex servers: {{error}}"
-    }
+    },
+    "introSummary": "Refreshes Plex after each conversion, adds Plex conditions to rules, and pauses while someone watches.",
+    "prioritizeUnwatchedSummary": "They're queued at High priority, so they convert first."
   },
   "jellyfin": {
     "intro": "Connect your Jellyfin server to automatically refresh your library after each conversion, create encoding rules based on Jellyfin tags and genres, sync watched status for queue prioritization, and pause encoding during active streams.",
     "url": "Jellyfin URL",
     "apiKeyPlaceholder": "Your Jellyfin API key",
-    "pathMappingHelp": "Maps container paths to Jellyfin paths. Format: /container=/jellyfin"
+    "pathMappingHelp": "Maps container paths to Jellyfin paths. Format: /container=/jellyfin",
+    "introSummary": "Refreshes Jellyfin after each conversion, adds Jellyfin conditions to rules, and pauses while someone watches."
   },
   "emby": {
     "intro": "Connect your Emby server to automatically refresh your library after each conversion, create encoding rules based on Emby tags and genres, sync watched status for queue prioritization, and pause encoding during active streams.",
     "url": "Emby URL",
     "apiKeyPlaceholder": "Your Emby API key",
-    "pathMappingHelp": "Maps container paths to Emby paths. Format: /container=/emby"
+    "pathMappingHelp": "Maps container paths to Emby paths. Format: /container=/emby",
+    "introSummary": "Refreshes Emby after each conversion, adds Emby conditions to rules, and pauses while someone watches."
   },
   "arr": {
     "intro": "After conversion, Shrinkerr can notify Sonarr/Radarr to rescan the title folder so they update their database with the new file.",
@@ -120,7 +125,8 @@
       "copy": "Copy",
       "copied": "Copied",
       "step3": "Password: your Shrinkerr API key (Settings → System); the username can be anything. Or add the header X-Api-Key with the key.",
-      "hardlinks": "Torrent imports are usually hardlinks while they seed. With “Skip files that are still hardlinked” on (Settings → Automation), they're left out until seeding stops — converting them would save nothing."
+      "hardlinks": "Torrent imports are usually hardlinks while they seed. With “Skip files that are still hardlinked” on (Settings → Automation), they're left out until seeding stops — converting them would save nothing.",
+      "introSummary": "Sonarr and Radarr queue each file they import, without the download-client scripts."
     }
   },
   "downloaders": {
@@ -177,7 +183,8 @@
       "notThere": "If the file isn't there, your two containers don't agree on where <code>/Downloads</code> points. Align the volume mounts (above), or add a path mapping that translates the script's view into Shrinkerr's view",
       "isThere": "If the file IS there, just add it as a media directory (Type=Other, Scan=off)"
     },
-    "tip": "<tip>Tip:</tip> Use <b>Encoding Rules</b> in Shrinkerr to set different conversion profiles (CQ, preset, audio codec) based on Sonarr/Radarr tags. Tag-based downloads will follow your encoding rules automatically."
+    "tip": "<tip>Tip:</tip> Use <b>Encoding Rules</b> in Shrinkerr to set different conversion profiles (CQ, preset, audio codec) based on Sonarr/Radarr tags. Tag-based downloads will follow your encoding rules automatically.",
+    "introSummary": "Converts downloads when NZBGet or SABnzbd finishes them."
   },
   "rules": {
     "title": "Encoding Rules",
@@ -362,7 +369,8 @@
           "description": "Files with “sample” in their name are left alone."
         }
       }
-    }
+    },
+    "introSummary": "Gives files their own settings by folder, tag, label and more. The first rule that matches wins."
   },
   "conditions": {
     "groups": {
@@ -489,7 +497,8 @@
     "intro": "After Shrinkerr rewrites a file — subtitles merged in, image subtitles read into SRT, the file renamed — Bazarr is asked to re-sync the series or movie and scan its subtitles, so it doesn't download them again. Needs Sonarr / Radarr set up above.",
     "url": "Bazarr URL",
     "apiKey": "API key",
-    "test": "Test Bazarr"
+    "test": "Test Bazarr",
+    "introSummary": "Tells Bazarr when a file is rewritten, so it doesn't download its subtitles again."
   },
   "mqtt": {
     "intro": "Shows Shrinkerr in Home Assistant through MQTT discovery: sensors for the queue, the space saved and the current file, and a switch that starts and pauses the queue. Needs an MQTT broker (Mosquitto, say) that Home Assistant uses too.",
@@ -504,6 +513,7 @@
     "baseTopic": "Base topic",
     "test": "Test connection",
     "connected": "Connected to the MQTT broker",
-    "failed": "MQTT: {{error}}"
+    "failed": "MQTT: {{error}}",
+    "introSummary": "Shows Shrinkerr in Home Assistant: queue sensors and a start / pause switch."
   }
 }

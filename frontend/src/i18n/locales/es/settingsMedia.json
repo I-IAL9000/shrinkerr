@@ -115,8 +115,8 @@
     },
     "nvencPreset": "Preajuste de NVENC",
     "nvencCq": "Calidad constante de NVENC (CQ)",
-    "nvencCqHelp": "Controla la calidad frente al tamaño del archivo. Menor = más calidad y archivos más grandes. <b>18-20:</b> calidad transparente (recomendado). <b>21-24:</b> buena calidad, ahorro notable. <b>25+:</b> pérdida de calidad visible, compresión máxima.",
-    "nvencCqSummary": "Menos = más calidad y archivos más grandes; 18–20 se ve como el original.",
+    "nvencCqHelp": "La calidad con la que se codifican los archivos cuando el objetivo VMAF está desactivado; con un objetivo, es donde empieza la búsqueda de cada título. Menor = más calidad y archivos más grandes. Ningún CQ sirve para todos los archivos: un remux de Blu-ray limpio a menudo se ve igual que el original con CQ 28–32, mientras que el grano y las versiones web ya comprimidas necesitan 20–24. <b>20–24</b> aguanta con cualquier fuente; los valores más altos ahorran más con las limpias. El objetivo VMAF mide cada título y encuentra su propio CQ.",
+    "nvencCqSummary": "Menos = más calidad y archivos más grandes. El CQ que se ve como el original depende de la fuente.",
     "cpuFallback": {
       "title": "Alternativa en CPU",
       "help": "Cuando un worker solo con CPU recoge un trabajo NVENC, usa estos ajustes de libx265 en lugar de traducir automáticamente el preajuste/CQ de NVENC. Déjalo en blanco para la traducción automática.",
@@ -147,13 +147,14 @@
     },
     "x265Nvdec": {
       "label": "Usar NVDEC para decodificar (modo mixto)",
-      "help": "Decodifica el origen en la GPU NVIDIA (NVDEC) y luego transfiere los fotogramas a la CPU para codificarlos con libx265. Compensa en CPU lentas con una GPU dedicada; en CPU modernas, el coste de la transferencia PCIe suele superar el ahorro. Si el códec de origen no es compatible, recurre en silencio a la decodificación por software. Desactivado por defecto."
+      "help": "Decodifica el origen en la GPU NVIDIA (NVDEC) y luego transfiere los fotogramas a la CPU para codificarlos con libx265. Compensa en CPU lentas con una GPU dedicada; en CPU modernas, el coste de la transferencia PCIe suele superar el ahorro. Si el códec de origen no es compatible, recurre en silencio a la decodificación por software. Desactivado por defecto.",
+      "summary": "Decodifica en la GPU NVIDIA y codifica en la CPU: solo ayuda a las CPU lentas."
     },
     "cpuPreset": "Preajuste de CPU",
     "cpuPresetHelp": "Controla la velocidad de codificación frente a la eficiencia de compresión. Los preajustes más lentos generan archivos más pequeños a la misma calidad. <b>medium:</b> equilibrio entre velocidad y calidad (recomendado). <b>slow/slower:</b> mejor compresión, bastante más lento. <b>fast/veryfast:</b> codificaciones rápidas, archivos más grandes.",
     "cpuPresetSummary": "Los presets más lentos dan archivos más pequeños con la misma calidad; medium es un buen equilibrio.",
     "crf": "Factor de tasa constante (CRF)",
-    "crfHelp": "Controla la calidad frente al tamaño del archivo. Menor = más calidad y archivos más grandes. CRF 18-20 suele ser transparente respecto al original.",
+    "crfHelp": "Controla la calidad frente al tamaño del archivo. Menor = más calidad y archivos más grandes. CRF 18–22 aguanta con cualquier fuente; un remux limpio a menudo se ve igual que el original con valores bastante más altos.",
     "qsvDecode": {
       "label": "Usar QSV para decodificar",
       "help": "Decodifica el origen en la iGPU Intel antes de que QSV lo codifique. Los fotogramas se quedan en el chip, sin coste de subida. Si el códec de origen no es compatible, recurre en silencio a la decodificación por software.",
@@ -164,8 +165,8 @@
     "qsvPresetHelp": "Profundidad de análisis del codificador. <b>Nota:</b> a diferencia de libx265, la curva de coste de los preajustes de QSV es casi plana: `slower` suele ser solo un ~10-20 % más lento que `medium`, con mejoras de calidad modestas. Lo que más influye en la calidad de QSV es la opción de look-ahead de abajo. <b>medium</b> sirve para la mayoría del hardware.",
     "qsvPresetSummary": "Cuánto analiza el codificador; medium va bien — el look-ahead importa más.",
     "qsvQuality": "Calidad de QSV (global_quality)",
-    "qsvQualityHelp": "Objetivo de calidad del modo ICQ de QSV. Menor = más calidad y archivos más grandes. <b>20-22</b> suele ser transparente; <b>23-26</b> da buena calidad con un ahorro notable. Equivalencia aproximada entre codificadores: CQ de QSV ≈ CQ de NVENC (±1) ≈ CRF de libx265 + 1.",
-    "qsvQualitySummary": "Menos = más calidad y archivos más grandes; 20–22 se ve como el original.",
+    "qsvQualityHelp": "Objetivo de calidad del modo ICQ de QSV. Menor = más calidad y archivos más grandes. <b>20–24</b> aguanta con cualquier fuente; un remux limpio a menudo se ve igual que el original con 28–32. Equivalencia aproximada entre codificadores: CQ de QSV ≈ CQ de NVENC (±1) ≈ CRF de libx265 + 1.",
+    "qsvQualitySummary": "Menos = más calidad y archivos más grandes. El valor que se ve como el original depende de la fuente.",
     "lookahead": {
       "label": "Control de tasa con look-ahead",
       "help": "Sacrifica un ~10–20 % de velocidad de codificación a cambio de una pequeña mejora visual en escenas de movimiento rápido. Útil si el hardware tiene rendimiento de sobra (Arc / 11.ª gen. o posterior); aporta poco en iGPU Intel antiguas.",
@@ -181,7 +182,7 @@
     "vaapiCompressionHelp": "Profundidad de análisis del driver, de 0 a 7. El significado varía según el driver (Mesa AMD o Intel iHD), pero los valores bajos generan siempre archivos más pequeños a costa de velocidad. <b>4</b> es un término medio razonable. En hardware Intel donde funcionan VAAPI y QSV, QSV suele dar mejor calidad por bit con un rendimiento similar; VAAPI es más útil en GPU AMD (donde QSV no es una opción).",
     "vaapiCompressionSummary": "Profundidad de análisis del controlador, 0–7: menos es más pequeño y más lento; 4 es un buen punto medio.",
     "vaapiQp": "Cuantizador de VAAPI (QP)",
-    "vaapiQpHelp": "Objetivo de cuantizador constante (CQP). Menor = más calidad y archivos más grandes. <b>20-22</b> suele ser transparente; <b>23-26</b> equilibra calidad y tamaño de forma sensata.",
+    "vaapiQpHelp": "Objetivo de cuantizador constante (CQP). Menor = más calidad y archivos más grandes. <b>20–24</b> aguanta con cualquier fuente; un remux limpio a menudo se ve igual que el original con valores más altos.",
     "videotoolboxDecode": {
       "label": "Usar VideoToolbox para decodificar",
       "help": "Decodifica las fuentes H.264 y HEVC en el motor multimedia del Mac antes de codificar. Otros códecs (MPEG-2, VC-1, …) pasan automáticamente a decodificación por software.",
@@ -263,10 +264,11 @@
         "bestPractical": "Lo mejor en la práctica",
         "diminishingReturns": "Beneficio decreciente",
         "overkill": "Excesiva",
-        "transparent": "Transparente",
         "excellent": "Excelente",
         "good": "Buena",
-        "noticeableLoss": "Pérdida apreciable"
+        "noticeableLoss": "Pérdida apreciable",
+        "anySource": "Como el original con cualquier fuente",
+        "cleanSources": "Como el original con fuentes limpias"
       },
       "nvencPresets": {
         "title": "Preajustes de NVENC (GPU)",
@@ -280,7 +282,7 @@
       },
       "cqCrf": {
         "title": "Entender CQ / CRF",
-        "desc": "CQ (NVENC) y CRF (libx265) controlan el objetivo de calidad. Menor = más calidad y archivos más grandes. El codificador asigna más bits a las escenas complejas y menos a las sencillas."
+        "desc": "CQ (NVENC) y CRF (libx265) controlan el objetivo de calidad. Menor = más calidad y archivos más grandes. El codificador asigna más bits a las escenas complejas y menos a las sencillas. Dónde un archivo se ve como el original depende de su fuente: un remux limpio aguanta valores mucho más altos que el grano o una versión web. El objetivo VMAF encuentra el de cada título."
       },
       "tipsTitle": "Consejos",
       "tips": {
@@ -298,16 +300,14 @@
       "current": {
         "x265": "Actual: libx265 {{preset}} / CRF {{crf}}",
         "nvenc": "Actual: NVENC {{preset}} / CQ {{cq}}",
-        "maxQuality": "Calidad máxima, compresión conservadora",
-        "highQuality": "Alta calidad, compresión moderada",
-        "greatQuality": "Muy buena calidad con buen ahorro de espacio",
-        "goodSolid": "Buena calidad, compresión sólida",
-        "goodAggressive": "Buena calidad, compresión agresiva",
-        "maxCompression": "Compresión máxima, con cierta pérdida de calidad",
         "videotoolbox": "Actual: VideoToolbox q:v {{q}}",
         "vtSavings": "normalmente {{savings}} más pequeño",
         "qsv": "Actual: QSV {{preset}} / Q {{q}}",
-        "vaapi": "Actual: VAAPI QP {{qp}} (nivel de compresión {{level}})"
+        "vaapi": "Actual: VAAPI QP {{qp}} (nivel de compresión {{level}})",
+        "overkill": "Más de lo que nadie puede ver; los archivos más grandes",
+        "anySource": "Se ve como el original con cualquier fuente",
+        "cleanSources": "Se ve como el original con fuentes limpias; el grano y las versiones web pueden perder calidad",
+        "noticeableLoss": "Pérdida apreciable en la mayoría de las fuentes"
       },
       "vtQuality": {
         "title": "Calidad de VideoToolbox (q:v)",
@@ -316,18 +316,20 @@
       },
       "qsv": {
         "title": "Intel Quick Sync (QSV)",
-        "desc": "Los preajustes van de veryfast a veryslow: los más lentos comprimen algo mejor a costa de velocidad. La calidad (global_quality) funciona como el CQ de NVENC: menor = más calidad y archivos más grandes; 20–22 suele ser transparente, 23–26 buena calidad con ahorro real. Aún no hay tablas medidas para QSV: haz una codificación de prueba desde «Añadir a la cola» para calibrar con tus propios archivos."
+        "desc": "Los preajustes van de veryfast a veryslow: los más lentos comprimen algo mejor a costa de velocidad. La calidad (global_quality) funciona como el CQ de NVENC: menor = más calidad y archivos más grandes; 20–24 aguanta con cualquier fuente, y un remux limpio a menudo se ve como el original con 28–32. Aún no hay tablas medidas para QSV: haz una codificación de prueba desde «Añadir a la cola» para calibrar con tus propios archivos."
       },
       "vaapi": {
         "title": "VAAPI (Intel / AMD)",
-        "desc": "QP es un cuantizador constante: menor = más calidad y archivos más grandes; 20–22 suele ser transparente, 23–26 equilibra calidad y tamaño de forma sensata. El nivel de compresión (0–7) es la profundidad de análisis del driver; un valor más bajo suele dar archivos más pequeños a costa de velocidad. En hardware Intel, QSV suele ser mejor opción. Aún no hay tablas medidas para VAAPI: haz una codificación de prueba para calibrar."
+        "desc": "QP es un cuantizador constante: menor = más calidad y archivos más grandes; 20–24 aguanta con cualquier fuente, y un remux limpio a menudo se ve como el original con valores más altos. El nivel de compresión (0–7) es la profundidad de análisis del driver; un valor más bajo suele dar archivos más pequeños a costa de velocidad. En hardware Intel, QSV suele ser mejor opción. Aún no hay tablas medidas para VAAPI: haz una codificación de prueba para calibrar."
       },
       "presets": {
         "title": "Ajustes de calidad",
         "desc": "Los ajustes que ofrecen el asistente de configuración y el panel de la cola. Solo cambian la calidad; el preset de velocidad se queda como lo pongas. El ahorro es el típico con fuentes H.264.",
         "descLearned": "Los ajustes que ofrecen el asistente de configuración y el panel de la cola. Solo cambian la calidad; el preset de velocidad se queda como lo pongas. El ahorro es el de archivos como los tuyos, aprendido de {{count}} de tus conversiones."
       }
-    }
+    },
+    "crfSummary": "Menos = más calidad y archivos más grandes. El CRF que se ve como el original depende de la fuente.",
+    "vaapiQpSummary": "Menos = más calidad y archivos más grandes. El valor que se ve como el original depende de la fuente."
   },
   "audio": {
     "title": "Ajustes de audio",
@@ -338,19 +340,23 @@
     "alwaysKeepHelp": "Las pistas de audio en estos idiomas se conservan por defecto. Puedes cambiarlo pista a pista en el editor de detalles del archivo.",
     "dedup": {
       "label": "Conservar solo la mejor pista de cada idioma que se conserva siempre",
-      "help": "Si un archivo tiene varias pistas en el mismo idioma que se conserva siempre (p. ej., EAC3 5.1 + AAC 2.0 + comentarios, todas en inglés), conserva por defecto solo la de mayor calidad (según canales y luego códec: TrueHD > FLAC/PCM > DTS-HD MA > DTS > EAC3 > AC3 > AAC). Desactívalo para conservar todas las pistas de esos idiomas; aun así puedes desmarcar pistas concretas en el editor de detalles del archivo."
+      "help": "Si un archivo tiene varias pistas en el mismo idioma que se conserva siempre (p. ej., EAC3 5.1 + AAC 2.0 + comentarios, todas en inglés), conserva por defecto solo la de mayor calidad (según canales y luego códec: TrueHD > FLAC/PCM > DTS-HD MA > DTS > EAC3 > AC3 > AAC). Desactívalo para conservar todas las pistas de esos idiomas; aun así puedes desmarcar pistas concretas en el editor de detalles del archivo.",
+      "summary": "Por canales y luego por códec (TrueHD primero, AAC el último); desactivado los conserva todos."
     },
     "keepNative": {
       "label": "Conservar automáticamente las pistas de audio en el idioma original",
-      "help": "Conserva automáticamente las pistas de audio que coinciden con el idioma original detectado de cada archivo. Desactívalo si solo quieres conservar pistas dobladas o de los idiomas indicados. (Los subtítulos tienen su propia opción en la sección Subtítulos, desactivada por defecto.)"
+      "help": "Conserva automáticamente las pistas de audio que coinciden con el idioma original detectado de cada archivo. Desactívalo si solo quieres conservar pistas dobladas o de los idiomas indicados. (Los subtítulos tienen su propia opción en la sección Subtítulos, desactivada por defecto.)",
+      "summary": "Aunque no esté en la lista de arriba; desactivado conserva solo los idiomas de la lista."
     },
     "reorderNative": {
       "label": "Mover el idioma original a la primera pista de audio",
-      "help": "Durante la conversión o la limpieza de audio, mueve las pistas de audio en el idioma original a la primera posición para que sean la pista de reproducción predeterminada. Los archivos en los que el idioma original no vaya primero se marcarán para limpieza de audio."
+      "help": "Durante la conversión o la limpieza de audio, mueve las pistas de audio en el idioma original a la primera posición para que sean la pista de reproducción predeterminada. Los archivos en los que el idioma original no vaya primero se marcarán para limpieza de audio.",
+      "summary": "Para que los reproductores lo elijan; los archivos donde no va primero se marcan para limpieza de audio."
     },
     "autoDetect": {
       "label": "Detectar automáticamente el idioma de las pistas desconocidas antes de convertir",
-      "help": "Antes de convertir o limpiar el audio, ejecuta la detección de idioma en las pistas de audio y de subtítulos de texto \"und\"/desconocidas para que las reglas de conservar/eliminar usen idiomas reales. También puedes ejecutar la detección manualmente en cada archivo desde su vista de detalles."
+      "help": "Antes de convertir o limpiar el audio, ejecuta la detección de idioma en las pistas de audio y de subtítulos de texto \"und\"/desconocidas para que las reglas de conservar/eliminar usen idiomas reales. También puedes ejecutar la detección manualmente en cada archivo desde su vista de detalles.",
+      "summary": "Las pistas marcadas «und» reciben un idioma real, para que conservar y eliminar se apliquen a ellas."
     },
     "model": {
       "label": "Modelo de detección de audio",
@@ -359,7 +365,8 @@
       "small": "Small — mejor precisión, ~460 MB, más lento",
       "medium": "Medium — mayor precisión, ~1.5 GB, GPU recomendada",
       "large-v3": "Large-v3 — la mejor precisión (incl. idiomas con pocos recursos), ~3 GB, GPU muy recomendada",
-      "help": "Modelo de faster-whisper para identificar el idioma hablado. Los más grandes son más precisos con voz que no está en inglés, a costa de tamaño de descarga, RAM y velocidad. Medium/Large-v3 solo son prácticos con una GPU NVIDIA (la imagen :nvenc). Se descarga la primera vez que se usa; se aplica en la siguiente detección (sin reiniciar)."
+      "help": "Modelo de faster-whisper para identificar el idioma hablado. Los más grandes son más precisos con voz que no está en inglés, a costa de tamaño de descarga, RAM y velocidad. Medium/Large-v3 solo son prácticos con una GPU NVIDIA (la imagen :nvenc). Se descarga la primera vez que se usa; se aplica en la siguiente detección (sin reiniciar).",
+      "summary": "Los modelos más grandes aciertan más, pero necesitan más memoria y tiempo."
     },
     "audioConfidence": "Confianza de audio",
     "subtitleConfidence": "Confianza de subtítulos",
@@ -368,7 +375,8 @@
       "title": "Conversión de audio",
       "codec": "Códec de audio",
       "bitrate": "Tasa de bits de audio",
-      "bitrateHelp": "Mayor tasa de bits = mejor calidad de audio y archivos más grandes. <b>128 kbps:</b> buena para estéreo. <b>256 kbps:</b> buena para sonido envolvente 5.1. <b>384-640 kbps:</b> envolvente de alta calidad."
+      "bitrateHelp": "Mayor tasa de bits = mejor calidad de audio y archivos más grandes. <b>128 kbps:</b> buena para estéreo. <b>256 kbps:</b> buena para sonido envolvente 5.1. <b>384-640 kbps:</b> envolvente de alta calidad.",
+      "bitrateSummary": "Más alto = mejor audio y archivos más grandes; 256 kbps basta para 5.1."
     },
     "lossless": {
       "label": "Convertir automáticamente el audio sin pérdida",
@@ -377,7 +385,8 @@
       "targetBitrate": "Tasa de bits de destino",
       "keepObjects": "Mantener sin pérdida las pistas Atmos y DTS:X",
       "keepObjectsHelp": "Al convertirlas se conservan los canales 5.1 / 7.1, pero se pierde la información de altura y de objetos. Activado de forma predeterminada; desactívalo para convertirlas también.",
-      "convertDts": "Convertir también DTS con pérdida"
+      "convertDts": "Convertir también DTS con pérdida",
+      "summary": "TrueHD, DTS-HD MA, FLAC y PCM pasan a un códec más pequeño; las pistas con pérdida se quedan."
     },
     "guide": {
       "title": "Guía de audio",
@@ -449,8 +458,10 @@
       "help": "Conserva el audio original y añade una pista estéreo creada a partir de él, para que los televisores, móviles y navegadores que no reproducen envolvente ni DTS / TrueHD lo reproduzcan directamente en lugar de transcodificar. Solo cuando la pista principal es envolvente y aún no hay una pista estéreo en su idioma.",
       "codec": "Códec",
       "bitrate": "Tasa de bits",
-      "loudnorm": "Igualar el volumen (EBU R128): diálogos bajos y efectos fuertes más parejos"
-    }
+      "loudnorm": "Igualar el volumen (EBU R128): diálogos bajos y efectos fuertes más parejos",
+      "summary": "Para televisores, móviles y navegadores que no reproducen envolvente; el original se queda."
+    },
+    "confidenceSummary": "Lo segura que debe ser una detección para etiquetar una pista."
   },
   "subtitles": {
     "title": "Subtítulos",
@@ -465,25 +476,30 @@
     },
     "keepNative": {
       "label": "Conservar automáticamente los subtítulos en el idioma original",
-      "help": "Conserva las pistas de subtítulos cuyo idioma coincide con el idioma original detectado del archivo, aunque no esté en la lista de arriba. <b>Desactivado</b> por defecto: en la mayoría de los casos, los subtítulos en el idioma original sobre un audio en el mismo idioma sobran. Actívalo si los quieres para personas con discapacidad auditiva (SDH)."
+      "help": "Conserva las pistas de subtítulos cuyo idioma coincide con el idioma original detectado del archivo, aunque no esté en la lista de arriba. <b>Desactivado</b> por defecto: en la mayoría de los casos, los subtítulos en el idioma original sobre un audio en el mismo idioma sobran. Actívalo si los quieres para personas con discapacidad auditiva (SDH).",
+      "summary": "Aunque no esté en la lista de arriba; útil para subtítulos para sordos (SDH)."
     },
     "autoDetect": {
       "label": "Detectar automáticamente el idioma de las pistas desconocidas antes de convertir",
-      "help": "Antes de convertir o limpiar los subtítulos, ejecuta la detección de idioma en las pistas de audio y de subtítulos de texto \"und\"/desconocidas para que las reglas de conservar/eliminar usen idiomas reales. Es el mismo ajuste que en la sección Audio. También puedes ejecutar la detección manualmente en cada archivo desde su vista de detalles."
+      "help": "Antes de convertir o limpiar los subtítulos, ejecuta la detección de idioma en las pistas de audio y de subtítulos de texto \"und\"/desconocidas para que las reglas de conservar/eliminar usen idiomas reales. Es el mismo ajuste que en la sección Audio. También puedes ejecutar la detección manualmente en cada archivo desde su vista de detalles.",
+      "summary": "Las pistas marcadas «und» reciben un idioma real; es el mismo ajuste que en Audio."
     },
     "external": {
       "title": "Subtítulos externos",
       "merge": "Integrar los subtítulos externos en el vídeo",
       "mergeHelp": "Durante la conversión o el remux, incrusta en el contenedor MKV los archivos .srt, .ass, .ssa, .sub y .vtt externos que estén junto al vídeo. El idioma se detecta a partir del nombre del archivo (p. ej., <code>.eng.srt</code>, <code>.en.forced.srt</code>).",
       "deleteAfter": "Eliminar los archivos de subtítulos externos tras integrarlos",
-      "deleteWarning": "Los archivos .srt/.ass originales se eliminarán permanentemente tras una integración correcta."
+      "deleteWarning": "Los archivos .srt/.ass originales se eliminarán permanentemente tras una integración correcta.",
+      "mergeSummary": "Archivos como Película.spa.srt junto al vídeo entran en el MKV, con el idioma de su nombre."
     },
     "imageSubs": {
       "title": "Subtítulos de imagen",
       "toSrt": "Convertir los subtítulos de imagen en texto (SRT)",
       "toSrtHelp": "Los subtítulos PGS (Blu-ray) y VobSub (DVD) obligan a muchos reproductores a transcodificar para incrustarlos. Al convertir o limpiar un archivo, los subtítulos de imagen que conserva se leen con OCR y se añaden como pistas SRT en el mismo idioma (con el título «OCR»), salvo que ya tenga una pista de texto en ese idioma. La lectura tarda unos minutos por pista y no es perfecta. Cada idioma necesita su paquete de idioma de OCR (la imagen incluye los habituales).",
-      "keepOriginal": "Conservar también los subtítulos de imagen"
-    }
+      "keepOriginal": "Conservar también los subtítulos de imagen",
+      "toSrtSummary": "Los subtítulos de Blu-ray y DVD se leen con OCR en pistas SRT, para que los reproductores no transcodifiquen."
+    },
+    "keepSummary": "Se conservan los subtítulos en estos idiomas; el resto se elimina."
   },
   "options": {
     "presets": {

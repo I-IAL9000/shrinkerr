@@ -117,6 +117,15 @@ const VT_GUIDE_ROWS: [string, string, string][] = [
   ["70+", "overkill", "≤ 0%"],
 ];
 const sectionStyle = { background: "var(--bg-card)", padding: 20, borderRadius: 6, marginBottom: 12 };
+// What a CQ looks like, as the guide's CQ / CRF table says (v0.10.0): it
+// depends on the source, not on the preset — a clean remux holds up far
+// higher than grain or a web release. A guide.current key.
+function guideQualityBand(cq: number): string {
+  if (cq <= 18) return "overkill";
+  if (cq <= 24) return "anySource";
+  if (cq <= 32) return "cleanSources";
+  return "noticeableLoss";
+}
 
 
 export default function SettingsPage({ themePref, onThemeChange }: { themePref: ThemePref; onThemeChange: (pref: ThemePref) => void }) {
@@ -575,14 +584,19 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
       const root = pageRef.current;
       if (!root || !needle) return;
       const norm = (el: Element) => (el.textContent || "").replace(/\s+/g, " ").toLowerCase();
+      // Visible, or a setting's full help behind its More (SettingHelp).
       const hits = [...root.querySelectorAll<HTMLElement>("h2, h3, h4, label, span, div, p, summary, button")]
-        .filter(el => el.offsetParent !== null && norm(el).includes(needle));
+        .filter(el => (el.offsetParent !== null || el.closest("[data-setting-help-more]")) && norm(el).includes(needle));
       // The innermost element holding the text.
       const el = hits.find(h => !hits.some(o => o !== h && h.contains(o)));
       if (!el) { window.scrollTo({ top: 0 }); return; }
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      el.classList.add("settings-highlight");
-      setTimeout(() => el.classList.remove("settings-highlight"), 2000);
+      const more = el.closest<HTMLElement>("[data-setting-help-more]");
+      if (more?.hidden) more.parentElement?.querySelector<HTMLElement>("[data-setting-help-toggle]")?.click();
+      setTimeout(() => {  // after More has opened
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("settings-highlight");
+        setTimeout(() => el.classList.remove("settings-highlight"), 2000);
+      }, 0);
     }, 80);
   };
 
@@ -1127,14 +1141,14 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             style={{ accentColor: "var(--accent)" }} />
                           <span style={checkboxLabelStyle}>{t("settingsMedia:video.x265Nvdec.label")}</span>
                         </label>
-                        <div style={{ ...helpStyle, marginTop: 6 }}>
+                        <SettingHelp style={{ ...helpStyle, marginTop: 6 }} summary={t("settingsMedia:video.x265Nvdec.summary")}>
                           {t("settingsMedia:video.x265Nvdec.help")}
-                          {!encoderCaps?.nvdec_available && (
-                            <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
-                              {t("settingsMedia:video.nvdec.notDetected")}
-                            </span>
-                          )}
-                        </div>
+                        </SettingHelp>
+                        {!encoderCaps?.nvdec_available && (
+                          <span style={{ color: "var(--warning)", display: "block", marginTop: 4, fontSize: 12 }}>
+                            {t("settingsMedia:video.nvdec.notDetected")}
+                          </span>
+                        )}
                       </div>
 
                       {/* libx265 Preset */}
@@ -1173,9 +1187,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
                           <span>{t("settingsMedia:video.scale.highestQuality", { value: 15 })}</span><span>20</span><span>24</span><span>{t("settingsMedia:video.scale.smallestFile", { value: 28 })}</span>
                         </div>
-                        <div style={helpStyle}>
+                        <SettingHelp style={helpStyle} summary={t("settingsMedia:video.crfSummary")}>
                           {t("settingsMedia:video.crfHelp")}
-                        </div>
+                        </SettingHelp>
                       </div>
 
                       {/* GPU fallback for libx265 jobs picked up by NVENC workers */}
@@ -1355,9 +1369,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
                           <span>{t("settingsMedia:video.scale.highestQuality", { value: 15 })}</span><span>22</span><span>26</span><span>{t("settingsMedia:video.scale.smallestFile", { value: 32 })}</span>
                         </div>
-                        <div style={helpStyle}>
+                        <SettingHelp style={helpStyle} summary={t("settingsMedia:video.vaapiQpSummary")}>
                           <Trans i18nKey="settingsMedia:video.vaapiQpHelp" components={{ b: <strong /> }} />
-                        </div>
+                        </SettingHelp>
                       </div>
                     </>
                   )}
@@ -1719,12 +1733,14 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       title: t("settingsMedia:video.guide.cqCrf.title"),
                       desc: t("settingsMedia:video.guide.cqCrf.desc"),
                       cols: ["CQ/CRF", t("settingsMedia:video.guide.cols.quality"), t("settingsMedia:video.guide.cols.savings")],
+                      // Which CQ looks like the original depends on the source: the
+                      // maintainer's clean Blu-ray remuxes scored VMAF 93–98 at CQ
+                      // 27–31.5, web episodes 70–86 at CQ 36 (31 Oct 2026).
                       rows: [
                         ["15-18", t("settingsMedia:video.guide.cells.overkill"), "25-35%"],
-                        ["19-20", t("settingsMedia:video.guide.cells.transparent"), "~45%"],
-                        ["21-23", t("settingsMedia:video.guide.cells.excellent"), "50-55%"],
-                        ["24-26", t("settingsMedia:video.guide.cells.good"), "60-70%"],
-                        ["27-30", t("settingsMedia:video.guide.cells.noticeableLoss"), "75%+"],
+                        ["19-24", t("settingsMedia:video.guide.cells.anySource"), "45-65%"],
+                        ["25-32", t("settingsMedia:video.guide.cells.cleanSources"), "65-90%"],
+                        ["33+", t("settingsMedia:video.guide.cells.noticeableLoss"), "85%+"],
                       ],
                     },
                     // ── Apple VideoToolbox ─────────────────────────────────
@@ -1852,18 +1868,8 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       if (isCpu) {
                         const preset: string = encoding.libx265_preset || "medium";
                         const crf: number = encoding.libx265_crf ?? 20;
-                        const presetRank: Record<string, number> = {
-                          ultrafast: 1, superfast: 2, veryfast: 3, faster: 4,
-                          fast: 5, medium: 6, slow: 7, slower: 8, veryslow: 9,
-                        };
-                        const r = presetRank[preset] ?? 6;
-                        let desc: string;
-                        if (crf <= 20 && r >= 7) desc = "maxQuality";
-                        else if (crf <= 20) desc = "highQuality";
-                        else if (crf <= 23 && r >= 5) desc = "greatQuality";
-                        else if (crf <= 23) desc = "goodSolid";
-                        else if (crf <= 26) desc = "goodAggressive";
-                        else desc = "maxCompression";
+                        // The CQ / CRF table's bands (libx265's CRF runs about 2 under CQ).
+                        const desc = guideQualityBand(crf + 2);
                         return (
                           <>
                             <strong style={{ color: "var(--success)" }}>
@@ -1875,14 +1881,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       }
                       const preset: string = encoding.nvenc_preset || "p6";
                       const cq: number = encoding.nvenc_cq || 20;
-                      const p = parseInt(preset.replace("p", ""));
-                      let desc: string;
-                      if (cq <= 20 && p >= 6) desc = "maxQuality";
-                      else if (cq <= 20) desc = "highQuality";
-                      else if (cq <= 23 && p >= 5) desc = "greatQuality";
-                      else if (cq <= 23) desc = "goodSolid";
-                      else if (cq <= 26) desc = "goodAggressive";
-                      else desc = "maxCompression";
+                      const desc = guideQualityBand(cq);
                       return (
                         <>
                           <strong style={{ color: "var(--success)" }}>
@@ -1982,9 +1981,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       style={{ flexShrink: 0 }} />
                     <span style={checkboxLabelStyle}>{t("settingsMedia:audio.dedup.label")}</span>
                   </label>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
+                  <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }} summary={t("settingsMedia:audio.dedup.summary")}>
                     {t("settingsMedia:audio.dedup.help")}
-                  </div>
+                  </SettingHelp>
 
                   {/* Keep native language */}
                   <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
@@ -1993,9 +1992,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       style={{ flexShrink: 0 }} />
                     <span style={checkboxLabelStyle}>{t("settingsMedia:audio.keepNative.label")}</span>
                   </label>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
+                  <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }} summary={t("settingsMedia:audio.keepNative.summary")}>
                     {t("settingsMedia:audio.keepNative.help")}
-                  </div>
+                  </SettingHelp>
 
                   </>)}
 
@@ -2006,9 +2005,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       style={{ flexShrink: 0 }} />
                     <span style={checkboxLabelStyle}>{t("settingsMedia:audio.reorderNative.label")}</span>
                   </label>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
+                  <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }} summary={t("settingsMedia:audio.reorderNative.summary")}>
                     {t("settingsMedia:audio.reorderNative.help")}
-                  </div>
+                  </SettingHelp>
 
                   {/* v0.8.0: auto-detect languages for und tracks */}
                   <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
@@ -2017,9 +2016,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       style={{ flexShrink: 0 }} />
                     <span style={checkboxLabelStyle}>{t("settingsMedia:audio.autoDetect.label")}</span>
                   </label>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
+                  <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }} summary={t("settingsMedia:audio.autoDetect.summary")}>
                     {t("settingsMedia:audio.autoDetect.help")}
-                  </div>
+                  </SettingHelp>
 
                   {/* v0.9.18: language-detection tuning (model + confidence gates) */}
                   <div style={{ marginTop: 14 }}>
@@ -2031,9 +2030,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         <option key={m} value={m}>{t(`settingsMedia:audio.model.${m}`)}</option>
                       ))}
                     </select>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                    <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }} summary={t("settingsMedia:audio.model.summary")}>
                       {t("settingsMedia:audio.model.help")}
-                    </div>
+                    </SettingHelp>
                   </div>
                   <div style={{ marginTop: 12, display: "flex", gap: 16 }}>
                     <div style={{ flex: 1 }}>
@@ -2051,9 +2050,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         style={{ ...inputStyle, width: "100%" }} />
                     </div>
                   </div>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                  <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }} summary={t("settingsMedia:audio.confidenceSummary")}>
                     <Trans i18nKey="settingsMedia:audio.confidenceHelp" components={{ code: <code /> }} />
-                  </div>
+                  </SettingHelp>
 
                   {/* Audio Conversion */}
                   <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
@@ -2087,9 +2086,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
                             <span>64 kbps</span><span>128</span><span>256</span><span>384</span><span>640 kbps</span>
                           </div>
-                          <div style={helpStyle}>
+                          <SettingHelp style={helpStyle} summary={t("settingsMedia:audio.conversion.bitrateSummary")}>
                             <Trans i18nKey="settingsMedia:audio.conversion.bitrateHelp" components={{ b: <strong /> }} />
-                          </div>
+                          </SettingHelp>
                         </div>
                       </>
                     )}
@@ -2103,9 +2102,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           style={{ flexShrink: 0 }} />
                         <span style={checkboxLabelStyle}>{t("settingsMedia:audio.lossless.label")}</span>
                       </label>
-                      <div style={{ ...helpStyle, paddingLeft: 26 }}>
+                      <SettingHelp style={{ ...helpStyle, paddingLeft: 26 }} summary={t("settingsMedia:audio.lossless.summary")}>
                         {t("settingsMedia:audio.lossless.help")}
-                      </div>
+                      </SettingHelp>
 
                       {encoding.auto_convert_lossless && (
                         <div style={{ paddingLeft: 26, marginTop: 12, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -2161,7 +2160,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           style={{ flexShrink: 0 }} />
                         <span style={checkboxLabelStyle}>{t("settingsMedia:audio.compat.label")}</span>
                       </label>
-                      <div style={{ ...helpStyle, paddingLeft: 26 }}>{t("settingsMedia:audio.compat.help")}</div>
+                      <SettingHelp style={{ ...helpStyle, paddingLeft: 26 }} summary={t("settingsMedia:audio.compat.summary")}>{t("settingsMedia:audio.compat.help")}</SettingHelp>
                       {encoding.audio_compat_track && (
                         <div style={{ paddingLeft: 26, marginTop: 10, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
                           <select aria-label={t("settingsMedia:audio.compat.codec")} value={encoding.audio_compat_codec || "aac"}
@@ -2355,9 +2354,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         </div>
                       )}
                     </div>
-                    <div style={helpStyle}>
+                    <SettingHelp style={helpStyle} summary={t("settingsMedia:subtitles.keepSummary")}>
                       {t("settingsMedia:subtitles.keepHelp")}
-                    </div>
+                    </SettingHelp>
                   </div>
 
                   {/* Keep Unknown Subs */}
@@ -2379,9 +2378,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       style={{ flexShrink: 0 }} />
                     <span style={checkboxLabelStyle}>{t("settingsMedia:subtitles.keepNative.label")}</span>
                   </label>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: -14, paddingLeft: 26 }}>
+                  <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginTop: -14, paddingLeft: 26 }} summary={t("settingsMedia:subtitles.keepNative.summary")}>
                     <Trans i18nKey="settingsMedia:subtitles.keepNative.help" components={{ b: <strong /> }} />
-                  </div>
+                  </SettingHelp>
 
                   {/* v0.8.2: same auto-detect-languages toggle as audio section (shared setting) */}
                   <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
@@ -2390,9 +2389,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       style={{ flexShrink: 0 }} />
                     <span style={checkboxLabelStyle}>{t("settingsMedia:subtitles.autoDetect.label")}</span>
                   </label>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
+                  <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }} summary={t("settingsMedia:subtitles.autoDetect.summary")}>
                     {t("settingsMedia:subtitles.autoDetect.help")}
-                  </div>
+                  </SettingHelp>
 
                 </div>
                 )}
@@ -2406,9 +2405,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       style={{ flexShrink: 0 }} />
                     <span style={checkboxLabelStyle}>{t("settingsMedia:subtitles.external.merge")}</span>
                   </label>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: -4, paddingLeft: 26, marginBottom: 12 }}>
+                  <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginTop: -4, paddingLeft: 26, marginBottom: 12 }} summary={t("settingsMedia:subtitles.external.mergeSummary")}>
                     <Trans i18nKey="settingsMedia:subtitles.external.mergeHelp" components={{ code: <code /> }} />
-                  </div>
+                  </SettingHelp>
 
                   {(encoding.merge_external_subs ?? false) && (
                     <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 8 }}>
@@ -2434,9 +2433,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       style={{ flexShrink: 0 }} />
                     <span style={checkboxLabelStyle}>{t("settingsMedia:subtitles.imageSubs.toSrt")}</span>
                   </label>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: -4, paddingLeft: 26, marginBottom: 12 }}>
+                  <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginTop: -4, paddingLeft: 26, marginBottom: 12 }} summary={t("settingsMedia:subtitles.imageSubs.toSrtSummary")}>
                     {t("settingsMedia:subtitles.imageSubs.toSrtHelp")}
-                  </div>
+                  </SettingHelp>
                   {(encoding.image_subs_to_srt ?? false) && (
                     <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 8 }}>
                       <input type="checkbox" checked={encoding.image_subs_keep_original ?? true}
@@ -2504,9 +2503,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     )}
                   </>
                 ) : (
-                  <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
+                  <SettingHelp style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }} summary={t("settingsIntegrations:tmdb.introSummary")}>
                     {t("settingsIntegrations:tmdb.intro")}
-                  </div>
+                  </SettingHelp>
                 )}
 
                 {/* TMDB API Key */}
@@ -2600,9 +2599,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
               {/* Plex */}
               <div style={sectionStyle}>
                 <h3 style={{ color: "white", marginBottom: 4 }}>Plex</h3>
-                <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
+                <SettingHelp style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }} summary={t("settingsIntegrations:plex.introSummary")}>
                   {t("settingsIntegrations:plex.intro")}
-                </div>
+                </SettingHelp>
 
                 {/* ── Connected state: show current connection + disconnect ────── */}
                 {plexConn.connected && plexAuthState !== "picking-server" && (
@@ -2898,17 +2897,17 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     style={{ flexShrink: 0 }} />
                   <span style={checkboxLabelStyle}>{t("settingsIntegrations:plex.prioritizeUnwatched")}</span>
                 </label>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
+                <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }} summary={t("settingsIntegrations:plex.prioritizeUnwatchedSummary")}>
                   {t("settingsIntegrations:plex.prioritizeUnwatchedHelp")}
-                </div>
+                </SettingHelp>
               </div>
 
               {/* Jellyfin */}
               <div style={sectionStyle}>
                 <h3 style={{ color: "white", marginBottom: 4 }}>Jellyfin</h3>
-                <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
+                <SettingHelp style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }} summary={t("settingsIntegrations:jellyfin.introSummary")}>
                   {t("settingsIntegrations:jellyfin.intro")}
-                </div>
+                </SettingHelp>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
                   <div>
                     <div style={labelStyle}>{t("settingsIntegrations:jellyfin.url")}</div>
@@ -2972,9 +2971,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
               {/* Emby */}
               <div style={sectionStyle}>
                 <h3 style={{ color: "white", marginBottom: 4 }}>Emby</h3>
-                <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
+                <SettingHelp style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }} summary={t("settingsIntegrations:emby.introSummary")}>
                   {t("settingsIntegrations:emby.intro")}
-                </div>
+                </SettingHelp>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
                   <div>
                     <div style={labelStyle}>{t("settingsIntegrations:emby.url")}</div>
@@ -3135,7 +3134,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 {/* Bazarr (v0.10.0): rescanned after Shrinkerr rewrites a file */}
                 <div style={{ marginTop: 16, padding: 14, background: "var(--bg-primary)", borderRadius: 4 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "white" }}>Bazarr</div>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 8px" }}>{t("settingsIntegrations:bazarr.intro")}</div>
+                  <SettingHelp style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 8px" }} summary={t("settingsIntegrations:bazarr.introSummary")}>{t("settingsIntegrations:bazarr.intro")}</SettingHelp>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                     <input style={{ ...inputStyle, flex: "1 1 220px" }} aria-label={t("settingsIntegrations:bazarr.url")}
                       placeholder="http://bazarr:6767"
@@ -3186,7 +3185,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 {/* Home Assistant over MQTT (v0.10.0): sensors + a queue switch by discovery */}
                 <div style={{ marginTop: 16, padding: 14, background: "var(--bg-primary)", borderRadius: 4 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "white" }}>Home Assistant (MQTT)</div>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 8px" }}>{t("settingsIntegrations:mqtt.intro")}</div>
+                  <SettingHelp style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 8px" }} summary={t("settingsIntegrations:mqtt.introSummary")}>{t("settingsIntegrations:mqtt.intro")}</SettingHelp>
                   <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 8 }}>
                     <input type="checkbox" checked={!!encoding?.mqtt_enabled}
                       onChange={e => setEncoding({ ...encoding, mqtt_enabled: e.target.checked })} />
@@ -3242,7 +3241,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 {/* Connect → Webhook (v0.10.0): queue each import, for torrent setups */}
                 <div style={{ marginTop: 16, padding: 14, background: "var(--bg-primary)", borderRadius: 4 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "white" }}>{t("settingsIntegrations:arr.connect.title")}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 8px" }}>{t("settingsIntegrations:arr.connect.intro")}</div>
+                  <SettingHelp style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 8px" }} summary={t("settingsIntegrations:arr.connect.introSummary")}>{t("settingsIntegrations:arr.connect.intro")}</SettingHelp>
                   <ol style={{ fontSize: 12, color: "var(--text-secondary)", paddingLeft: 18, lineHeight: 1.8, margin: 0 }}>
                     <li>{t("settingsIntegrations:arr.connect.step1")}</li>
                     <li>
@@ -3266,9 +3265,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <h3 style={{ color: "white", margin: 0 }}>NZBGet / SABnzbd</h3>
                 </div>
-                <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
+                <SettingHelp style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }} summary={t("settingsIntegrations:downloaders.introSummary")}>
                   {t("settingsIntegrations:downloaders.intro")}
-                </div>
+                </SettingHelp>
 
                 {/* Tags */}
                 <div style={{ marginBottom: 16 }}>
@@ -3486,9 +3485,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     style={{ flexShrink: 0 }} />
                   <span style={checkboxLabelStyle}>{t("settingsSystem:automation.autoQueue.newFiles")}</span>
                 </label>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26, marginBottom: 16 }}>
+                <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26, marginBottom: 16 }} summary={t("settingsSystem:automation.autoQueue.newFilesSummary")}>
                   {t("settingsSystem:automation.autoQueue.newFilesHelp")}
-                </div>
+                </SettingHelp>
 
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, marginBottom: 16,
                               opacity: encoding?.auto_queue_new ? 1 : 0.5 }}>
@@ -3548,9 +3547,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         onChange={e => setEncoding({ ...encoding, max_bitrate_mbps: e.target.value })} />
                     </div>
                   </div>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.6 }}>
+                  <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.6 }} summary={t("settingsSystem:automation.filters.summary")}>
                     {t("settingsSystem:automation.filters.help")}
-                  </div>
+                  </SettingHelp>
                   {/* v0.10.0: hardlink-aware */}
                   <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginTop: 12 }}>
                     <input type="checkbox" checked={encoding?.skip_hardlinked ?? true}
@@ -3558,9 +3557,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       style={{ flexShrink: 0 }} />
                     <span style={checkboxLabelStyle}>{t("settingsSystem:automation.filters.skipHardlinked")}</span>
                   </label>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26, lineHeight: 1.6 }}>
+                  <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26, lineHeight: 1.6 }} summary={t("settingsSystem:automation.filters.skipHardlinkedSummary")}>
                     {t("settingsSystem:automation.filters.skipHardlinkedHelp")}
-                  </div>
+                  </SettingHelp>
                   {/* v0.10.0: give Bazarr time to add subtitles before an import is converted */}
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
                     <span style={labelStyle}>{t("settingsSystem:automation.filters.importDelay")}</span>
@@ -3570,9 +3569,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       onChange={e => setEncoding({ ...encoding, import_delay_minutes: Math.max(0, parseInt(e.target.value) || 0) })} />
                     <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("settingsSystem:automation.filters.minutes")}</span>
                   </div>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, lineHeight: 1.6 }}>
+                  <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, lineHeight: 1.6 }} summary={t("settingsSystem:automation.filters.importDelaySummary")}>
                     {t("settingsSystem:automation.filters.importDelayHelp")}
-                  </div>
+                  </SettingHelp>
                 </div>
 
                 {/* Output Filename */}
@@ -3610,9 +3609,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       style={{ flexShrink: 0 }} />
                     <span style={checkboxLabelStyle}>{t("settingsSystem:automation.originals.review")}</span>
                   </label>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26, lineHeight: 1.6 }}>
+                  <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26, lineHeight: 1.6 }} summary={t("settingsSystem:automation.originals.reviewSummary")}>
                     {t("settingsSystem:automation.originals.reviewHelp")}
-                  </div>
+                  </SettingHelp>
                 </div>
                 {/* One choice instead of a trash toggle and a days field where the
                     backup silently won (v0.10.0). Same settings underneath:
@@ -3671,12 +3670,13 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   onSelect={(path) => { setEncoding({ ...encoding, backup_folder: path }); setBackupBrowserOpen(false); }}
                   onCancel={() => setBackupBrowserOpen(false)}
                 />
-                <div style={{ fontSize: 11, color: "var(--text-muted)", paddingLeft: 26, marginBottom: 6 }}>
+                <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", paddingLeft: 26, marginBottom: 6 }}
+                  summary={t("settingsSystem:automation.originals.summary")}>
                   <Trans
                     i18nKey="settingsSystem:automation.originals.help"
                     components={{ code: <code style={{ fontSize: 10, padding: "1px 4px", background: "var(--bg-primary)", borderRadius: 2 }} />, b: <strong /> }}
                   />
-                </div>
+                </SettingHelp>
                 </>)}
                 <div style={{ paddingLeft: 26, marginBottom: 16 }}>
                   <button
@@ -3723,9 +3723,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     style={{ flexShrink: 0 }} />
                   <span style={checkboxLabelStyle}>{t("settingsSystem:automation.stability.delay")}</span>
                 </label>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
+                <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }} summary={t("settingsSystem:automation.stability.delaySummary")}>
                   {t("settingsSystem:automation.stability.delayHelp")}
-                </div>
+                </SettingHelp>
                 {encoding?.skip_files_newer_enabled && (
                   <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 26, marginTop: 8 }}>
                     <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("settingsSystem:automation.stability.delayNewerThan")}</span>
@@ -3753,9 +3753,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <option value="thorough">{t("settingsSystem:automation.health.thorough")}</option>
                   </select>
                 </div>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 0, marginBottom: 8 }}>
+                <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 0, marginBottom: 8 }} summary={t("settingsSystem:automation.health.afterScanSummary")}>
                   <Trans i18nKey="settingsSystem:automation.health.afterScanHelp" components={{ b: <strong /> }} />
-                </div>
+                </SettingHelp>
                 <div style={{ marginBottom: 14, paddingLeft: 0 }}>
                   <button
                     className="btn btn-xs btn-danger btn-secondary"
@@ -3778,9 +3778,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <option value="thorough">{t("settingsSystem:automation.health.thorough")}</option>
                   </select>
                 </div>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 0, marginBottom: 12 }}>
+                <SettingHelp style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 0, marginBottom: 12 }} summary={t("settingsSystem:automation.health.afterConversionSummary")}>
                   <Trans i18nKey="settingsSystem:automation.health.afterConversionHelp" components={{ b: <strong /> }} />
-                </div>
+                </SettingHelp>
 
                 {/* Advanced */}
                 <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8, marginBottom: 16 }}>
@@ -3941,10 +3941,11 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     >{t("settingsIntegrations:rules.addRule")}</button>
                   </div>
                 </div>
-                <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14, lineHeight: 1.6 }}>
+                <SettingHelp style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14, lineHeight: 1.6 }}
+                  summary={t("settingsIntegrations:rules.introSummary")}>
                   {t("settingsIntegrations:rules.intro")}
                   {encoding?.plex_configured && <span> <Trans i18nKey="settingsIntegrations:rules.introPlex" components={{ b: <b /> }} /></span>}
-                </div>
+                </SettingHelp>
 
                 {/* Rule list */}
                 {rules.length > 0 && (
@@ -4197,48 +4198,49 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                 <option key={op.value} value={op.value}>{op.label}</option>
                               ))}
                             </select>
-                            {/* Value */}
+                            {/* Value. minWidth 0: a flex item is as wide as its content otherwise,
+                                and a long media folder's path pushed the page sideways. */}
                             {(() => {
                               const ct = CONDITION_TYPES[cond.type];
                               if (!ct) return null;
 
                               if (cond.type === "directory") {
-                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                   <option value="">{t("settingsIntegrations:conditions.values.selectDirectory")}</option>
                                   {dirs.map(d => <option key={d.path} value={d.path}>{d.label ? `${d.label} (${d.path})` : d.path}</option>)}
                                 </select>;
                               }
 
                               if (cond.type === "source") {
-                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                   <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                                   {(condOpts.sources || []).map((s: string) => <option key={s} value={s}>{s}</option>)}
                                 </select>;
                               }
 
                               if (cond.type === "resolution") {
-                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                   <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                                   {(condOpts.resolutions || []).map((r: string) => <option key={r} value={r}>{r}</option>)}
                                 </select>;
                               }
 
                               if (cond.type === "video_codec") {
-                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                   <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                                   {(condOpts.video_codecs || []).map((c: string) => <option key={c} value={c}>{c}</option>)}
                                 </select>;
                               }
 
                               if (cond.type === "audio_codec") {
-                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                   <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                                   {(condOpts.audio_codecs || []).map((c: string) => <option key={c} value={c}>{c}</option>)}
                                 </select>;
                               }
 
                               if (cond.type === "media_type") {
-                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                   <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                                   <option value="movie">{t("settingsIntegrations:conditions.values.movie")}</option>
                                   <option value="tv">{t("settingsIntegrations:conditions.values.tv")}</option>
@@ -4246,7 +4248,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                               }
 
                               if (cond.type === "content_type") {
-                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                   <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                                   {["anime", "animation", "grain", "remux", "other"].map(v => (
                                     <option key={v} value={v}>{t(`settingsMedia:video.smart.types.${v}`)}</option>
@@ -4255,7 +4257,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                               }
 
                               if (cond.type === "title_show_status") {
-                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                   <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                                   {["returning", "ended", "canceled", "in_production"].map(v => (
                                     <option key={v} value={v}>{t(`serverSearch:properties.show_status.options.${v}`)}</option>
@@ -4265,87 +4267,87 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
 
                               if (cond.type === "title_year" || cond.type === "title_rating") {
                                 const example = cond.type === "title_year" ? "2010" : "7.5";
-                                return <input type="number" step={cond.type === "title_year" ? 1 : 0.1} style={{ ...inputStyle, flex: 1 }} value={cond.value}
+                                return <input type="number" step={cond.type === "title_year" ? 1 : 0.1} style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value}
                                   aria-label={t(`settingsIntegrations:conditions.types.${cond.type}`)} placeholder={example} onChange={e => updateConditionValue(condIdx, e.target.value)} />;
                               }
 
                               if (cond.type === "saved_view") {
-                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                   <option value="">{t("settingsIntegrations:conditions.values.selectView")}</option>
                                   {views.map(v => <option key={v.id} value={String(v.id)}>{v.name}</option>)}
                                 </select>;
                               }
 
                               if (cond.type === "release_group") {
-                                return <div style={{ display: "flex", gap: 6, flex: 1 }}>
-                                  <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                return <div style={{ display: "flex", gap: 6, flex: 1, minWidth: 0 }}>
+                                  <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                     <option value="">{t("settingsIntegrations:conditions.values.selectOrType")}</option>
                                     {(condOpts.release_groups || []).map((g: string) => <option key={g} value={g}>{g}</option>)}
                                   </select>
-                                  <input style={{ ...inputStyle, flex: 1 }} value={cond.value} aria-label={t("settingsIntegrations:conditions.values.typeGroupName")} placeholder={t("settingsIntegrations:conditions.values.typeGroupName")}
+                                  <input style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} aria-label={t("settingsIntegrations:conditions.values.typeGroupName")} placeholder={t("settingsIntegrations:conditions.values.typeGroupName")}
                                     onChange={e => updateConditionValue(condIdx, e.target.value)} />
                                 </div>;
                               }
 
                               if (cond.type === "label") {
-                                return <div style={{ display: "flex", gap: 6, flex: 1 }}>
-                                  <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                return <div style={{ display: "flex", gap: 6, flex: 1, minWidth: 0 }}>
+                                  <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                     <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                                     {(plexOpts.labels || []).map((l: string) => <option key={l} value={l}>{l}</option>)}
                                   </select>
-                                  <input style={{ ...inputStyle, flex: 1 }} value={cond.value} aria-label={t("settingsIntegrations:conditions.values.typeManually")} placeholder={t("settingsIntegrations:conditions.values.typeManually")}
+                                  <input style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} aria-label={t("settingsIntegrations:conditions.values.typeManually")} placeholder={t("settingsIntegrations:conditions.values.typeManually")}
                                     onChange={e => updateConditionValue(condIdx, e.target.value)} />
                                 </div>;
                               }
 
                               if (cond.type === "collection") {
-                                return <div style={{ display: "flex", gap: 6, flex: 1 }}>
-                                  <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                return <div style={{ display: "flex", gap: 6, flex: 1, minWidth: 0 }}>
+                                  <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                     <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                                     {(plexOpts.collections || []).map((c: string) => <option key={c} value={c}>{c}</option>)}
                                   </select>
-                                  <input style={{ ...inputStyle, flex: 1 }} value={cond.value} aria-label={t("settingsIntegrations:conditions.values.typeManually")} placeholder={t("settingsIntegrations:conditions.values.typeManually")}
+                                  <input style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} aria-label={t("settingsIntegrations:conditions.values.typeManually")} placeholder={t("settingsIntegrations:conditions.values.typeManually")}
                                     onChange={e => updateConditionValue(condIdx, e.target.value)} />
                                 </div>;
                               }
 
                               if (cond.type === "genre") {
-                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                   <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                                   {(plexOpts.genres || []).map((g: string) => <option key={g} value={g}>{g}</option>)}
                                 </select>;
                               }
 
                               if (cond.type === "library") {
-                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                   <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                                   {(plexOpts.libraries || []).map((l: any) => <option key={l.title} value={l.title}>{l.title}</option>)}
                                 </select>;
                               }
 
                               if (cond.type === "arr_tag") {
-                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                   <option value="">{t("settingsIntegrations:conditions.values.selectTag")}</option>
                                   {(condOpts.arr_tags || []).map((t: any) => <option key={`${t.source}-${t.label}`} value={t.label}>{t.label} ({t.source})</option>)}
                                 </select>;
                               }
 
                               if (cond.type === "jellyfin_tag") {
-                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                   <option value="">{t("settingsIntegrations:conditions.values.selectTag")}</option>
                                   {(condOpts.jellyfin_tags || []).map((t: string) => <option key={t} value={t}>{t}</option>)}
                                 </select>;
                               }
 
                               if (cond.type === "emby_tag") {
-                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                   <option value="">{t("settingsIntegrations:conditions.values.selectTag")}</option>
                                   {(condOpts.emby_tags || []).map((t: string) => <option key={t} value={t}>{t}</option>)}
                                 </select>;
                               }
 
                               if (cond.type === "emby_watched" || cond.type === "plex_watched" || cond.type === "jellyfin_watched") {
-                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                   <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                                   <option value="true">{t("settingsIntegrations:conditions.values.watched")}</option>
                                   <option value="false">{t("settingsIntegrations:conditions.values.unwatched")}</option>
@@ -4353,7 +4355,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                               }
 
                               if (cond.type === "nzbget_category") {
-                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                   <option value="">{t("settingsIntegrations:conditions.values.selectCategory")}</option>
                                   {(condOpts.nzbget_categories || []).map((c: string) => <option key={c} value={c}>{c}</option>)}
                                 </select>;
@@ -4366,7 +4368,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                 const setBoth = (n: string, u: string) =>
                                   updateConditionValue(condIdx, `${n || "0"}${u}`);
                                 return (
-                                  <div style={{ display: "flex", gap: 6, flex: 1 }}>
+                                  <div style={{ display: "flex", gap: 6, flex: 1, minWidth: 0 }}>
                                     <input style={{ ...inputStyle, width: 80 }}
                                            type="number" min="1" aria-label={t("common:labels.amount")} placeholder="24"
                                            value={num}
@@ -4383,12 +4385,12 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                               }
 
                               if (ct.valueType === "number") {
-                                return <input type="number" step="0.1" style={{ ...inputStyle, flex: 1 }} value={cond.value}
+                                return <input type="number" step="0.1" style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value}
                                   aria-label={t("settingsIntegrations:conditions.values.sizePlaceholder")} placeholder={t("settingsIntegrations:conditions.values.sizePlaceholder")} onChange={e => updateConditionValue(condIdx, e.target.value)} />;
                               }
 
                               // Default: text input
-                              return <input style={{ ...inputStyle, flex: 1 }} value={cond.value} aria-label={t("settingsIntegrations:conditions.values.enterValue")} placeholder={t("settingsIntegrations:conditions.values.enterValue")}
+                              return <input style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={cond.value} aria-label={t("settingsIntegrations:conditions.values.enterValue")} placeholder={t("settingsIntegrations:conditions.values.enterValue")}
                                 onChange={e => updateConditionValue(condIdx, e.target.value)} />;
                             })()}
                             {/* Remove button */}
