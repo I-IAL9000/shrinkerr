@@ -194,17 +194,24 @@ async def test_a_restored_iso_is_a_disc_again(test_db, tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_isos_restored_before_the_fix_are_read_again_at_start_up(test_db, monkeypatch):
-    """Only an ISO Undo restored and left without a disc type: not one
-    with its type, not one that wasn't restored."""
+async def test_originals_restored_before_the_fix_are_read_again_at_start_up(test_db, tmp_path, monkeypatch):
+    """A row not read since its file was restored (an ISO with no disc type,
+    a film with the converted file's tracks — Silent Friend was queued from
+    it and converted with nothing to remove); not one read since, not one
+    whose file is gone, not one never restored."""
     import backend.routes.jobs as jobs_route
-    lost, fine, other = "/m/Lost (1995)/Lost.iso", "/m/Fine (1995)/Fine.iso", "/m/Other (1995)/Other.iso"
+    paths = {name: tmp_path / f"{name}.mkv" for name in ("stale", "fresh", "gone", "never")}
+    for name, path in paths.items():
+        if name != "gone":
+            path.write_bytes(b"x")
     async with aiosqlite.connect(test_db) as db:
-        for path, disc, status in ((lost, None, "reverted"), (fine, "bdmv", "reverted"), (other, None, "completed")):
-            await db.execute("INSERT INTO scan_results (file_path, file_size, disc_type, scan_timestamp) "
-                             "VALUES (?, 1, ?, 't')", (path, disc))
-            await db.execute("INSERT INTO jobs (file_path, original_file_path, job_type, status, created_at) "
-                             "VALUES (?, ?, 'convert', ?, 't')", (path + ".mkv", path, status))
+        for name, scanned in (("stale", "2026-10-31T10:00:00+00:00"), ("fresh", "2026-10-31T12:00:00+00:00"),
+                              ("gone", "2026-10-31T10:00:00+00:00"), ("never", "2026-10-31T10:00:00+00:00")):
+            await db.execute("INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, 1, ?)",
+                             (str(paths[name]), scanned))
+            if name != "never":
+                await db.execute("INSERT INTO file_events (file_path, event_type, occurred_at, summary) "
+                                 "VALUES (?, 'reverted', '2026-10-31T10:47:36+00:00', 'Restored')", (str(paths[name]),))
         await db.commit()
     read = []
 
@@ -212,4 +219,4 @@ async def test_isos_restored_before_the_fix_are_read_again_at_start_up(test_db, 
         read.append(path)
     monkeypatch.setattr(jobs_route, "_rescan_restored", rescan)
 
-    assert await jobs_route.rescan_restored_isos() == 1 and read == [lost]
+    assert await jobs_route.rescan_restored_originals() == 1 and read == [str(paths["stale"])]

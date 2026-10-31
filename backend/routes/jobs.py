@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -1844,24 +1845,33 @@ async def _rescan_restored(path: str) -> None:
         print(f"[UNDO] Rescanning the restored original failed: {exc}", flush=True)
 
 
-async def rescan_restored_isos() -> int:
-    """At start-up: read again every ISO that Undo restored without a disc
-    type — before v0.10.0's fix a restored ISO came back as no disc, and the
-    Scanner's Disc / ISO filter left it out until its folder was scanned. One
-    at a time, in the background (_rescan_restored). Returns how many."""
+async def rescan_restored_originals() -> int:
+    """At start-up: read again every original Undo restored whose Scanner row
+    hasn't been read since (scan_timestamp before the "reverted" event).
+    Before v0.10.0's fix the row kept the converted file's tracks and codec
+    — an ISO came back as no disc — and a job queued from it planned
+    nothing: Silent Friend, restored, converted again with its unwanted
+    subtitles kept. One at a time, in the background (_rescan_restored); an
+    original no longer there is left alone. Returns how many."""
+    import os
     db = await connect_db()
     try:
         async with db.execute(
-            "SELECT DISTINCT s.file_path FROM scan_results s JOIN jobs j ON j.original_file_path = s.file_path "
-            "WHERE j.status = 'reverted' AND s.disc_type IS NULL AND LOWER(s.file_path) LIKE '%.iso'"
+            "SELECT DISTINCT s.file_path FROM scan_results s JOIN file_events e "
+            "ON e.file_path = s.file_path AND e.event_type = 'reverted' "
+            "WHERE s.scan_timestamp < e.occurred_at"
         ) as cur:
             paths = [r[0] for r in await cur.fetchall()]
     finally:
         await db.close()
+    read = 0
     for path in paths:
-        print(f"[UNDO] Reading a restored ISO again (it had lost its disc type): {path}", flush=True)
+        if not await asyncio.to_thread(os.path.exists, path):
+            continue
+        print(f"[UNDO] Reading a restored original again (its row was from before the restore): {path}", flush=True)
         await _rescan_restored(path)
-    return len(paths)
+        read += 1
+    return read
 
 
 @router.get("/{job_id}/log")
