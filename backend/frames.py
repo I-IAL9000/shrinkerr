@@ -91,7 +91,10 @@ async def store(job_id: int, frames: list[dict]) -> int:
     """save(), keeping the frames people can still look at: every job in
     Review, compared before it's approved however many conversions came
     since, and the KEEP_JOBS most recently completed. Pruning by job id
-    deleted an approved review's frames: its id is as old as its conversion."""
+    deleted an approved review's frames: its id is as old as its conversion.
+    A running job keeps its frames too: it stores them when the encode ends
+    and completes after its checks, and two workers finishing together
+    deleted each other's."""
     if not frames:
         return 0
     from backend.database import connect_db
@@ -99,7 +102,7 @@ async def store(job_id: int, frames: list[dict]) -> int:
         db = await connect_db()
         try:
             async with db.execute(
-                "SELECT id FROM jobs WHERE status = 'review' OR review_approved = 1 UNION "
+                "SELECT id FROM jobs WHERE status IN ('review', 'running') OR review_approved = 1 UNION "
                 "SELECT id FROM (SELECT id FROM jobs WHERE status = 'completed' ORDER BY completed_at DESC LIMIT ?)",
                 (KEEP_JOBS,)) as cur:
                 keep = {r[0] for r in await cur.fetchall()}

@@ -92,6 +92,23 @@ async def test_the_frames_people_can_still_look_at_stay(test_db, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_a_job_still_finishing_keeps_its_frames(test_db, monkeypatch):
+    """A job stores its frames when the encode ends and completes after its
+    checks. Two workers finishing together deleted each other's frames in
+    that gap (two 1 Nov episodes: "This job's frames were deleted")."""
+    monkeypatch.setattr(frames, "KEEP_JOBS", 2)
+    one = [{"t": 1.0, "before": base64.b64encode(b"B").decode(), "after": base64.b64encode(b"A").decode()}]
+    async with aiosqlite.connect(test_db) as db:
+        for job_id, status in ((1, "running"), (2, "running")):
+            await db.execute("INSERT INTO jobs (id, file_path, job_type, status, created_at) "
+                             "VALUES (?, ?, 'convert', ?, 'x')", (job_id, f"/m/{job_id}.mkv", status))
+        await db.commit()
+    assert await frames.store(1, one) == 1
+    assert await frames.store(2, one) == 1
+    assert (len(frames.load(1)), len(frames.load(2))) == (1, 1)
+
+
+@pytest.mark.asyncio
 async def test_why_a_job_has_none(test_db, monkeypatch):
     """Frames deleted to keep the newest ones say so ("only the 100 most
     recent…"), not the catch-all reasons."""
