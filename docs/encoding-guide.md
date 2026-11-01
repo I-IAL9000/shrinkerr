@@ -99,6 +99,13 @@ Lower = higher quality, larger files.
 | 25–27 | Space-saver | Fine for most source material, some banding on flats |
 | 28–30 | Aggressive | Visible macroblocks, only for space-constrained backfills |
 
+Every NVENC encode uses spatial adaptive quantization (`-spatial-aq 1
+-aq-strength 15`): flat areas such as fog, night skies and dark walls get
+the bits they need instead of breaking into bands, for files about 10%
+larger. 4K encodes may reach 160 Mbps (HEVC level 5.1, high tier, as UHD
+Blu-rays). [Custom ffmpeg flags](#custom-ffmpeg-flags) come after these,
+so `-aq-strength 8` there, for example, replaces the strength.
+
 **Starting point for most libraries**: the defaults, `p6 / CQ 20` (the
 Quality preset). For smaller files, raise CQ along the
 [quality presets](#quality-presets): Balanced (23) or Max savings (26).

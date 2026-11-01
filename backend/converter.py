@@ -677,6 +677,11 @@ def _build_ffmpeg_cmd_impl(
             "-rc", "vbr",
             "-cq", str(av1_quality("nvenc", cq) if output_codec == "av1" else cq),
             "-b:v", "0",
+            # Spatial AQ gives flat areas (dark fog, skies) the bits they need.
+            # Without it NVENC smoothed their faint noise into bands: Blade
+            # Runner 2049's fog scored 0.60 on CAMBI, 0.19 with it, for 12%
+            # more bits. libx265 has aq-mode=3 (v0.10.0, the user's choice).
+            "-spatial-aq", "1", "-aq-strength", "15",
         ]
         if output_codec != "av1":  # AV1's one profile carries 8- and 10-bit
             cmd += ["-profile:v", _nvenc_profile]
@@ -684,8 +689,11 @@ def _build_ffmpeg_cmd_impl(
             # allows (4.0 for 1080p) and holds the bitrate under it: about
             # 10 Mbps, whatever the CQ. Grainy films came out the same at CQ
             # 14 and 23, and short of the VMAF target. 5.1 allows 40 Mbps; a
-            # 4K encode gets the high tier, as UHD Blu-rays (v0.10.0).
-            cmd += ["-level", "5.1"] + (["-tier", "high"] if (output_width or 0) > 2560 else [])
+            # 4K encode gets the high tier, as UHD Blu-rays (v0.10.0). NVENC
+            # still sets its ceiling from the main tier (4K held under ~33 Mbps
+            # at CQ 12 and 18 alike), so the high tier's limits are spelled out.
+            cmd += ["-level", "5.1"] + (["-tier", "high", "-maxrate", "160M", "-bufsize", "160M"]
+                                        if (output_width or 0) > 2560 else [])
         # v0.5.10: emit -pix_fmt ONLY when frames live in CPU memory
         # (software decode path). With HW decode keeping frames on the
         # GPU, `scale_cuda=format=X` already dictates the surface format
