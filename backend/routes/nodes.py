@@ -426,7 +426,7 @@ async def request_job(req: RequestJobBody, request: Request):
             "              'nvenc_hw_decode', 'qsv_hw_decode', 'vaapi_hw_decode', 'libx265_use_nvdec', "
             "              'videotoolbox_quality', 'videotoolbox_hw_decode', "
             "              'qsv_cq', 'qsv_preset', 'qsv_lookahead', 'vaapi_qp', 'vaapi_compression_level', "
-            "              'nvenc_bit_depth', "
+            "              'nvenc_bit_depth', 'nvenc_aq', "
             "              'backup_original_days', 'trash_original_after_conversion', 'backup_folder', "
             "              'filename_suffix', 'custom_ffmpeg_flags', 'auto_convert_lossless', "
             "              'lossless_target_codec', 'lossless_target_bitrate', 'lossless_keep_object_audio', "
@@ -495,6 +495,7 @@ async def request_job(req: RequestJobBody, request: Request):
     assigned["qsv_preset"] = srv_settings.get("qsv_preset") or "medium"
     assigned["qsv_lookahead"] = (srv_settings.get("qsv_lookahead") or "false").lower() == "true"
     assigned["nvenc_bit_depth"] = srv_settings.get("nvenc_bit_depth") or "10bit"
+    assigned["nvenc_aq"] = srv_settings.get("nvenc_aq") or "light"  # anti-banding; a rule's wins (job_settings)
     from backend.converter import external_subs_to_merge
     external = []
     for sub in await external_subs_to_merge(job["file_path"]) or []:  # the server's path, as scanned

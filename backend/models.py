@@ -194,6 +194,8 @@ class SettingsUpdate(BaseModel):
     libx265_use_nvdec: Optional[bool] = None
     # v0.5.9: NVENC output bit depth — "10bit" (default), "8bit", "auto"
     nvenc_bit_depth: Optional[str] = None
+    # v0.10.0: NVENC anti-banding — "off", "light" (default), "strong"
+    nvenc_aq: Optional[str] = None
     parallel_jobs: Optional[int] = None
     # v0.5.6: cap ffmpeg's per-job thread count. 0 = ffmpeg auto (uses all
     # cores, the pre-v0.5.6 behaviour). 1-16 = explicit cap. Recommended

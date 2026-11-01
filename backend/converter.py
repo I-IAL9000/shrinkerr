@@ -79,6 +79,8 @@ _ENCODING_SETTINGS: tuple[tuple[str, object, Callable], ...] = (
     # "auto". The "auto" path probes source pix_fmt and resolves per-job
     # in convert_file. 10-bit needs Pascal+; 8-bit is Maxwell-compatible.
     ("nvenc_bit_depth",                  "10bit",   str),
+    # v0.10.0: NVENC anti-banding (spatial AQ), NVENC_AQ's names.
+    ("nvenc_aq",                         "light",   str),
     # Process limits
     ("ffmpeg_timeout",                   21600,     int),
     ("ffprobe_timeout",                  30,        int),
@@ -385,6 +387,15 @@ def external_sub_inputs(ext_subs: list[dict], optional: bool = True) -> tuple[li
     return paths, maps
 
 
+# NVENC's anti-banding (v0.10.0): Settings → Video's, or a rule's, spatial AQ
+# strength. Without it NVENC smoothed the faint noise of flat areas (fog,
+# night skies, dark walls) into bands. Measured with CAMBI (Netflix's banding
+# score): Blade Runner 2049's fog at CQ 18, 0.60 without, 0.27 at 8, 0.19 at
+# 15, for about 12% more bits; bright 8-bit TV at CQ 36, 1.95 without, 1.64 at
+# 8 for 29% more bits, 1.47 at 15 for 71% more. VMAF doesn't see banding.
+NVENC_AQ = {"off": 0, "light": 8, "strong": 15}
+
+
 def _build_ffmpeg_cmd_impl(
     input_path: str,
     output_path: str,
@@ -463,6 +474,8 @@ def _build_ffmpeg_cmd_impl(
     output_codec: str | None = None,
     # v0.10.0: the encoded video's width, when known: NVENC's HEVC tier.
     output_width: int | None = None,
+    # v0.10.0: NVENC's anti-banding, a NVENC_AQ name ("off", "light", "strong").
+    nvenc_aq: str = "light",
 ) -> list[str]:
     # Hardware-device init for VAAPI / QSV. Both must come BEFORE -i.
     #
@@ -677,12 +690,12 @@ def _build_ffmpeg_cmd_impl(
             "-rc", "vbr",
             "-cq", str(av1_quality("nvenc", cq) if output_codec == "av1" else cq),
             "-b:v", "0",
-            # Spatial AQ gives flat areas (dark fog, skies) the bits they need.
-            # Without it NVENC smoothed their faint noise into bands: Blade
-            # Runner 2049's fog scored 0.60 on CAMBI, 0.19 with it, for 12%
-            # more bits. libx265 has aq-mode=3 (v0.10.0, the user's choice).
-            "-spatial-aq", "1", "-aq-strength", "15",
         ]
+        # Spatial AQ gives flat areas (dark fog, skies) the bits they need
+        # (NVENC_AQ). libx265 has aq-mode=3.
+        strength = NVENC_AQ.get(nvenc_aq, NVENC_AQ["light"])
+        if strength:
+            cmd += ["-spatial-aq", "1", "-aq-strength", str(strength)]
         if output_codec != "av1":  # AV1's one profile carries 8- and 10-bit
             cmd += ["-profile:v", _nvenc_profile]
             # Left to choose, NVENC picks the lowest level the frame size
@@ -4145,6 +4158,7 @@ async def convert_file(
             output_codec=output_codec,
             output_width=(int(RESOLUTION_MAP[target_resolution].split(":")[0]) if target_resolution in RESOLUTION_MAP
                           else (probe_data or {}).get("video_width")),
+            nvenc_aq=str(live_settings.get("nvenc_aq") or "light"),
         )
         # Append custom ffmpeg flags if configured (before the output path).
         if custom_flags:

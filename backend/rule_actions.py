@@ -76,17 +76,20 @@ def below_savings(rule: Optional[dict], row: dict) -> bool:
 
 def job_overrides(rule: Optional[dict]) -> dict:
     """The rule's settings a job carries (jobs columns)."""
+    from backend.converter import NVENC_AQ
     rule = rule or {}
     return {"originals_policy": rule.get("originals_policy") if rule.get("originals_policy") in ORIGINALS_POLICIES else None,
             "originals_days": rule.get("originals_days"),
             "vmaf_min_score": rule.get("vmaf_min_score"),
-            "vmaf_target": rule.get("vmaf_target")}
+            "vmaf_target": rule.get("vmaf_target"),
+            "nvenc_aq": rule.get("nvenc_aq") if rule.get("nvenc_aq") in NVENC_AQ else None}
 
 
 def settings_overrides(job: dict) -> dict:
-    """A job's own originals policy, VMAF minimum, VMAF target and lossless
-    audio choice, as the encoding settings convert_file reads (empty: the
-    global ones apply; a target of 0 is Off, whatever Settings say). A "Fix for
+    """A job's own originals policy, VMAF minimum, VMAF target, NVENC
+    anti-banding and lossless audio choice, as the encoding settings
+    convert_file reads (empty: the global ones apply; a target of 0 is Off,
+    whatever Settings say). A "Fix for
     direct play" job (backend/direct_play.py) reads image subtitles into SRT
     and adds a compatibility track where the audio needs one — those it
     was asked to."""
@@ -112,6 +115,8 @@ def settings_overrides(job: dict) -> dict:
         out["vmaf_target_enabled"] = float(target) > 0
         if float(target) > 0:
             out["vmaf_target_score"] = float(target)
+    if job.get("nvenc_aq"):
+        out["nvenc_aq"] = job["nvenc_aq"]
     if job.get("lossless_audio") in ("keep", "convert"):
         out["auto_convert_lossless"] = job["lossless_audio"] == "convert"
     return out

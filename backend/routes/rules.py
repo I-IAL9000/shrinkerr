@@ -41,6 +41,7 @@ class RuleCreate(BaseModel):
     # None: Settings' VMAF target; 0: off (this rule's own quality); else the score
     vmaf_target: Optional[float] = Field(default=None, ge=0, le=99)
     min_savings_pct: Optional[float] = Field(default=None, ge=0, le=100)
+    nvenc_aq: Optional[Literal["off", "light", "strong"]] = None  # None: Settings' anti-banding
     target_resolution: Optional[str] = None
     audio_codec: Optional[str] = None
     audio_bitrate: Optional[int] = None
@@ -69,6 +70,7 @@ class RuleUpdate(BaseModel):
     # None: Settings' VMAF target; 0: off (this rule's own quality); else the score
     vmaf_target: Optional[float] = Field(default=None, ge=0, le=99)
     min_savings_pct: Optional[float] = Field(default=None, ge=0, le=100)
+    nvenc_aq: Optional[Literal["off", "light", "strong"]] = None  # None: Settings' anti-banding
     target_resolution: Optional[str] = None
     audio_codec: Optional[str] = None
     audio_bitrate: Optional[int] = None
@@ -215,14 +217,15 @@ async def create_rule(payload: RuleCreate):
                 encoder, nvenc_preset, nvenc_cq, libx265_crf, libx265_preset, target_resolution,
                 audio_codec, audio_bitrate, queue_priority, created_at, output_codec,
                 audio_keep_languages, sub_policy, sub_keep_languages, originals_policy, originals_days,
-                vmaf_min_score, min_savings_pct, vmaf_target)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                vmaf_min_score, min_savings_pct, vmaf_target, nvenc_aq)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (payload.name, first.type, first.value, conditions_json, next_priority,
              payload.action, int(payload.enabled), payload.encoder, payload.nvenc_preset,
              payload.nvenc_cq, payload.libx265_crf, payload.libx265_preset, payload.target_resolution,
              payload.audio_codec, payload.audio_bitrate, payload.queue_priority, now, payload.output_codec,
              payload.audio_keep_languages, payload.sub_policy, payload.sub_keep_languages, payload.originals_policy,
-             payload.originals_days, payload.vmaf_min_score, payload.min_savings_pct, payload.vmaf_target),
+             payload.originals_days, payload.vmaf_min_score, payload.min_savings_pct, payload.vmaf_target,
+             payload.nvenc_aq),
         ) as cur:
             rule_id = cur.lastrowid
         await db.commit()

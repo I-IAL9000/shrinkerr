@@ -235,6 +235,7 @@ def _job_values(j: dict, target_default: float, direct_play_default: bool) -> di
         "originals_policy": j.get("originals_policy"),
         "originals_days": j.get("originals_days"),
         "vmaf_min_score": j.get("vmaf_min_score"),
+        "nvenc_aq": j.get("nvenc_aq"),  # a rule's anti-banding (None: Settings' when it runs)
         "vmaf_target": j.get("vmaf_target") if j.get("vmaf_target") is not None
         else target_default if j["job_type"] in _DIRECT_PLAY_JOB_TYPES else None,
         # The fixes Add to Queue chose ("" = none), else the setting's

@@ -458,6 +458,8 @@ async def init_db():
                                                 ("vmaf_min_score", "REAL"), ("vmaf_target", "REAL"))),
                             ("jobs", (("originals_policy", "TEXT"), ("originals_days", "INTEGER"),
                                       ("vmaf_min_score", "REAL"), ("vmaf_target", "REAL"))),
+                            # NVENC anti-banding: "off", "light", "strong" (NULL: Settings')
+                            ("encoding_rules", (("nvenc_aq", "TEXT"),)), ("jobs", (("nvenc_aq", "TEXT"),)),
                             # "Fix for direct play" (backend/direct_play.py); Add to
                             # Queue's lossless audio: "keep", "convert" (NULL: Settings')
                             ("jobs", (("direct_play", "INTEGER"), ("lossless_audio", "TEXT")))):

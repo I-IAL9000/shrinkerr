@@ -1461,6 +1461,8 @@ async def start_test_encode(payload: TestEncodeRequest):
         overrides["override_target_resolution"] = rule["target_resolution"]
     if rule.get("output_codec") in ("hevc", "av1"):
         overrides["output_codec"] = rule["output_codec"]
+    if rule.get("nvenc_aq"):  # the rule's anti-banding, over Settings'
+        overrides["pre_settings"] = {**await get_live_encoding_settings(), "nvenc_aq": rule["nvenc_aq"]}
 
     try:
         result = await run_test_encode(

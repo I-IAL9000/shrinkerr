@@ -113,6 +113,14 @@
       "help": "<b>10-bit</b> is best for quality (less banding, slightly larger files on most sources) but requires <b>Pascal-or-newer NVIDIA</b> (GTX 10xx / Quadro P-series / RTX). <b>8-bit</b> is the only option for second-generation Maxwell (GTX 950 and up, most Quadro M-series), produces smaller files on most material, and encodes a little faster. <b>Match source</b> uses 10-bit only when the source is already 10-bit, otherwise 8-bit — avoids the upconvert overhead when the input doesn't benefit from it.",
       "summary": "10-bit bands less; it needs an NVIDIA GTX 10-series or newer."
     },
+    "antiBanding": {
+      "label": "Anti-banding",
+      "off": "Off",
+      "light": "Light (default)",
+      "strong": "Strong",
+      "summary": "Gives skies, fog and dark walls more bits so they don't break into bands.",
+      "help": "On its own NVENC smooths the faint grain of flat areas into visible steps, and VMAF doesn't notice them, so a VMAF target can't avoid them. <b>Light</b> removes most of it: in a foggy 4K film it more than halved the banding score for about 12% more bits. <b>Strong</b> removes a little more, but costs far more on bright TV at a high CQ: 71% more bits than Off in one test, against 29% for Light. <b>Off</b> gives the smallest files. A rule can choose its own. NVENC only: libx265 always adapts its quantization."
+    },
     "nvencPreset": "NVENC Preset",
     "nvencCq": "NVENC Constant Quality (CQ)",
     "nvencCqHelp": "The quality files are encoded at when the VMAF target is off; with a target, it's where each title's search starts. Lower = higher quality, larger files. No single CQ fits every file: a clean Blu-ray remux often looks the same as the original at CQ 28–32, while grain and already-compressed web releases need 20–24. <b>20–24</b> holds up on any source; higher values save more on clean ones. The VMAF target measures each title and finds its own CQ.",

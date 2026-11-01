@@ -228,6 +228,8 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
     originals_policy?: string; originals_days?: string; vmaf_min_score?: string; min_savings_pct?: string;
     // v0.10.0: "" = Settings' VMAF target, "off", or a score (a blank "custom" while it's being typed)
     vmaf_target?: string;
+    // v0.10.0: NVENC anti-banding: "" = Settings', "off", "light", "strong"
+    nvenc_aq?: string;
   }>({ name: "", match_mode: "any", conditions: [{ type: "directory", operator: "is", value: "" }], action: "encode", encoder: "", nvenc_preset: "", nvenc_cq: "", libx265_crf: "", libx265_preset: "", target_resolution: "", audio_codec: "", audio_bitrate: "", queue_priority: "" });
   const [condOpts, setCondOpts] = useState<any>({ sources: [], resolutions: [], video_codecs: [], audio_codecs: [], media_types: [], release_groups: [], arr_tags: [] });
   const [ruleSyncing, setRuleSyncing] = useState(false);
@@ -1047,6 +1049,21 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         </select>
                         <SettingHelp style={{ ...helpStyle, marginTop: 6 }} summary={t("settingsMedia:video.bitDepth.summary")}>
                           <Trans i18nKey="settingsMedia:video.bitDepth.help" components={{ b: <strong /> }} />
+                        </SettingHelp>
+                      </div>
+
+                      {/* v0.10.0: anti-banding (spatial AQ strength) */}
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ ...labelStyle, marginBottom: 6 }}>{t("settingsMedia:video.antiBanding.label")}</div>
+                        <select aria-label={t("settingsMedia:video.antiBanding.label")} value={encoding?.nvenc_aq || "light"}
+                          onChange={e => setEncoding({ ...encoding, nvenc_aq: e.target.value })}
+                          style={{ ...inputStyle, width: "100%", maxWidth: 360 }}>
+                          <option value="off">{t("settingsMedia:video.antiBanding.off")}</option>
+                          <option value="light">{t("settingsMedia:video.antiBanding.light")}</option>
+                          <option value="strong">{t("settingsMedia:video.antiBanding.strong")}</option>
+                        </select>
+                        <SettingHelp style={{ ...helpStyle, marginTop: 6 }} summary={t("settingsMedia:video.antiBanding.summary")}>
+                          <Trans i18nKey="settingsMedia:video.antiBanding.help" components={{ b: <strong /> }} />
                         </SettingHelp>
                       </div>
 
@@ -4051,6 +4068,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                 rule.action === "encode" && rule.libx265_crf ? `CRF${rule.libx265_crf}` : null,
                                 rule.action === "encode" && rule.target_resolution && rule.target_resolution !== "copy" ? rule.target_resolution : null,
                                 rule.action === "encode" && rule.output_codec ? (rule.output_codec === "av1" ? "AV1" : "HEVC") : null,
+                                rule.action === "encode" && rule.nvenc_aq ? t(`settingsIntegrations:rules.form.more.badges.antiBanding_${rule.nvenc_aq}`) : null,
                                 rule.audio_keep_languages ? t("settingsIntegrations:rules.form.more.badges.audio", { langs: rule.audio_keep_languages }) : null,
                                 rule.sub_policy ? t(`settingsIntegrations:rules.form.more.badges.subs_${rule.sub_policy}`, { langs: rule.sub_keep_languages || "" }) : null,
                                 rule.action === "encode" && rule.originals_policy ? t(`settingsIntegrations:rules.form.more.badges.originals_${rule.originals_policy}`, { count: rule.originals_days || 7 }) : null,
@@ -4083,6 +4101,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                   libx265_crf: rule.libx265_crf ? String(rule.libx265_crf) : "",
                                   libx265_preset: rule.libx265_preset || "",
                                   target_resolution: rule.target_resolution || "", output_codec: rule.output_codec || "",
+                                  nvenc_aq: rule.nvenc_aq || "",
                                   audio_keep_languages: (rule.audio_keep_languages || "").split(",").filter(Boolean),
                                   sub_policy: rule.sub_policy || "",
                                   sub_keep_languages: (rule.sub_keep_languages || "").split(",").filter(Boolean),
@@ -4513,6 +4532,19 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                               }}
                             />
                           </div>
+                          {(ruleForm.encoder || encoding?.default_encoder || "nvenc") === "nvenc" && (
+                            <div>
+                              <label style={labelStyle}>{t("settingsIntegrations:rules.form.antiBanding.label")}</label>
+                              <select aria-label={t("settingsIntegrations:rules.form.antiBanding.label")} style={{ ...inputStyle, width: "100%" }}
+                                value={ruleForm.nvenc_aq || ""} onChange={e => setRuleForm({ ...ruleForm, nvenc_aq: e.target.value })}>
+                                <option value="">{t("settingsIntegrations:rules.form.antiBanding.settings", {
+                                  level: t(`settingsIntegrations:rules.form.antiBanding.${encoding?.nvenc_aq || "light"}`) })}</option>
+                                <option value="off">{t("settingsIntegrations:rules.form.antiBanding.off")}</option>
+                                <option value="light">{t("settingsIntegrations:rules.form.antiBanding.light")}</option>
+                                <option value="strong">{t("settingsIntegrations:rules.form.antiBanding.strong")}</option>
+                              </select>
+                            </div>
+                          )}
                           </>}
                           <div>
                             <label style={labelStyle}>{t("settingsIntegrations:rules.form.resolution")}</label>
@@ -4698,6 +4730,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             data.libx265_crf = ruleForm.libx265_crf ? parseInt(ruleForm.libx265_crf) : null;
                             data.target_resolution = ruleForm.target_resolution || null;
                             data.output_codec = ruleForm.output_codec || null;
+                            // NVENC only: a stale choice isn't kept for another encoder
+                            data.nvenc_aq = (ruleForm.encoder || encoding?.default_encoder || "nvenc") === "nvenc"
+                              ? ruleForm.nvenc_aq || null : null;
                             data.originals_policy = ruleForm.originals_policy || null;
                             data.originals_days = ruleForm.originals_policy === "keep" && ruleForm.originals_days ? parseInt(ruleForm.originals_days) : null;
                             data.vmaf_min_score = ruleForm.vmaf_min_score ? parseFloat(ruleForm.vmaf_min_score) : null;
@@ -4713,6 +4748,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             data.libx265_crf = null;
                             data.target_resolution = null;
                             data.output_codec = null;
+                            data.nvenc_aq = null;
                             data.audio_codec = ruleForm.audio_codec || null;
                             data.audio_bitrate = ruleForm.audio_bitrate ? parseInt(ruleForm.audio_bitrate) : null;
                           } else {
@@ -4722,6 +4758,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             data.libx265_crf = null;
                             data.target_resolution = null;
                             data.output_codec = null;
+                            data.nvenc_aq = null;
                             data.audio_codec = null;
                             data.audio_bitrate = null;
                             data.queue_priority = null;

@@ -32,7 +32,7 @@ MAX_RULES, MAX_CONDITIONS = 500, 100
 SETTING_FIELDS = ("encoder", "nvenc_preset", "nvenc_cq", "libx265_crf", "libx265_preset", "output_codec",
                   "target_resolution", "audio_codec", "audio_bitrate", "queue_priority",
                   "audio_keep_languages", "sub_policy", "sub_keep_languages", "originals_policy",
-                  "originals_days", "vmaf_min_score", "vmaf_target", "min_savings_pct")
+                  "originals_days", "vmaf_min_score", "vmaf_target", "min_savings_pct", "nvenc_aq")
 
 
 def _invalid(error: str) -> ApiError:

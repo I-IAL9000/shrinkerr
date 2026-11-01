@@ -252,6 +252,13 @@
       "add": "Add Rule",
       "outputCodec": "Output codec",
       "outputCodecDefault": "Default ({{codec}}, Settings → Video)",
+      "antiBanding": {
+        "label": "Anti-banding",
+        "settings": "Default ({{level}}, Settings → Video)",
+        "off": "Off",
+        "light": "Light",
+        "strong": "Strong"
+      },
       "av1Unavailable": "This encoder can't write AV1 here, so these files are encoded HEVC. Choose libx265 (CPU) for AV1 with SVT-AV1 — or NVENC on an RTX 40 or later, QSV on Intel Arc.",
       "av1None": "No AV1 encoder was found here, so these files are encoded HEVC.",
       "more": {
@@ -300,7 +307,10 @@
           "originals_delete": "originals deleted",
           "minSavings": "≥ {{pct}}% savings",
           "vmafTarget": "VMAF target {{score}}",
-          "vmafTargetOff": "VMAF target off"
+          "vmafTargetOff": "VMAF target off",
+          "antiBanding_off": "anti-banding off",
+          "antiBanding_light": "light anti-banding",
+          "antiBanding_strong": "strong anti-banding"
         }
       }
     },

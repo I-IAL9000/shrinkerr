@@ -61,6 +61,8 @@ _ENCODING_DEFAULTS = {
     # probes source pix_fmt at job time and picks 10-bit only when source
     # is 10-bit, else 8-bit.
     "nvenc_bit_depth": "10bit",
+    # v0.10.0: NVENC anti-banding, converter.NVENC_AQ's names.
+    "nvenc_aq": "light",
     # libx265 fallback used by CPU workers when they have to take an NVENC
     # job. Empty = fall back to the NVENC→libx265 translation table.
     "nvenc_cpu_fallback_preset": "",
@@ -630,6 +632,7 @@ async def get_encoding_settings():
         "libx265_use_nvdec": merged.get("libx265_use_nvdec", "false").lower() == "true",
         # v0.5.9: nvenc_bit_depth — "10bit" / "8bit" / "auto"
         "nvenc_bit_depth": merged.get("nvenc_bit_depth", "10bit"),
+        "nvenc_aq": merged.get("nvenc_aq", "light"),
         "nvenc_cpu_fallback_preset": merged.get("nvenc_cpu_fallback_preset", ""),
         "nvenc_cpu_fallback_crf": merged.get("nvenc_cpu_fallback_crf", ""),
         "libx265_gpu_fallback_preset": merged.get("libx265_gpu_fallback_preset", ""),
@@ -1070,6 +1073,10 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
             if v not in ("10bit", "8bit", "auto"):
                 v = "10bit"  # silent fallback to safe default
             updates["nvenc_bit_depth"] = v
+        if update.nvenc_aq is not None:
+            from backend.converter import NVENC_AQ
+            v = str(update.nvenc_aq).lower()
+            updates["nvenc_aq"] = v if v in NVENC_AQ else "light"
         if update.nvenc_cpu_fallback_preset is not None:
             # Empty string = "unset", worker falls back to NVENC→libx265 translation
             updates["nvenc_cpu_fallback_preset"] = update.nvenc_cpu_fallback_preset.strip()

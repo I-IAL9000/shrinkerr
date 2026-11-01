@@ -63,7 +63,9 @@ Conditions in a rule combine with `match_mode` — `any` (OR) or `all`
   `audio_bitrate`, `queue_priority`). **Output codec** HEVC (the default)
   or **AV1** — see [AV1 output](encoding-guide.md#av1-output). With QSV,
   VAAPI or VideoToolbox the rule's **CQ** (NVENC's scale) is translated to
-  the encoder's own quality setting.
+  the encoder's own quality setting. With NVENC, **Anti-banding** (Off,
+  Light or Strong) replaces Settings → Video's for the rule's files — see
+  [anti-banding](encoding-guide.md#anti-banding).
 
 **Languages, originals and more** (in the rule form) — per-library
 policies:
@@ -146,7 +148,8 @@ saved_views:
 `target_resolution`, `audio_codec`, `audio_bitrate`, `queue_priority`,
 `audio_keep_languages`, `sub_policy`, `sub_keep_languages`,
 `originals_policy`, `originals_days`, `vmaf_min_score`,
-`vmaf_target` (0 is off) and `min_savings_pct`.
+`vmaf_target` (0 is off), `min_savings_pct` and `nvenc_aq` (`off`,
+`light`, `strong`).
 
 **Rule library** has ready-made rules to start from:
 

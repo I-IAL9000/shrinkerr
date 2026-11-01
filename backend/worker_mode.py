@@ -565,6 +565,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 "vaapi_qp": int(job.get("vaapi_qp") or 22),
                 "vaapi_compression_level": int(job.get("vaapi_compression_level") or 4),
                 "nvenc_bit_depth": job.get("nvenc_bit_depth") or "10bit",
+                "nvenc_aq": job.get("nvenc_aq") or "light",  # anti-banding (v0.10.0)
                 # VMAF settings come from the server-side payload so remote
                 # workers honour the server's configured policy. Falls back to
                 # disabled if the server didn't send the fields (older server

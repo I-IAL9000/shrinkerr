@@ -113,6 +113,14 @@
       "help": "<b>10 bits</b> ofrece la mejor calidad (menos bandas, archivos algo más grandes en la mayoría de orígenes), pero requiere <b>NVIDIA Pascal o posterior</b> (GTX 10xx / Quadro serie P / RTX). <b>8 bits</b> es la única opción para Maxwell de segunda generación (GTX 950 en adelante, la mayoría de Quadro serie M), genera archivos más pequeños con la mayoría del material y codifica algo más rápido. <b>Igual que el origen</b> usa 10 bits solo si el origen ya es de 10 bits y, si no, 8 bits: evita el coste de la conversión cuando la entrada no se beneficia de ella.",
       "summary": "10 bits producen menos bandas; necesita una NVIDIA GTX serie 10 o más nueva."
     },
+    "antiBanding": {
+      "label": "Reducción de bandas",
+      "off": "Desactivada",
+      "light": "Ligera (predeterminada)",
+      "strong": "Fuerte",
+      "summary": "Da más bits a cielos, niebla y paredes oscuras para que no se dividan en bandas.",
+      "help": "Por sí solo, NVENC alisa el grano tenue de las zonas planas en escalones visibles, y VMAF no los detecta, así que un objetivo VMAF no puede evitarlos. <b>Ligera</b> elimina la mayor parte: en una película 4K con niebla redujo la puntuación de bandas a menos de la mitad con un 12 % más de bits. <b>Fuerte</b> elimina algo más, pero cuesta mucho más en televisión luminosa con un CQ alto: un 71 % más de bits que Desactivada en una prueba, frente a un 29 % con Ligera. <b>Desactivada</b> da los archivos más pequeños. Una regla puede elegir la suya. Solo NVENC: libx265 siempre adapta su cuantización."
+    },
     "nvencPreset": "Preajuste de NVENC",
     "nvencCq": "Calidad constante de NVENC (CQ)",
     "nvencCqHelp": "La calidad con la que se codifican los archivos cuando el objetivo VMAF está desactivado; con un objetivo, es donde empieza la búsqueda de cada título. Menor = más calidad y archivos más grandes. Ningún CQ sirve para todos los archivos: un remux de Blu-ray limpio a menudo se ve igual que el original con CQ 28–32, mientras que el grano y las versiones web ya comprimidas necesitan 20–24. <b>20–24</b> aguanta con cualquier fuente; los valores más altos ahorran más con las limpias. El objetivo VMAF mide cada título y encuentra su propio CQ.",
