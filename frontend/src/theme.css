@@ -14,6 +14,7 @@
   --text-secondary: #c8bfdf;
   --text-muted: #8982a0;      /* 4.9:1 on cards (#827b9a was 4.48 — just under AA) */
   --text-dim: #858596;        /* 4.5:1 (was 20% white: 2.25:1) */
+  --text-placeholder: #797193; /* a step under --text-muted, as dim as the browser's neutral #757575 was (3.6–4.1:1) */
   /* Semantic colours (v0.10.0). Components used hex literals for these —
      dark-theme colours that landed on light backgrounds at 1.3–2.5:1.
      Every text colour here is ≥ 4.5:1 on every background in its theme
@@ -186,6 +187,7 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 button, input, select, textarea { font-family: inherit; }
+input::placeholder, textarea::placeholder { color: var(--text-placeholder); opacity: 1; }  /* Firefox dims placeholders to 54% */
 
 /* Custom checkboxes */
 input[type="checkbox"] {
