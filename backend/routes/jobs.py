@@ -134,6 +134,9 @@ class BulkQueueFromScanRequest(BaseModel):
     # Add to Queue's lossless audio (v0.10.0): a conversion keeps it or
     # converts it whatever Settings say. None: Settings'.
     lossless_audio_override: Optional[Literal["keep", "convert"]] = None
+    # Add to Queue's NVENC anti-banding (v0.10.0), over a rule's. None: the
+    # rule's, else Settings' when it runs.
+    nvenc_aq_override: Optional[Literal["off", "light", "strong"]] = None
     force_reencode: bool = False
     # User-chosen "no video conversion" — runs only the audio/sub cleanup
     # pass on the original file. Same effect as a rule with action="ignore",
@@ -803,6 +806,8 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
                    if payload.vmaf_target_override is not None and job_type in ("convert", "combined") else {}),
                 **({"lossless_audio": payload.lossless_audio_override}
                    if payload.lossless_audio_override and job_type in ("convert", "combined") else {}),
+                **({"nvenc_aq": payload.nvenc_aq_override}
+                   if payload.nvenc_aq_override and job_type in ("convert", "combined") else {}),
                 # The fixes it makes ("" = none chosen); None: the setting's
                 "direct_play": None if payload.direct_play is None else ",".join(sorted(problems)),
                 "audio_codec": audio_codec,
@@ -1402,6 +1407,8 @@ class TestEncodeRequest(BaseModel):
     # = what the job would get from its rule or the settings.
     cq: int | None = None
     preset: str | None = None
+    # The dialog's NVENC anti-banding; None = the rule's, else Settings'.
+    nvenc_aq: Optional[Literal["off", "light", "strong"]] = None
     sample_seconds: int = 30
 
 
@@ -1461,8 +1468,9 @@ async def start_test_encode(payload: TestEncodeRequest):
         overrides["override_target_resolution"] = rule["target_resolution"]
     if rule.get("output_codec") in ("hevc", "av1"):
         overrides["output_codec"] = rule["output_codec"]
-    if rule.get("nvenc_aq"):  # the rule's anti-banding, over Settings'
-        overrides["pre_settings"] = {**await get_live_encoding_settings(), "nvenc_aq": rule["nvenc_aq"]}
+    aq = payload.nvenc_aq or rule.get("nvenc_aq")  # the dialog's anti-banding, the rule's, over Settings'
+    if aq:
+        overrides["pre_settings"] = {**await get_live_encoding_settings(), "nvenc_aq": aq}
 
     try:
         result = await run_test_encode(
@@ -2158,7 +2166,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         from backend.content_detect import SMART_CQ_KEYS
         est_keys = ('backup_original_days', 'trash_original_after_conversion', 'skip_hardlinked', 'maintainerr_skip',
                     'target_resolution', 'image_subs_keep_original', 'vmaf_target_enabled', 'vmaf_target_score',
-                    'vmaf_analysis_enabled', 'vmaf_min_score', 'nvenc_preset', 'libx265_preset', 'audio_codec',
+                    'vmaf_analysis_enabled', 'vmaf_min_score', 'nvenc_preset', 'nvenc_aq', 'libx265_preset', 'audio_codec',
                     'audio_bitrate', 'dolby_vision_mode', *SMART_CQ_KEYS, *QUALITY_KEYS)
         est_settings = {}
         async with db.execute(
@@ -2296,7 +2304,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         def _setting(key: str) -> str:
             return str(est_settings.get(key) or _ENCODING_DEFAULTS.get(key) or "")
         auto: dict[str, dict[str, dict[str, int]]] = {
-            field: {"settings": {}, "rules": {}} for field in ("encoder", "preset", "audio", "resolution")}
+            field: {"settings": {}, "rules": {}} for field in ("encoder", "preset", "nvenc_aq", "audio", "resolution")}
 
         def _auto(field: str, value: str, by_rule: bool) -> None:
             counts = auto[field]["rules" if by_rule else "settings"]
@@ -2403,6 +2411,8 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                 preset_key = {"nvenc": "nvenc_preset", "libx265": "libx265_preset"}.get(file_encoder)
                 if preset_key:  # Quick Sync, VAAPI and VideoToolbox take theirs from Settings only
                     _auto("preset", r.get(preset_key) or _setting(preset_key), bool(r.get(preset_key)))
+                if file_encoder == "nvenc":
+                    _auto("nvenc_aq", r.get("nvenc_aq") or _setting("nvenc_aq"), bool(r.get("nvenc_aq")))
                 codec = r.get("audio_codec") or _setting("audio_codec")
                 _auto("audio", codec if codec == "copy" else f"{codec}:{r.get('audio_bitrate') or _setting('audio_bitrate')}",
                       bool(r.get("audio_codec") or r.get("audio_bitrate")))

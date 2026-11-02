@@ -125,6 +125,12 @@
     "qualityForSome_other": "For the {{num}} files without a VMAF target. The target finds the others' quality.",
     "reset": "Reset",
     "preset": "Preset",
+    "antiBanding": {
+      "label": "Anti-banding",
+      "off": "Off",
+      "light": "Light",
+      "strong": "Strong"
+    },
     "cpuPresetDefault": "(default)",
     "cpuPresetBest": "(Best compression)",
     "nvencPresets": {

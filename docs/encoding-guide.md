@@ -121,7 +121,8 @@ areas more bits with spatial adaptive quantization (`-spatial-aq 1`):
 | Strong | `-aq-strength 15` | the same film 0.19; the same TV 1.47, for 71% more bits |
 
 What it costs depends on the material. A rule can choose its own: Off for
-a space-saving TV rule, say, or Strong for dark films. libx265 always adapts
+a space-saving TV rule, say, or Strong for dark films. So can Add to Queue,
+under Encoding Settings, for the files it adds. libx265 always adapts
 its quantization (`aq-mode=3`). [Custom ffmpeg flags](#custom-ffmpeg-flags)
 come after these, so `-aq-strength 10` there, for example, replaces the
 strength.

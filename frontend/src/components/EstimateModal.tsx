@@ -45,6 +45,8 @@ export interface EncodingOverrides {
   // Lossless audio (v0.10.0): kept or converted whatever Settings say;
   // absent: Settings'.
   lossless_audio?: "keep" | "convert";
+  // NVENC anti-banding (v0.10.0); absent: the rule's, else Settings'.
+  nvenc_aq?: "off" | "light" | "strong";
 }
 
 // Fix for direct play's fixes (backend/direct_play.py's problems), in the
@@ -109,6 +111,8 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   // what Settings do with it, to name it.
   const [lossless, setLossless] = useState<"keep" | "convert" | null>(null);
   const [settingsLossless, setSettingsLossless] = useState<{ on: boolean; target: string } | null>(null);
+  // NVENC anti-banding (v0.10.0): null the rule's / Settings', else this batch's.
+  const [aq, setAq] = useState<"off" | "light" | "strong" | null>(null);
   const vmafMode = vmafChoice === "" ? "" : vmafChoice === "off" ? "off" : "custom";
   const vmafScore = Number(vmafChoice);
   // What reaches the queue: 0 off, a score from 80 to 99, else nothing chosen.
@@ -186,6 +190,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   // we'd need new sliders; for v0.3.69 we just hide the legacy controls
   // and let the global QSV/VAAPI settings apply. v0.3.69+.
   const isHwHevc = effectiveEncoder === "qsv" || effectiveEncoder === "vaapi" || effectiveEncoder === "videotoolbox";
+  const isNvenc = effectiveEncoder === "nvenc";
 
   // The VMAF target finding every conversion's quality: the quality can't be
   // set (it was only the search's start; a file the search can't test keeps
@@ -266,6 +271,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
     if (directPlay) o.direct_play_fixes = dpFixes;
     if (vmafOverride !== null) o.vmaf_target = vmafOverride;
     if (lossless !== null) o.lossless_audio = lossless;
+    if (aq !== null && isNvenc) o.nvenc_aq = aq;
     return o;
   };
   // A clean-up's Dolby Vision (v0.10.0): removed under "Convert to HDR10";
@@ -612,7 +618,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                 </svg>
                 {t("scannerModals:overrides.encodingSettings")}
                 <span style={{ marginLeft: "auto", color: "var(--text-muted)", fontSize: 11 }}>
-                  {cq !== null || encoder !== null || preset !== null || audioCdc !== null || vmafChoice !== "" || lossless !== null ? t("scannerModals:overrides.custom") : t("scannerModals:overrides.defaultSettings")}
+                  {cq !== null || encoder !== null || preset !== null || audioCdc !== null || vmafChoice !== "" || lossless !== null || aq !== null ? t("scannerModals:overrides.custom") : t("scannerModals:overrides.defaultSettings")}
                 </span>
               </button>
 
@@ -714,6 +720,21 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                           ))}
                         </>
                       )}
+                    </select>
+                  </div>
+                  )}
+                  {/* NVENC anti-banding (v0.10.0): a film that bands, or a
+                      batch to keep small, without a rule. */}
+                  {isNvenc && !cleanupOnly && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.antiBanding.label")}</label>
+                    <select aria-label={t("scannerModals:overrides.antiBanding.label")} value={aq ?? ""}
+                      onChange={e => setAq((e.target.value || null) as "off" | "light" | "strong" | null)}
+                      style={{ flex: 1, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
+                      <option value="">{autoLabel("nvenc_aq", v => t(`scannerModals:overrides.antiBanding.${v}`))}</option>
+                      <option value="off">{t("scannerModals:overrides.antiBanding.off")}</option>
+                      <option value="light">{t("scannerModals:overrides.antiBanding.light")}</option>
+                      <option value="strong">{t("scannerModals:overrides.antiBanding.strong")}</option>
                     </select>
                   </div>
                   )}
@@ -833,6 +854,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                               encoder ?? undefined,
                               cq ?? (estimate?.cq || 20),
                               preset ?? undefined,
+                              isNvenc ? aq ?? undefined : undefined,
                             );
                             setTestResult(result);
                           } catch (err: any) {

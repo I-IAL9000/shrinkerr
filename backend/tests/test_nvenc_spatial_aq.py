@@ -19,6 +19,7 @@ import pytest
 from backend.converter import _build_ffmpeg_cmd_impl
 from backend.rule_actions import job_overrides, settings_overrides
 from backend.tests.test_nvenc_level import _arg
+from backend.tests.test_vmaf_target_rules import FILM, PLAIN, REALITY, _rule, _settings, library  # noqa: F401  (a fixture)
 
 
 @pytest.mark.parametrize("output_codec", [None, "av1"])
@@ -192,3 +193,86 @@ async def test_a_test_encode_uses_the_rules_choice(test_db, tmp_path, monkeypatc
     monkeypatch.setattr(converter, "convert_file", spy)
     result = await start_test_encode(TestEncodeRequest(file_path=str(clip), encoder="nvenc", cq=30))
     assert result["status"] != "complete" and seen["pre_settings"]["nvenc_aq"] == "off"
+    # Add to Queue's own choice, over the rule's.
+    seen.clear()
+    await start_test_encode(TestEncodeRequest(file_path=str(clip), encoder="nvenc", cq=30, nvenc_aq="strong"))
+    assert seen["pre_settings"]["nvenc_aq"] == "strong"
+
+
+@pytest.mark.asyncio
+async def test_add_to_queue_chooses_for_its_files(library):
+    """The dialog's choice, over a rule's; none: the rule's, else Settings'
+    when it runs. A file re-added while it waits takes the new choice."""
+    from backend.routes.jobs import BulkQueueFromScanRequest, add_jobs_from_scan
+    await _settings(library, default_encoder="nvenc")
+    await _rule("Reality", "/m/Reality", nvenc_aq="off")
+
+    async def jobs():
+        async with aiosqlite.connect(library) as db:
+            async with db.execute("SELECT file_path, nvenc_aq FROM jobs") as cur:
+                return dict(await cur.fetchall())
+    await add_jobs_from_scan(BulkQueueFromScanRequest(file_paths=[REALITY, FILM], nvenc_aq_override="strong"))
+    await add_jobs_from_scan(BulkQueueFromScanRequest(file_paths=[PLAIN]))
+    assert await jobs() == {REALITY: "strong", FILM: "strong", PLAIN: None}
+    await add_jobs_from_scan(BulkQueueFromScanRequest(
+        file_paths=[REALITY, PLAIN], nvenc_aq_override="light", update_pending=True))
+    assert await jobs() == {REALITY: "light", FILM: "strong", PLAIN: "light"}
+    await add_jobs_from_scan(BulkQueueFromScanRequest(file_paths=[REALITY], update_pending=True))
+    assert (await jobs())[REALITY] == "off"  # no choice: the rule's again
+
+
+@pytest.mark.asyncio
+async def test_a_clean_up_encodes_nothing(library):
+    from backend.routes.jobs import BulkQueueFromScanRequest, add_jobs_from_scan
+    await _settings(library, default_encoder="nvenc")
+    async with aiosqlite.connect(library) as db:
+        await db.execute("UPDATE scan_results SET audio_tracks_json = ? WHERE file_path = ?",
+                         ('[{"stream_index": 1, "language": "eng", "codec": "aac", "keep": true}, '
+                          '{"stream_index": 2, "language": "fra", "codec": "aac", "keep": false}]', PLAIN))
+        await db.commit()
+    await add_jobs_from_scan(BulkQueueFromScanRequest(file_paths=[PLAIN], cleanup_only=True, nvenc_aq_override="strong"))
+    async with aiosqlite.connect(library) as db:
+        async with db.execute("SELECT job_type, nvenc_aq FROM jobs") as cur:
+            assert await cur.fetchall() == [("audio", None)]
+
+
+def test_only_off_light_or_strong():
+    from pydantic import ValidationError
+
+    from backend.routes.jobs import BulkQueueFromScanRequest, TestEncodeRequest
+    with pytest.raises(ValidationError):
+        BulkQueueFromScanRequest(file_paths=["/m/a.mkv"], nvenc_aq_override="loud")
+    with pytest.raises(ValidationError):
+        TestEncodeRequest(file_path="/m/a.mkv", nvenc_aq="loud")
+
+
+@pytest.mark.asyncio
+async def test_the_estimate_says_what_auto_is(library):
+    """Add to Queue's "Auto" names Settings' anti-banding and the rules'
+    instead, for the files NVENC converts."""
+    from backend.routes.jobs import EstimateRequest, estimate_jobs
+    await _settings(library, default_encoder="nvenc", nvenc_aq="strong")
+    await _rule("Reality", "/m/Reality", nvenc_aq="off")
+    files = [REALITY, FILM, PLAIN]
+    assert (await estimate_jobs(EstimateRequest(file_paths=files)))["auto"]["nvenc_aq"] == {
+        "settings": {"strong": 2}, "rules": {"off": 1}}
+    assert (await estimate_jobs(EstimateRequest(file_paths=files, encoder="libx265")))["auto"]["nvenc_aq"] == {
+        "settings": {}, "rules": {}}
+
+
+def test_the_dialog_has_the_choice():
+    """The frontend has no test runner: these check the source and catalogs."""
+    from backend.tests.test_vmaf_target_ui import PLURALS, _placeholders, _source
+    src = _source("EstimateModal.tsx")
+    preset, aq, audio = (src.index(f'{{t("scannerModals:overrides.{k}")}}</label>')
+                         for k in ("preset", "antiBanding.label", "audio"))
+    assert preset < aq < audio  # under the preset
+    assert 'effectiveEncoder === "nvenc"' in src
+    assert all(f'<option value="{v}">' in src for v in ("off", "light", "strong"))
+    assert 'autoLabel("nvenc_aq"' in src
+    assert "if (aq !== null && isNvenc) o.nvenc_aq = aq;" in src
+    assert "isNvenc ? aq ?? undefined : undefined" in src  # the test encode
+    assert "extra.nvenc_aq_override = encodingOverrides.nvenc_aq" in _source("ScannerPage.tsx")
+    for lang in PLURALS:
+        for key in ("label", "off", "light", "strong"):
+            assert _placeholders(lang, f"scannerModals:overrides.antiBanding.{key}") == [set()], (lang, key)

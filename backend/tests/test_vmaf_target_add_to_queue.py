@@ -99,6 +99,7 @@ async def test_the_estimate_says_what_each_auto_comes_to(library):
     assert auto == {
         "encoder": {"settings": {"nvenc": 2}, "rules": {"libx265": 1}},
         "preset": {"settings": {"p3": 1, "medium": 1}, "rules": {"p4": 1}},  # Reality's libx265: Settings' medium
+        "nvenc_aq": {"settings": {"light": 2}, "rules": {}},  # NVENC's files only
         "audio": {"settings": {"eac3:640": 2}, "rules": {"copy": 1}},
         "resolution": {"settings": {"copy": 2}, "rules": {"1080p": 1}},
     }

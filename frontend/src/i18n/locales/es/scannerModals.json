@@ -150,6 +150,12 @@
     "qualityForSome_other": "Para los {{num}} archivos sin objetivo VMAF. El objetivo busca la calidad de los demás.",
     "reset": "Restablecer",
     "preset": "Preajuste",
+    "antiBanding": {
+      "label": "Reducción de bandas",
+      "off": "Desactivada",
+      "light": "Ligera",
+      "strong": "Fuerte"
+    },
     "cpuPresetDefault": "(predeterminado)",
     "cpuPresetBest": "(Mejor compresión)",
     "nvencPresets": {

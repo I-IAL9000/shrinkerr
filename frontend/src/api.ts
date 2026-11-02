@@ -373,8 +373,8 @@ export const getStatsSummary = () => apiFetch<any>("/stats/summary");
 export const getStatsTimeline = (days: number = 30) => apiFetch<any>(`/stats/timeline?days=${days}`);
 export const getDashboardData = () => apiFetch<any>("/stats/dashboard");
 export const testNotifications = () => apiFetch<any>("/stats/notifications/test", { method: "POST" });
-export const startTestEncode = (filePath: string, encoder?: string, cq?: number, preset?: string) =>
-  apiFetch<any>("/jobs/test-encode", { method: "POST", body: JSON.stringify({ file_path: filePath, encoder, cq, preset }) });
+export const startTestEncode = (filePath: string, encoder?: string, cq?: number, preset?: string, nvencAq?: string) =>
+  apiFetch<any>("/jobs/test-encode", { method: "POST", body: JSON.stringify({ file_path: filePath, encoder, cq, preset, nvenc_aq: nvencAq }) });
 export const getVmafStatus = () =>
   apiFetch<{ vmaf_available: boolean }>("/jobs/vmaf-status");
 export const getSystemMetrics = () =>
