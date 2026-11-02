@@ -184,6 +184,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On phones the header stays put and the Scanner tree and poster grid render; tree rows stay on one line; the path picker keeps the Scan button on screen; the development version label fits the sidebar.
 - Settings' checkbox labels line up with their checkboxes (some sat a few pixels high).
 
+## [0.9.160] — 2026-11-02
+
+### Fixed
+- **Intel Arc and Flex GPUs**: both images now ship Intel's media driver 25.2.4 instead of the older one from Debian / Ubuntu, which failed to start on Arc and Flex cards. Older Intel GPUs (Broadwell and newer) keep working.
+
 ## [0.9.159] — 2026-10-30
 
 ### Security
