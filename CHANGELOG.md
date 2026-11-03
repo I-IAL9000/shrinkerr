@@ -80,7 +80,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Demo mode never hands out the API key, backups or download scripts; links in the in-app changelog only open http(s) addresses; scan progress and cancel files live in the data folder instead of fixed names in `/tmp`.
 
 ### Fixed
-- **Scans keep what they find**: the scan ran as a copy of the server process and shared SQLite's record of its locks; when the server's connections closed mid-scan, the scan's writes were lost — a rescan said it had saved the folder and left the old track lists, so clean-ups failed with "tracks changed" — and with the server busy they could corrupt the database. Scans now start in a fresh process.
 - **Two conversions finishing together keep their before / after frames**: each deleted the other's while it was still finishing its checks, and both jobs said their frames were deleted.
 - **NVENC encodes aren't held to 10 Mbps, or 33 Mbps in 4K**: left to choose, NVENC used HEVC level 4.0 for 1080p and kept every encode under its bitrate, whatever the CQ — grainy films came out the same at CQ 14 and 23 and missed the VMAF target; 4K encodes stayed under about 33 Mbps. Encodes now use level 5.1 (4K its high tier, up to 160 Mbps, as UHD Blu-rays do).
 - **NVENC encodes don't band dark, flat scenes**: fog, night skies and dark walls came out in visible steps, and VMAF doesn't notice them, so a VMAF target didn't help. **Settings → Video → Anti-banding** gives flat areas the bits they need: Light by default (files often 10–30% larger), Strong, or Off; a rule, or Add to Queue for the files it adds, can choose its own.
@@ -187,6 +186,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Activity search treats `%` and `_` as plain characters; a VMAF cross-check that times out stops; Settings' test encode no longer hangs on long output.
 - On phones the header stays put and the Scanner tree and poster grid render; tree rows stay on one line; the path picker keeps the Scan button on screen; the development version label fits the sidebar.
 - Settings' checkbox labels line up with their checkboxes (some sat a few pixels high).
+
+## [0.9.161] — 2026-11-03
+
+### Fixed
+- **Scans keep what they find**: the scan ran as a copy of the server process and shared SQLite's record of its locks; when the server's connections closed mid-scan, the scan's writes were lost — a rescan said it had saved the folder and left the old track lists, so clean-ups failed with "tracks changed" — and with the server busy they could corrupt the database. Scans now start in a fresh process.
 
 ## [0.9.160] — 2026-11-02
 
