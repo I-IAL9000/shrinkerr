@@ -1,5 +1,6 @@
 import asyncio
 import json
+import multiprocessing
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -241,6 +242,12 @@ async def _write_batch(db_path_or_db, batch: list, now: str, mark_new: bool = Fa
 
 
 _scan_proc = None
+# A fresh interpreter, never a fork of the server: a forked child inherits
+# SQLite's record of the server's locks but not the locks. Once the server's
+# last connection closed it deleted the WAL under the scan, whose writes were
+# lost from then on (a folder rescan logged "Written" and left the old rows)
+# or, with the server busy, corrupted the database.
+_SCAN_MP = multiprocessing.get_context("spawn")
 _scan_progress_file = "/tmp/shrinkerr_scan_progress.json"
 _scan_cancel_file = "/tmp/shrinkerr_scan_cancel"
 
@@ -692,7 +699,6 @@ async def _run_scan(paths: list[str], is_folder_rescan: bool = False) -> None:
     re-run for one folder. The periodic full scan and the watcher keep that
     cache fresh."""
     global _scan_proc
-    import multiprocessing
     import os
 
     _scan_cancel.clear()
@@ -705,7 +711,7 @@ async def _run_scan(paths: list[str], is_folder_rescan: bool = False) -> None:
             pass
 
     # Start scan in a separate process
-    proc = multiprocessing.Process(
+    proc = _SCAN_MP.Process(
         target=_scan_worker_process,
         args=(paths, DB_PATH, _scan_progress_file, _scan_cancel_file),
         daemon=True,

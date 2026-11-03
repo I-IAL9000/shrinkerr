@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.161] — 2026-11-03
+
+### Fixed
+- **Scans keep what they find**: the scan ran as a copy of the server process and shared SQLite's record of its locks; when the server's connections closed mid-scan, the scan's writes were lost — a rescan said it had saved the folder and left the old track lists, so clean-ups failed with "tracks changed" — and with the server busy they could corrupt the database. Scans now start in a fresh process.
+
 ## [0.9.160] — 2026-11-02
 
 ### Fixed
