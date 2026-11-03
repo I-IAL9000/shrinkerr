@@ -123,8 +123,12 @@ export default function FilterListSection({ section, values, lastValues, version
         <label className="filter-option-main">
           <input type="checkbox" checked={included} disabled={empty}
             onChange={e => toggle(value, (e.nativeEvent as MouseEvent).altKey === true)} />
-          {/* The whole name when it's cut short ("United States of A…"). */}
-          <span className="filter-option-label" title={display}>{display}</span>
+          {/* The whole name when it's cut short ("United States of A…"); a
+              folder's path is cut at the start ("…/TV1/Kraftaverk"): the
+              marks keep its slashes in place, written right to left. */}
+          {facet === "library"
+            ? <span className="filter-option-label path" title={display}>{`\u200E${display}\u200E`}</span>
+            : <span className="filter-option-label" title={display}>{display}</span>}
           {excluded && <span className="sr-only">{t("scanner:filterBar.excluded")}</span>}
           <span className={`filter-option-count${fresh ? "" : " stale"}`}>
             {count == null ? (top == null ? "…" : "") : fmtNum(count)}

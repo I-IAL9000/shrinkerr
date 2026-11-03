@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useDialog } from "../useDialog";
 import { useTranslation } from "react-i18next";
 import { advancedSearch, getFacetValues, getSearchProperties, type SearchProperty, type SearchPredicate } from "../api";
-import { facetValueLabel } from "../facetLabels";
+import { facetValueLabel, languageKey } from "../facetLabels";
 import { serverText } from "../i18n/server";
 import type { AdvancedSpec } from "../advancedSearch";
 
@@ -69,8 +69,9 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
 
   // A title condition suggests the library's values from the Scanner's lists
   // (v0.10.0): Genre offered only its example, "Documentary". Until the
-  // filter index is ready (values null) the example stays.
-  const [suggestions, setSuggestions] = useState<Record<string, string[]>>({});
+  // filter index is ready (values null) the example stays. The languages
+  // pick from theirs, by name.
+  const [suggestions, setSuggestions] = useState<Record<string, { value: string; label: string }[]>>({});
   const asks = useMemo(() => Array.from(new Set(
     predicates.map(p => listAsk(props[p.property], p.value)).filter((a): a is string => a !== null),
   )), [predicates, props]);
@@ -81,7 +82,9 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
     const timer = setTimeout(() => missing.forEach(ask => {
       const [facet, q] = ask.split("\n");
       getFacetValues(facet, "all", ctrl.signal, q || undefined).then(r => {
-        if (r.values) setSuggestions(s => ({ ...s, [ask]: r.values!.map(v => facetValueLabel(facet, v.value, t, v.label)) }));
+        if (r.values) setSuggestions(s => ({
+          ...s, [ask]: r.values!.map(v => ({ value: v.value, label: facetValueLabel(facet, v.value, t, v.label) })),
+        }));
       }).catch(() => {});
     }), 250);
     return () => { clearTimeout(timer); ctrl.abort(); };
@@ -161,15 +164,28 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
       );
     }
 
-    // Enum: render a real dropdown using the property's options
-    if (prop.type === "enum" && prop.options && prop.options.length > 0) {
+    // Enum: render a real dropdown using the property's options, or (the
+    // languages) its Scanner list's: every language in the library, by name.
+    const language = prop.facet === "alang" || prop.facet === "slang";
+    const choices = prop.options?.length
+      ? prop.options.map(o => ({ value: String(o), label: optionLabel(pred.property, prop, String(o)) }))
+      : language && pred.op !== "contains"
+        ? [...(suggestions[prop.facet!] ?? [])].sort((a, b) => a.label.localeCompare(b.label))
+        : null;
+    if (prop.type === "enum" && choices) {
+      // As the list keys a language ("fra" is "fre"), and one it no longer
+      // has (a saved search) by name.
+      const key = (v: string) => (language ? languageKey(v) : v);
+      const withValue = (values: string[]) => [...choices, ...values
+        .filter(v => !choices.some(c => c.value === v))
+        .map(v => ({ value: v, label: facetValueLabel(prop.facet!, v, t) }))];
       // For "in" we let the user pick multiple via a multi-select
       if (pred.op === "in") {
-        const selected: string[] = Array.isArray(pred.value)
+        const selected: string[] = (Array.isArray(pred.value)
           ? pred.value.map(String)
           : (typeof pred.value === "string" && pred.value.trim()
               ? pred.value.split(",").map(s => s.trim()).filter(Boolean)
-              : []);
+              : [])).map(key);
         return (
           <select aria-label={t("common:labels.value")}
             multiple
@@ -180,26 +196,19 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
             }}
             style={{ ...selectStyle, minWidth: 180, height: 80 }}
           >
-            {prop.options.map(o => {
-              const key = String(o);
-              const label = optionLabel(pred.property, prop, key);
-              return <option key={key} value={key}>{label}</option>;
-            })}
+            {withValue(selected).map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
         );
       }
+      const value = pred.value == null || pred.value === "" ? "" : key(String(pred.value));
       return (
         <select aria-label={t("common:labels.value")}
-          value={pred.value ?? ""}
+          value={value}
           onChange={e => updatePred(i, { value: e.target.value })}
           style={{ ...selectStyle, minWidth: 140 }}
         >
           <option value="">{t("scannerModals:search.pickValue")}</option>
-          {prop.options.map(o => {
-            const key = String(o);
-            const label = optionLabel(pred.property, prop, key);
-            return <option key={key} value={key}>{label}</option>;
-          })}
+          {withValue(value ? [value] : []).map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
         </select>
       );
     }
@@ -290,7 +299,7 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
                 {renderValueInput(pred, i)}
                 {(() => {
                   const ask = listAsk(prop, pred.value);
-                  const values = (ask && suggestions[ask]) || (prop?.examples ?? []).map(String);
+                  const values = (ask && suggestions[ask]?.map(s => s.label)) || (prop?.examples ?? []).map(String);
                   return values.length > 0 && (
                     <datalist id={`prop-values-${i}`}>
                       {values.map(v => <option key={v} value={v} />)}

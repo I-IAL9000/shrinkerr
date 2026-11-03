@@ -941,15 +941,16 @@ ADVANCED_PROPERTIES: dict[str, dict] = {
     # Audio
     "audio_codec":   {"kind": "tracks", "column": "audio_tracks_json", "field": "codec", "type": "enum", "ops": ["eq", "ne", "in"], "label": "Audio codec (any track)", "group": "Audio",
                       "options": ["aac", "ac3", "eac3", "dts", "truehd", "flac", "mp3", "opus", "vorbis", "pcm_s16le", "pcm_s24le"]},
-    "audio_lang":    {"kind": "tracks", "column": "audio_tracks_json", "field": "language", "type": "enum", "ops": ["eq", "ne", "in"], "label": "Audio language (any track)", "group": "Audio",
-                      "options": ["eng", "fre", "fra", "spa", "ger", "deu", "ita", "jpn", "kor", "chi", "zho", "rus", "por", "pol", "nld", "swe", "nor", "dan", "fin", "tur", "ara", "hin", "tha", "ind", "vie", "und"]},
+    # The languages: the Scanner's lists of them, every one in the library
+    # (26 fixed ones lacked Icelandic), matched by any of their codes.
+    "audio_lang":    {"kind": "track_lang", "column": "audio_tracks_json", "facet": "alang", "type": "enum", "ops": ["eq", "ne", "in"], "label": "Audio language (any track)", "group": "Audio"},
     "audio_channels":{"kind": "max_channels", "type": "number", "ops": ["eq", "gt", "gte", "lt", "lte"], "label": "Audio channels (max)", "group": "Audio", "examples": [2, 6, 8]},
     "audio_track_count": {"kind": "count", "column": "audio_tracks_json", "type": "number", "ops": ["eq", "gt", "gte", "lt", "lte"], "label": "Audio track count", "group": "Audio"},
     "has_lossless_audio": {"kind": "column", "col": "COALESCE(has_lossless_audio_flag, 0)", "type": "bool", "ops": ["eq"], "label": "Has lossless audio", "group": "Audio"},
     "has_removable_tracks": {"kind": "column", "col": "COALESCE(has_removable_tracks_flag, 0)", "type": "bool", "ops": ["eq"], "label": "Has removable audio tracks", "group": "Audio"},
 
     # Subtitles
-    "subtitle_lang": {"kind": "tracks", "column": "subtitle_tracks_json", "field": "language", "type": "string", "ops": ["eq", "in", "contains"], "label": "Subtitle language (any)", "group": "Subtitles"},
+    "subtitle_lang": {"kind": "track_lang", "column": "subtitle_tracks_json", "facet": "slang", "type": "enum", "ops": ["eq", "in", "contains"], "label": "Subtitle language (any)", "group": "Subtitles"},
     "subtitle_count":{"kind": "count", "column": "subtitle_tracks_json", "type": "number", "ops": ["eq", "gt", "gte", "lt", "lte"], "label": "Subtitle track count", "group": "Subtitles"},
     "has_removable_subs": {"kind": "column", "col": "COALESCE(has_removable_subs_flag, 0)", "type": "bool", "ops": ["eq"], "label": "Has removable subs", "group": "Subtitles"},
 
@@ -1075,6 +1076,18 @@ def compile_condition(index: int, pred: dict) -> Optional[Filter]:
         cond = _tracks(column, f"{cell} IN ({','.join('?' * len(vals))})")
         # "is not X": no track is X (it meant "some track isn't X").
         return sql(f"NOT {cond}" if op == "ne" else cond, *vals)
+
+    if kind == "track_lang" and op != "contains":
+        keys = {lang_key(v) for v in (_values(value) if op == "in" else [value]) if str(v or "").strip()}
+        if not keys:
+            return None
+        conds = [_lang_cond(prop["column"])(key) for key in sorted(keys)]
+        cond = " OR ".join(f"({c})" for c, _ in conds)
+        return sql(f"NOT ({cond})" if op == "ne" else cond, *(param for _, params in conds for param in params))
+
+    if kind == "track_lang":  # "contains": the code's text, as before
+        return sql(_tracks(prop["column"], "lower(COALESCE(json_extract(t.value, '$.language'), '')) LIKE ? ESCAPE '\\'"),
+                   f"%{escape_like(str(value).strip().lower())}%") if str(value or "").strip() else None
 
     if kind == "max_channels":
         return number_cond("(SELECT COALESCE(MAX(json_extract(t.value, '$.channels')), 0) FROM json_each("

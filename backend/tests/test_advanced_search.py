@@ -41,6 +41,13 @@ def test_the_token_round_trips():
     (("audio_track_count", "eq", 0), {"broken"}),
     (("subtitle_lang", "eq", "eng"), {"dune", "heat_br", "big"}),
     (("subtitle_lang", "contains", "fr"), {"alien"}),
+    # A language by any of its codes, as the Scanner's lists fold them: "fre"
+    # finds the tracks tagged "fra" (it found only a track's exact text).
+    (("audio_lang", "eq", "fre"), {"clip"}),
+    (("audio_lang", "eq", "FR"), {"clip"}),
+    (("subtitle_lang", "in", "fre"), {"alien"}),
+    (("audio_lang", "eq", "und"), {"ep1"}),
+    (("audio_lang", "ne", "eng"), {"clip", "ep1", "big", "broken"}),  # no English track
     (("source", "eq", "remux"), {"dune"}),
     (("source", "in", "bluray,unknown"), {"heat_br", "web_in_br", "clip", "alien", "broken", "corrupt", "big", "wmv"}),
     (("source", "eq", "webrip"), EXPECTED["src_webdl"]),  # older saved searches
@@ -197,5 +204,15 @@ async def test_title_conditions_suggest_the_librarys_values():
     lists = {k: (p["facet"], p["facet_search"]) for k, p in props.items() if p.get("facet")}
     assert lists == {"genre": ("genre", False), "network": ("network", False), "country": ("country", False),
                      "plex_label": ("plabel", False), "actor": ("actor", True), "director": ("director", True),
-                     "studio": ("studio", True)}
+                     "studio": ("studio", True), "audio_lang": ("alang", False), "subtitle_lang": ("slang", False)}
     assert all(facet in FACETS and FACETS[facet].searched == searched for facet, searched in lists.values())
+
+
+def test_the_language_conditions_list_the_librarys_languages():
+    """Audio language offered 26 languages (no Icelandic) and subtitle
+    language none: both list the Scanner's languages, every one in the
+    library, by name."""
+    from backend.routes.search import PROPERTIES
+    assert {k: (PROPERTIES[k]["facet"], PROPERTIES[k]["type"], PROPERTIES[k].get("options"))
+            for k in ("audio_lang", "subtitle_lang")} == {
+        "audio_lang": ("alang", "enum", None), "subtitle_lang": ("slang", "enum", None)}
