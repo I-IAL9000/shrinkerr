@@ -920,7 +920,7 @@ export default function QueuePage() {
                     await removeJob(job.id);
                   }
                   load();
-                  toast(t("queue:toasts.clearedFailed", { count: tabJobs.length }), "error");
+                  toast(t("queue:toasts.clearedFailed", { count: tabJobs.length }), "success");
                   switchTab("pending");
                 }}>
                 {t("common:actions.clearAll")}
