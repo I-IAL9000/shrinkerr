@@ -105,7 +105,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A job's health check shows its warnings**: a check that found only warnings (the file plays) read "Healthy" in the job's report, without them, beside the row's warnings icon. It now says Warnings and lists what was noticed.
 - **E-AC3 audio that plays fine isn't marked corrupt**: the health check allowed the decoder's "expacc N is out-of-range" but not the same check's "exponent N is out-of-range" (a negative N too), which streaming releases trip too.
 - **A clean-up keeps the start of a broadcast recording's video**: a remux dropped the video before the first keyframe — an HDTV capture starts mid-GOP — so each episode lost its first second or so, and the health check then marked it corrupt ("mmco: unref short failure"). The language writer's remux dropped them the same way. A file a clean-up already cut plays fine and is no longer marked corrupt for it ("mmco: unref short failure" is a warning).
-- **An MP4 with text subtitles (mov_text) converts with a sidecar subtitle merged**: the conversion failed (ffmpeg exit 218, "mov_text is not supported") — the merge's catch-all subtitle copy overrode converting the MP4's subtitles to SRT.
 - **A clean-up doesn't mark the file converted**: it copies the video, but marked the file converted and not needing conversion, so the next Add to Queue for an XviD was a clean-up again. Files marked that way need converting again (once, at start-up). Add to Queue says when SRT copies replace the image subtitles instead of "no tracks are removed".
 - **A clean-up that adds to the file isn't ignored**: merging a sidecar subtitle (or adding an SRT copy or a stereo track) can make the file larger, and the clean-up then marked it ignored as "no savings" — so it was never converted — and showed the kept output as "discarded". Files ignored that way are converted after all (once, at start-up). A sidecar DVD subtitle being merged gets its SRT copy too, read from its own stream.
 - **Select all, then untick one title** with filters on or in the poster view left every title unticked (the rest were still selected, a level below the rows the view shows); every other title, season and file now stays ticked.
@@ -187,6 +186,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Activity search treats `%` and `_` as plain characters; a VMAF cross-check that times out stops; Settings' test encode no longer hangs on long output.
 - On phones the header stays put and the Scanner tree and poster grid render; tree rows stay on one line; the path picker keeps the Scan button on screen; the development version label fits the sidebar.
 - Settings' checkbox labels line up with their checkboxes (some sat a few pixels high).
+
+## [0.9.162] — 2026-11-04
+
+### Fixed
+- **MP4s with text subtitles convert when a sidecar subtitle is merged**: with "Merge external subtitles into video" on, a file with MP4 text subtitles (mov_text) beside a sidecar such as `.eng.srt` failed with "Subtitle codec mov_text is not supported" — the merge's catch-all subtitle copy overrode converting the MP4's subtitles to SRT.
 
 ## [0.9.161] — 2026-11-03
 
