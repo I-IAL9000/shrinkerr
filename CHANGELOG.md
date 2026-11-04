@@ -80,6 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Demo mode never hands out the API key, backups or download scripts; links in the in-app changelog only open http(s) addresses; scan progress and cancel files live in the data folder instead of fixed names in `/tmp`.
 
 ### Fixed
+- **Files Shrinkerr cleaned up or converted keep their Added date**: a rescan dated each by Shrinkerr's rewrite, so they showed as newly added (top of Newest, in Added: last 7 days). Files rewritten since their last scan are covered too.
 - **Two conversions finishing together keep their before / after frames**: each deleted the other's while it was still finishing its checks, and both jobs said their frames were deleted.
 - **NVENC encodes aren't held to 10 Mbps, or 33 Mbps in 4K**: left to choose, NVENC used HEVC level 4.0 for 1080p and kept every encode under its bitrate, whatever the CQ — grainy films came out the same at CQ 14 and 23 and missed the VMAF target; 4K encodes stayed under about 33 Mbps. Encodes now use level 5.1 (4K its high tier, up to 160 Mbps, as UHD Blu-rays do).
 - **NVENC encodes don't band dark, flat scenes**: fog, night skies and dark walls came out in visible steps, and VMAF doesn't notice them, so a VMAF target didn't help. **Settings → Video → Anti-banding** gives flat areas the bits they need: Light by default (files often 10–30% larger), Strong, or Off; a rule, or Add to Queue for the files it adds, can choose its own.

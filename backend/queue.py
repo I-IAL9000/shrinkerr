@@ -1459,6 +1459,8 @@ async def refresh_converted_scan_row(db_path: str, job_id: int, file_path: str,
             await db_path.close()
     except Exception as exc:
         print(f"[WORKER] Early scan_results update failed (non-fatal): {exc}", flush=True)
+    from backend.database import note_written
+    await note_written(current_file_path, _queue.db_path)
     return fresh
 
 
@@ -3971,6 +3973,9 @@ class QueueWorker:
                     await db.close()
             except Exception as exc:
                 pass
+        # A rescan keeps the file's Added date: this write isn't it arriving (v0.10.0)
+        from backend.database import note_written
+        await note_written(current_file_path, self.db_path)
 
         self._stamp(job_id, "library rows")
         # Trigger Plex partial scan for the converted file's folder (if enabled)

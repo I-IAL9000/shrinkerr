@@ -10,7 +10,7 @@ from fastapi import APIRouter, Request
 from backend.api_errors import ApiError
 from pydantic import BaseModel
 
-from backend.database import DB_PATH, connect_db, is_temp_path, prefix_clause
+from backend.database import DB_PATH, connect_db, is_temp_path, note_written, prefix_clause
 from backend.models import ScanRequest
 from backend.scan_filters import (
     EXTRAS_FOLDERS, HIGH_BITRATE, LISTED, LOW_BITRATE, NEW_WINDOW_S, PY_COLUMNS, count_all, facet_counts, parse_filter,
@@ -211,7 +211,14 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                            THEN scan_results.language_source ELSE excluded.language_source END,
                        scan_timestamp=excluded.scan_timestamp,
                        removed_from_list=0,
-                       file_mtime=excluded.file_mtime,
+                       -- The file Shrinkerr wrote (a clean-up, a conversion)
+                       -- keeps the row's Added date: its modified time is that
+                       -- write, not the file arriving (v0.10.0, note_written).
+                       file_mtime = CASE
+                           WHEN ABS(excluded.file_mtime - scan_results.written_mtime) < 1
+                           THEN COALESCE(scan_results.file_mtime, excluded.file_mtime)
+                           ELSE excluded.file_mtime
+                       END,
                        -- Only bump new_detected_at when mark_new=True AND this is a re-add
                        -- (existing row had removed_from_list=1). Otherwise preserve the
                        -- original detection time so converted/renamed files don't
@@ -1595,6 +1602,8 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
         await db.commit()
     finally:
         await db.close()
+    if file_written:
+        await note_written(req.file_path)
 
     # v0.9.1: notify Plex so it re-reads the now-corrected track languages,
     # only when the file was actually rewritten. v0.9.2: skippable via
@@ -1796,6 +1805,8 @@ async def set_track_language(req: SetTrackLanguageRequest):
     finally:
         await db.close()
 
+    if file_written:
+        await note_written(req.file_path)
     if file_written or external_renamed:
         await _maybe_notify_plex_lang_change(req.file_path)
 

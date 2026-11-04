@@ -276,6 +276,14 @@ async def lifespan(app: FastAPI):
             _asyncio.create_task(rescan_restored_originals())
         except Exception as exc:
             print(f"[STARTUP] restored-original rescan skipped: {exc}", flush=True)
+        # v0.10.0: files Shrinkerr rewrote since their last scan keep their
+        # Added dates through the next one (a stat each: in its own task).
+        try:
+            from backend.database import note_earlier_writes_once
+            from backend.routes.scan import _fire_and_forget
+            _fire_and_forget(note_earlier_writes_once())
+        except Exception as exc:
+            print(f"[STARTUP] earlier-writes note skipped: {exc}", flush=True)
         try:
             from backend.database import remove_temp_scan_rows
             await remove_temp_scan_rows()

@@ -8,7 +8,7 @@ from backend.api_errors import ApiError
 from pydantic import BaseModel
 
 from backend import dovi
-from backend.database import connect_db, prefix_clause
+from backend.database import connect_db, note_written, prefix_clause
 from backend.queue import JobQueue, QueueWorker
 
 router = APIRouter(prefix="/api/jobs")
@@ -1896,6 +1896,7 @@ async def undo_conversion(job_id: int):
             (original_path, os.path.getsize(original_path), disc_type, converted_path, original_path),
         )
         await db.commit()
+        await note_written(original_path)
 
         try:
             from backend.file_events import log_event, EVENT_REVERTED

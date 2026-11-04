@@ -855,7 +855,9 @@ async def init_db():
         for col, coltype in (("video_fps", "REAL DEFAULT NULL"), ("video_bit_depth", "INTEGER DEFAULT NULL"),
                              ("video_interlaced", "INTEGER DEFAULT NULL"), ("video_vfr", "INTEGER DEFAULT NULL"),
                              ("link_count", "INTEGER DEFAULT NULL"),  # hardlinks (st_nlink)
-                             ("video_dar", "TEXT DEFAULT NULL"), ("video_bitrate", "INTEGER DEFAULT NULL")):
+                             ("video_dar", "TEXT DEFAULT NULL"), ("video_bitrate", "INTEGER DEFAULT NULL"),
+                             # modified time of the file Shrinkerr last wrote here (note_written)
+                             ("written_mtime", "REAL DEFAULT NULL")):
             try:
                 await db.execute(f"ALTER TABLE scan_results ADD COLUMN {col} {coltype}")
             except Exception:
@@ -1710,6 +1712,77 @@ async def backfill_future_mtimes() -> int:
         return n
     finally:
         await db.close()
+
+
+async def note_written(path: str, db_path: str | None = None) -> None:
+    """Shrinkerr has just written the file at `path` (a conversion, a
+    clean-up, language tags, an Undo): note its modified time, so a rescan
+    keeps the row's Added date instead of dating the file by that write —
+    clean-ups followed by a rescan showed as newly added. Best-effort.
+    v0.10.0."""
+    import asyncio
+    import os
+    try:
+        mtime = (await asyncio.to_thread(os.stat, path)).st_mtime
+    except OSError:
+        return
+    try:
+        db = await aiosqlite.connect(db_path or DB_PATH)
+        try:
+            await db.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT}")
+            await db.execute("UPDATE scan_results SET written_mtime = ? WHERE file_path = ?", (mtime, path))
+            await db.commit()
+        finally:
+            await db.close()
+    except Exception as exc:
+        print(f"[DB] Couldn't note the write of {path}: {exc}", flush=True)
+
+
+async def note_earlier_writes_once() -> int:
+    """note_written() for the files Shrinkerr rewrote after their last scan,
+    before it noted its writes: the next scan would have dated each by its
+    rewrite. Not a file replaced since the job (Radarr's upgrade): that one
+    is new. Once per install, in the background (a stat per file over the
+    share). Returns how many were noted. v0.10.0."""
+    import asyncio
+    import os
+    from datetime import datetime
+    sentinel = "earlier_writes_noted"
+    db = await connect_db()
+    try:
+        async with db.execute("SELECT value FROM settings WHERE key = ?", (sentinel,)) as cur:
+            if await cur.fetchone():
+                return 0
+        async with db.execute(
+                "SELECT s.file_path, MAX(j.completed_at) FROM scan_results s "
+                "JOIN jobs j ON j.file_path = s.file_path "
+                "WHERE j.status = 'completed' AND j.job_type IN ('convert', 'audio', 'combined') "
+                "AND j.completed_at > s.scan_timestamp "
+                "AND s.written_mtime IS NULL GROUP BY s.file_path") as cur:
+            rows = [tuple(r) for r in await cur.fetchall()]
+    finally:
+        await db.close()
+    noted = []
+    for path, done in rows:
+        try:
+            mtime = (await asyncio.to_thread(os.stat, path)).st_mtime
+            done_at = datetime.fromisoformat(done).timestamp()
+        except (OSError, TypeError, ValueError):
+            continue
+        if mtime <= done_at + 300:  # not changed since the job (5 min for the NAS clock)
+            noted.append((mtime, path))
+    db = await connect_db()
+    try:
+        await db.executemany("UPDATE scan_results SET written_mtime = ? WHERE file_path = ?", noted)
+        await db.execute("INSERT INTO settings (key, value) VALUES (?, '1') "
+                         "ON CONFLICT(key) DO UPDATE SET value = '1'", (sentinel,))
+        await db.commit()
+    finally:
+        await db.close()
+    if noted:
+        print(f"[DB] {len(noted)} file(s) Shrinkerr rewrote since their last scan keep their Added dates",
+              flush=True)
+    return len(noted)
 
 
 async def backfill_clear_size_check_corrupt() -> int:
