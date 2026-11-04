@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.162] — 2026-11-04
+
+### Fixed
+- **MP4s with text subtitles convert when a sidecar subtitle is merged**: with "Merge external subtitles into video" on, a file with MP4 text subtitles (mov_text) beside a sidecar such as `.eng.srt` failed with "Subtitle codec mov_text is not supported" — the merge's catch-all subtitle copy overrode converting the MP4's subtitles to SRT.
+
 ## [0.9.161] — 2026-11-03
 
 ### Fixed

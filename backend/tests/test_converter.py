@@ -606,3 +606,15 @@ def test_temp_recovery_never_adopts_another_jobs_output(tmp_path):
     variant = tmp_path / unicodedata.normalize("NFD", "AMÉLIE (2001).converting.mkv")
     variant.write_bytes(b"ours")
     assert _find_own_temp_variant(own2) == variant
+
+
+# v0.9.162 (issue #17): an MP4 with mov_text beside a merged .srt failed with
+# "Subtitle codec mov_text is not supported" — the catch-all "-c:s copy" for
+# merged sidecars came after mov_text's "-c:s:0 srt" and, the last option for
+# a stream winning, copied it into the MKV.
+def test_embedded_mov_text_is_still_converted_beside_a_merged_srt():
+    ext = [{"path": "/m/S.eng.srt", "codec": "subrip", "language": "eng"}]
+    cmd = _build_ffmpeg_cmd_impl("/m/S.mp4", "/m/S.mkv", encoder="libx265", external_subtitle_files=ext,
+                                 subtitle_streams=[{"index": 3, "codec_name": "mov_text"}])
+    copies = [i for i, a in enumerate(cmd) if a == "-c:s" and cmd[i + 1] == "copy"]
+    assert copies and copies[-1] < cmd.index("-c:s:0") and cmd[cmd.index("-c:s:0") + 1] == "srt"
