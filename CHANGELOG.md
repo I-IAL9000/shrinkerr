@@ -186,6 +186,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Activity search treats `%` and `_` as plain characters; a VMAF cross-check that times out stops; Settings' test encode no longer hangs on long output.
 - On phones the header stays put and the Scanner tree and poster grid render; tree rows stay on one line; the path picker keeps the Scan button on screen; the development version label fits the sidebar.
 - Settings' checkbox labels line up with their checkboxes (some sat a few pixels high).
+- The checkbox on posters shows on dark posters too, and turns purple when you hover the poster.
 
 ## [0.9.162] — 2026-11-04
 
