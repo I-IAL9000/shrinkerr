@@ -2816,6 +2816,11 @@ class QueueWorker:
         # error_key, error_params) for the "completed" write, which cleared
         # them: a VMAF rejection's reason never reached the Queue (v0.10.0).
         completion_note: Optional[tuple] = None
+        # A clean-up's result is its remux's; one with nothing left to do when
+        # it runs (its tracks already as wanted) finishes with the file as it
+        # is (v0.10.0: unset, it skipped the post-conversion script and the
+        # Activity entry). A conversion sets its own.
+        result: dict = {"success": True, "output_path": current_file_path, "space_saved": 0, "error": None}
 
         if job_type in ("convert", "combined"):
             # Decouple WS-broadcast frequency from DB-write frequency. ffmpeg
