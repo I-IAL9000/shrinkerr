@@ -958,6 +958,7 @@ export interface PendingSummary {
   by_type: Record<string, number>;
   by_encoder: Record<string, number>;
   removals: { audio: Record<string, number>; subtitles: Record<string, number> };
+  reorders: Record<string, number>;
   total_size: number;
   estimated_savings: number;
   originals: Originals;

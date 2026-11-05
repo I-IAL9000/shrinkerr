@@ -463,6 +463,7 @@ async def pending_summary():
         by_type: dict[str, int] = {}
         by_encoder: dict[str, int] = {}
         removals: dict[str, dict[str, int]] = {"audio": {}, "subtitles": {}}
+        reorders: dict[str, int] = {}  # jobs that move the original language's audio first, by language
         total_size = saved = 0
         for job in jobs:
             by_type[job["job_type"]] = by_type.get(job["job_type"], 0) + 1
@@ -485,9 +486,12 @@ async def pending_summary():
                     if t.get("stream_index") in remove:
                         lang = (t.get("language") or "und").lower()
                         removals[kind][lang] = removals[kind].get(lang, 0) + 1
+            first = native_first(row, lists[0]) if row else None
+            if first:
+                reorders[first] = reorders.get(first, 0) + 1
             saved += _job_savings(job, row, audio, quality) if row else 0
         return {"jobs": len(jobs), "by_type": by_type, "by_encoder": by_encoder, "removals": removals,
-                "total_size": total_size, "estimated_savings": saved}
+                "reorders": reorders, "total_size": total_size, "estimated_savings": saved}
 
     import asyncio
     out = await asyncio.to_thread(tally)

@@ -37,6 +37,7 @@ export default function PendingSummary({ refreshKey }: { refreshKey: string }) {
   }
   if (Object.keys(audio).length) rows.push({ text: t("scannerModals:estimate.whatHappens.audioRemoved", { list: trackLanguageList(audio) }) });
   if (Object.keys(subtitles).length) rows.push({ text: t("scannerModals:estimate.whatHappens.subsRemoved", { list: trackLanguageList(subtitles) }) });
+  if (Object.keys(s.reorders).length) rows.push({ text: t("scannerModals:estimate.whatHappens.audioFirst", { list: trackLanguageList(s.reorders) }) });
   if (!Object.keys(audio).length && !Object.keys(subtitles).length) rows.push({ text: t("scannerModals:estimate.whatHappens.nothingRemoved") });
   rows.push(s.originals.action === "keep"
     ? { text: t("scannerModals:estimate.whatHappens.originalsKeep", { count: s.originals.days }) }

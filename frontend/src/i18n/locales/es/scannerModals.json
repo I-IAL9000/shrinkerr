@@ -67,8 +67,8 @@
       "leavingSoon_many": "{{num}} archivos están en una colección de Maintainerr (se eliminarán pronto) y se dejan fuera",
       "leavingSoon_other": "{{num}} archivos están en una colección de Maintainerr (se eliminarán pronto) y se dejan fuera",
       "noEncode": "Sin conversión de vídeo: el vídeo se copia tal cual y solo cambian las pistas",
-      "cleanupSkips": "Los archivos sin nada que quitar se omiten",
-      "cleanupSkipsFixes": "Los archivos sin nada que quitar ni arreglar se omiten",
+      "cleanupSkips": "Los archivos sin pistas que quitar ni mover se omiten",
+      "cleanupSkipsFixes": "Los archivos sin pistas que quitar ni mover, ni nada que arreglar, se omiten",
       "dolbyVision": {
         "removed_one": "Dolby Vision se quita de {{num}} archivo: se conservan HDR10 y HDR10+, el vídeo no se recodifica",
         "removed_many": "Dolby Vision se quita de {{num}} archivos: se conservan HDR10 y HDR10+, el vídeo no se recodifica",

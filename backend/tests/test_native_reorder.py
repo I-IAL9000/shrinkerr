@@ -115,6 +115,16 @@ async def test_the_estimate_and_the_plans_agree(jobs_env):
     assert (await job_plan(ids["/m/nothing.mkv"]))["native_first"] is None
 
 
+@pytest.mark.asyncio
+async def test_the_pending_summary_says_whose_audio_moves_first(jobs_env):
+    """The Queue page's "what the pending queue will do" listed the tracks it
+    removes, never the reorders (v0.10.0)."""
+    from backend.routes.jobs import BulkQueueFromScanRequest, add_jobs_from_scan, pending_summary
+    await add_jobs_from_scan(BulkQueueFromScanRequest(
+        file_paths=["/m/reorder.mkv", "/m/nothing.mkv"], cleanup_only=True))
+    assert (await pending_summary())["reorders"] == {"jpn": 1}
+
+
 # ── The Scanner's flag (the Audio cleanup filter) uses the same rule ──────────
 
 def test_the_flag_rule(cleanup_settings):

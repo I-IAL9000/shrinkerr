@@ -59,8 +59,8 @@
       "leavingSoon_one": "{{num}} file is in a Maintainerr collection (leaving soon) and is left out",
       "leavingSoon_other": "{{num}} files are in a Maintainerr collection (leaving soon) and are left out",
       "noEncode": "No video conversion: the video is copied as it is, only the tracks change",
-      "cleanupSkips": "Files with nothing to remove are left out",
-      "cleanupSkipsFixes": "Files with nothing to remove or fix are left out",
+      "cleanupSkips": "Files with no tracks to remove or move are left out",
+      "cleanupSkipsFixes": "Files with no tracks to remove or move, and nothing to fix, are left out",
       "dolbyVision": {
         "removed_one": "Dolby Vision removed from {{num}} file: HDR10 and HDR10+ kept, the video isn't re-encoded",
         "removed_other": "Dolby Vision removed from {{num}} files: HDR10 and HDR10+ kept, the video isn't re-encoded",
