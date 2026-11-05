@@ -714,7 +714,7 @@ input[type="checkbox"] { cursor: pointer; }
   top: 6px;
   left: 6px;
   z-index: 2;
-  opacity: 0.6;
+  opacity: 0.75;
   line-height: 0;
   transition: opacity 0.15s;
   cursor: pointer;
@@ -722,15 +722,20 @@ input[type="checkbox"] { cursor: pointer; }
 .poster-card:hover .poster-checkbox { opacity: 1; }
 .poster-card.selected .poster-checkbox { opacity: 1; }
 /* Over the poster art (v0.10.0): a dark fill and a light edge read on dark
-   posters and light ones alike (the page's checkbox vanished on dark art);
-   hovering the card turns the edge purple. Ticked keeps the accent fill. */
+   posters and light ones alike (the page's checkbox vanished on dark art).
+   Hovering the card makes it purple all through — edge, tint and glow — as
+   a purple edge alone between grey fill and a dark ring was lost on light
+   posters. Ticked keeps the accent fill. */
 .poster-checkbox input[type="checkbox"]:not(:checked) {
   background-color: rgba(0, 0, 0, 0.55);
-  border: 2px solid rgba(255, 255, 255, 0.85);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
-  transition: border-color 0.15s;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
 }
-.poster-card:hover .poster-checkbox input[type="checkbox"]:not(:checked) { border-color: var(--accent-hover); }
+.poster-card:hover .poster-checkbox input[type="checkbox"]:not(:checked) {
+  background-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent);
+}
 .poster-edit-btn {
   position: absolute;
   bottom: 6px;
