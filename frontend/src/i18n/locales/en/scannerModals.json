@@ -48,6 +48,7 @@
       "vmafFixed_other": "Fixed quality, VMAF target off by rule: {{num}} files",
       "audioRemoved": "Audio tracks removed: {{list}}",
       "subsRemoved": "Subtitles removed: {{list}}",
+      "audioFirst": "Original-language audio moved to the first track: {{list}}",
       "nothingRemoved": "No audio or subtitle tracks are removed",
       "hardlinked_one": "{{num}} file is still hardlinked (seeding) and is left out",
       "hardlinked_other": "{{num}} files are still hardlinked (seeding) and are left out",
@@ -57,7 +58,7 @@
       "cameOutLargerAt_other": "{{num}} files came out larger when they were last converted ({{qualities}}): a lower quality setting or another rule may help",
       "leavingSoon_one": "{{num}} file is in a Maintainerr collection (leaving soon) and is left out",
       "leavingSoon_other": "{{num}} files are in a Maintainerr collection (leaving soon) and are left out",
-      "noEncode": "No video conversion: the video is copied as it is, only tracks are removed",
+      "noEncode": "No video conversion: the video is copied as it is, only the tracks change",
       "cleanupSkips": "Files with nothing to remove are left out",
       "cleanupSkipsFixes": "Files with nothing to remove or fix are left out",
       "dolbyVision": {

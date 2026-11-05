@@ -469,6 +469,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
             {estimate.total_files > 0 && estimate.encoder && (() => {
               const audio = estimate.removals?.audio || {};
               const subs = estimate.removals?.subtitles || {};
+              const reorders = estimate.reorders || {};
               const enc = estimate.encoder;
               const encName = (e: string) => t(`settingsMedia:video.encoderNames.${e}`, { defaultValue: e });
               const orig = estimate.originals || {};
@@ -497,6 +498,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                 && estimate.image_subs_keep_original === false;
               if (Object.keys(audio).length) rows.push(t("scannerModals:estimate.whatHappens.audioRemoved", { list: trackLanguageList(audio) }));
               if (Object.keys(subs).length) rows.push(t("scannerModals:estimate.whatHappens.subsRemoved", { list: trackLanguageList(subs) }));
+              if (Object.keys(reorders).length) rows.push(t("scannerModals:estimate.whatHappens.audioFirst", { list: trackLanguageList(reorders) }));
               if (!Object.keys(audio).length && !Object.keys(subs).length && !srtReplaces) rows.push(t("scannerModals:estimate.whatHappens.nothingRemoved"));
               let fixing = false;
               if (directPlay) {

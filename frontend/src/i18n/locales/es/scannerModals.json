@@ -52,6 +52,7 @@
       "vmafFixed_other": "Calidad fija, objetivo VMAF desactivado por una regla: {{num}} archivos",
       "audioRemoved": "Pistas de audio eliminadas: {{list}}",
       "subsRemoved": "Subtítulos eliminados: {{list}}",
+      "audioFirst": "El audio en el idioma original pasa a ser la primera pista: {{list}}",
       "nothingRemoved": "No se elimina ninguna pista de audio ni de subtítulos",
       "hardlinked_one": "{{num}} archivo sigue con enlaces duros (en siembra) y se deja fuera",
       "hardlinked_many": "{{num}} archivos siguen con enlaces duros (en siembra) y se dejan fuera",
@@ -65,7 +66,7 @@
       "leavingSoon_one": "{{num}} archivo está en una colección de Maintainerr (se eliminará pronto) y se deja fuera",
       "leavingSoon_many": "{{num}} archivos están en una colección de Maintainerr (se eliminarán pronto) y se dejan fuera",
       "leavingSoon_other": "{{num}} archivos están en una colección de Maintainerr (se eliminarán pronto) y se dejan fuera",
-      "noEncode": "Sin conversión de vídeo: el vídeo se copia tal cual y solo se quitan pistas",
+      "noEncode": "Sin conversión de vídeo: el vídeo se copia tal cual y solo cambian las pistas",
       "cleanupSkips": "Los archivos sin nada que quitar se omiten",
       "cleanupSkipsFixes": "Los archivos sin nada que quitar ni arreglar se omiten",
       "dolbyVision": {

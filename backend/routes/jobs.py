@@ -2208,6 +2208,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         content_profiles: dict[str, dict] = {}
         resolution_breakdown = {"4k": 0, "1080p": 0, "720p": 0, "sd": 0}
         removals: dict[str, dict[str, int]] = {"audio": {}, "subtitles": {}}
+        reorders: dict[str, int] = {}  # files whose original language's audio moves first, by language
         skipped = 0
         ignored_count = 0
         hardlinked = 0
@@ -2387,6 +2388,9 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                     if t.get("stream_index") in remove:
                         lang = (t.get("language") or "und").lower()
                         removals[kind][lang] = removals[kind].get(lang, 0) + 1
+            first = native_first(row, audio_remove)
+            if first:
+                reorders[first] = reorders.get(first, 0) + 1
 
             # The encoder the job gets: the dialog's, a rule's, the default.
             file_encoder = payload.encoder or (rule.get("encoder") if rule else None) or default_encoder
@@ -2581,6 +2585,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             "total_size": total_size,
             "estimated_savings": estimated_savings,
             "removals": removals,
+            "reorders": reorders,
             "originals": originals,
             "encoder": {"requested": requested, "runs_here": runs_here},
             "estimated_time_seconds": round(est_time_seconds),

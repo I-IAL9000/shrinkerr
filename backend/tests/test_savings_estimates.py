@@ -114,6 +114,32 @@ async def test_the_estimate_says_what_will_happen(env, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_the_estimate_says_whose_audio_moves_first(env, monkeypatch):
+    """v0.10.0: a clean-up moves the original language's audio first
+    ("Reorder native language to first audio stream"), and "what will happen"
+    didn't say so — a Japanese film with English audio first listed only
+    the subtitles it removed."""
+    import json
+    import backend.config
+    from backend import scanner
+    from backend.routes.jobs import EstimateRequest, estimate_jobs
+    monkeypatch.setattr(scanner, "settings", backend.config.settings)  # this test's DB
+    audio = [{"stream_index": 1, "language": "eng", "keep": True}, {"stream_index": 2, "language": "jpn", "keep": True}]
+    async with aiosqlite.connect(env) as db:
+        await db.execute("UPDATE scan_results SET audio_tracks_json = ?, native_language = 'jpn'", (json.dumps(audio),))
+        await db.commit()
+    request = EstimateRequest(file_paths=["/m/Film (2020)/film.mkv"], cleanup_only=True)
+    monkeypatch.setattr(scanner, "_cleanup_enabled_cache", {})
+    assert (await estimate_jobs(request))["reorders"] == {"jpn": 1}
+
+    async with aiosqlite.connect(env) as db:
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('reorder_native_audio', 'false')")
+        await db.commit()
+    monkeypatch.setattr(scanner, "_cleanup_enabled_cache", {})
+    assert (await estimate_jobs(request))["reorders"] == {}
+
+
+@pytest.mark.asyncio
 async def test_time_estimates_use_each_encoders_recent_speed(env):
     """F13 (v0.10.0): one pass over recent conversions gives both encoders'
     speeds (it walked the whole job history once per encoder)."""
