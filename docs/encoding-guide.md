@@ -324,9 +324,9 @@ hold the target. Grainy films get more bits, clean animation fewer —
 the way [ab-av1](https://github.com/alexheretic/ab-av1)'s CRF search
 works.
 
-- **Target:** 80–99, 93 by default: the score Shrinkerr counts as
-  transparent, where the encode looks the same as the original. The setup
-  wizard's **Automatic** quality turns this on at 93.
+- **Target:** 80–99, 95 by default: two points over the 93 Shrinkerr
+  counts as transparent, where the encode looks the same as the original.
+  The setup wizard's **Automatic** quality turns this on at 95.
 - **A quality holds the target** when its samples average the target and
   none is more than 2 points under, so one hard scene isn't averaged away
   by easy ones.

@@ -6,7 +6,7 @@ import i18n from "../i18n";
 import { estimateJobs, startTestEncode, getEncodingSettings, getEncoderCaps, wsUrl, type EncoderCaps } from "../api";
 import { useRangeFill } from "../useRangeFill";
 import { fmtNum, fmtBytes } from "../fmt";
-import { vmafColor, vmafTintBg, VMAF_EXCELLENT_MIN } from "../utils/vmaf";
+import { vmafColor, vmafTintBg, VMAF_TARGET_DEFAULT } from "../utils/vmaf";
 import { trackLanguageList } from "../utils/languages";
 
 function formatTime(seconds: number): string {
@@ -124,7 +124,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
       if (s?.default_encoder) setDefaultEncoder(s.default_encoder);
       if (s?.direct_play_on_convert) setDirectPlay(true);
       const on = s?.vmaf_target_enabled === true || s?.vmaf_target_enabled === "true";
-      setSettingsTarget(on ? Number(s?.vmaf_target_score) || VMAF_EXCELLENT_MIN : null);
+      setSettingsTarget(on ? Number(s?.vmaf_target_score) || VMAF_TARGET_DEFAULT : null);
       if (s) setSettingsLossless({
         on: s.auto_convert_lossless === true,
         target: `${s.lossless_target_codec || "eac3"}:${s.lossless_target_bitrate || 640}`,
@@ -648,7 +648,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                     <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.vmafTarget")}</label>
                     <div style={{ flex: 1, display: "flex", gap: 6, minWidth: 0 }}>
                       <select aria-label={t("scannerModals:overrides.vmafTarget")} value={vmafMode}
-                        onChange={e => setVmafChoice(e.target.value === "custom" ? String(settingsTarget ?? VMAF_EXCELLENT_MIN) : e.target.value)}
+                        onChange={e => setVmafChoice(e.target.value === "custom" ? String(settingsTarget ?? VMAF_TARGET_DEFAULT) : e.target.value)}
                         style={{ flex: 1, minWidth: 0, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
                         <option value="">{settingsTarget !== null
                           ? t("scannerModals:overrides.vmafTargetSettings", { score: settingsTarget })

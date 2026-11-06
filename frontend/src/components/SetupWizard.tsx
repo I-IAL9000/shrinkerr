@@ -8,7 +8,7 @@ import {
 } from "../api";
 import FolderBrowser from "./FolderBrowser";
 import { presetSetting } from "../qualityPresets";
-import { VMAF_EXCELLENT_MIN } from "../utils/vmaf";
+import { VMAF_TARGET_DEFAULT } from "../utils/vmaf";
 import LanguagePicker from "./LanguagePicker";
 import { useToast } from "../useToast";
 
@@ -149,7 +149,7 @@ export default function SetupWizard({ setup, onClose }: {
         // Discs and short files keep the saved quality, and the search starts
         // from it: Balanced, unless it's someone's own values.
         const base = currentPreset || !setup.has_jobs ? presets.find(p => p.id === "balanced")!.settings : {};
-        ok = await save({ ...base, vmaf_target_enabled: true, vmaf_target_score: VMAF_EXCELLENT_MIN });
+        ok = await save({ ...base, vmaf_target_enabled: true, vmaf_target_score: VMAF_TARGET_DEFAULT });
       } else if (step === "quality" && preset !== "custom") {
         ok = await save({ ...presets.find(p => p.id === preset)!.settings, vmaf_target_enabled: false });
       }
@@ -237,7 +237,7 @@ export default function SetupWizard({ setup, onClose }: {
           title={<>{t("dashboard:setup.quality.automatic.name")}
             <span className="wizard-badge">{t("dashboard:setup.quality.automatic.recommended")}</span>
             <span className="wizard-savings">{t("dashboard:setup.quality.automatic.savings")}</span></>}>
-          {t("dashboard:setup.quality.automatic.desc", { score: VMAF_EXCELLENT_MIN })}
+          {t("dashboard:setup.quality.automatic.desc", { score: VMAF_TARGET_DEFAULT })}
           <span className="wizard-muted" style={{ display: "block", fontSize: "inherit" }}>{t("dashboard:setup.quality.automatic.slower")}</span>
         </Option>
         {/* The middle three of the shared presets, and the saved one if it's another. */}

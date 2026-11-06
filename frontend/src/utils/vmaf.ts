@@ -27,6 +27,8 @@ export type VmafTier = "excellent" | "good" | "poor";
 
 export const VMAF_EXCELLENT_MIN = 93;
 export const VMAF_GOOD_MIN = 87;
+// The VMAF target's default (backend/vmaf_target.py DEFAULT_TARGET).
+export const VMAF_TARGET_DEFAULT = 95;
 
 export function vmafTier(score: number): VmafTier {
   if (score >= VMAF_EXCELLENT_MIN) return "excellent";
