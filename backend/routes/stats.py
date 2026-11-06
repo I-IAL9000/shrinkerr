@@ -417,8 +417,14 @@ async def get_stats_timeline(days: int = Query(default=30, ge=1, le=365)):
         ) as cur:
             rows = [dict(r) for r in await cur.fetchall()]
 
-        # Compute cumulative saved and round fps
-        cumulative = 0
+        # Cumulative saved, from what was saved before the window (v0.10.0: it
+        # started at 0, so it ended at the window's savings, under a Dashboard
+        # card with the total): it ends at the total of the jobs, as the card.
+        async with db.execute(
+            "SELECT COALESCE(SUM(space_saved), 0) FROM jobs WHERE status = 'completed' AND space_saved > 0"
+        ) as cur:
+            total_saved = (await cur.fetchone())[0]
+        cumulative = max(0, total_saved - sum(row.get("space_saved", 0) or 0 for row in rows))
         for row in rows:
             cumulative += row.get("space_saved", 0)
             row["cumulative_saved"] = cumulative
