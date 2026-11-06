@@ -1352,7 +1352,8 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                       flush=True)
 
     # Subtitles: detect und text subs (fast, langdetect) and und image
-    # subs (PGS/VobSub via OCR — v0.9.0, on-demand only, slower).
+    # subs (PGS/VobSub via OCR — v0.9.0, on-demand only, slower; embedded
+    # DVB ones read as DVD ones, v0.10.0).
     _IMAGE_SUB_CODECS = {"hdmv_pgs_subtitle", "dvd_subtitle", "pgs", "vobsub"}
     for j, t in enumerate(raw_subs):
         if (t.get("language") or "und").lower() == "und" and t.get("stream_index") is not None:
@@ -1384,7 +1385,7 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                 else:
                     _sub_note = (KeyedNote("no text in subtitle", "subNoText") if not (txt and txt.strip())
                                  else KeyedNote("subtitle text not confidently identified", "subNotConfident"))
-            elif codec_l in _IMAGE_SUB_CODECS:
+            elif codec_l in _IMAGE_SUB_CODECS or codec_l == "dvb_subtitle":
                 _read: dict = {}  # how much text OCR read
                 try:
                     from backend.image_sub_ocr import detect_image_sub_language

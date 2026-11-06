@@ -41,6 +41,9 @@ _NON_LATIN_LANGS = ("chi_sim", "chi_tra", "jpn", "kor", "rus", "ara")
 # two tools/formats share nothing but the final detect_subtitle_language step.
 _PGS_CODECS = ("hdmv_pgs_subtitle", "pgs")
 _VOBSUB_CODECS = ("dvd_subtitle", "vobsub")
+# v0.10.0: DVB subtitles (TV recordings) are bitmaps too; ffmpeg converts them
+# to DVD ones (bitmap to bitmap), which then go the VobSub way.
+_DVB_CODECS = ("dvb_subtitle",)
 # subtile-ocr passes -l straight to tesseract, which uses '+' to combine packs
 # and the pack names (chi_sim, not the babelfish 'zho' pgsrip wants).
 _VOBSUB_LATIN_LANG = "eng"
@@ -78,6 +81,12 @@ def _build_sup_sample_cmd(file_path: str, stream_index: int, out_sup: str, secon
     """ffmpeg command copying the first `seconds` of a PGS track to a .sup."""
     return ["ffmpeg", "-v", "error", "-y", "-i", file_path,
             "-map", f"0:{stream_index}", "-c:s", "copy", "-t", str(seconds), out_sup]
+
+
+def _build_dvb_to_dvd_cmd(file_path: str, stream_index: int, out_mkv: str) -> list[str]:
+    """ffmpeg command converting a DVB subtitle track to a DVD one in an MKV,
+    for mkvextract. The whole track, as a VobSub one is read."""
+    return ["ffmpeg", "-v", "error", "-y", "-i", file_path, "-map", f"0:{stream_index}", "-c:s", "dvdsub", out_mkv]
 
 
 async def _run_extract(cmd: list[str], out_path: str, timeout: int = 600) -> bool:
@@ -628,11 +637,16 @@ async def detect_image_sub_language(
     workdir = tempfile.mkdtemp(prefix="shrinkerr_imgocr_")
     try:
         loop = asyncio.get_event_loop()
-        if codec_l in _VOBSUB_CODECS:
+        if codec_l in _VOBSUB_CODECS or codec_l in _DVB_CODECS:
             # VobSub (DVD) → subtile-ocr. Same Latin-first / non-Latin-fallback
             # shape as PGS; the extract + OCR tool differ.
             await _report(f"Extracting subtitle track {stream_index}…", stage_key="detect.extractingTrack")
-            idx = await _extract_vobsub(file_path, stream_index, workdir)
+            source, track = file_path, stream_index
+            if codec_l in _DVB_CODECS:
+                source, track = os.path.join(workdir, "dvb.mkv"), 0
+                if not await _run_extract(_build_dvb_to_dvd_cmd(file_path, stream_index, source), source):
+                    return (None, 0.0)
+            idx = await _extract_vobsub(source, track, workdir)
             if not idx:
                 return (None, 0.0)
             return await _vobsub_language(
@@ -731,7 +745,7 @@ async def detect_external_vobsub_language(idx_path: str, stream: int | None = No
 
 # ── Image subtitles → SRT (v0.10.0) ────────────────────────────────────────
 
-IMAGE_SUB_CODECS = _PGS_CODECS + _VOBSUB_CODECS
+IMAGE_SUB_CODECS = _PGS_CODECS + _VOBSUB_CODECS + _DVB_CODECS
 _TEXT_SUB_CODECS = ("subrip", "srt", "ass", "ssa", "webvtt", "mov_text", "tx3g", "text")
 OCR_TRACK_TITLE = "OCR"
 
@@ -761,7 +775,7 @@ def ocr_pack(language: str | None) -> str | None:
 
 
 def srt_plan(sub_tracks: list[dict], kept=None, merged: list[dict] | None = None) -> list[dict]:
-    """The image subtitle tracks (PGS / VobSub) to read into SRT tracks: the
+    """The image subtitle tracks (PGS / VobSub / DVB) to read into SRT tracks: the
     kept ones with no text track in the same language (forced alike) kept or
     merged from a sidecar, in a language whose tesseract pack is installed.
     `sub_tracks`: a probe's subtitle_tracks; `kept`: the stream indices that
@@ -840,10 +854,12 @@ async def image_subs_to_srt(input_path: str, plan: list[dict], workdir: str) -> 
     """Read the planned tracks (srt_plan) into .srt files in `workdir`, as
     subtitles to merge: {path, codec, language, forced, title, stream_index}.
     A track that can't be read is left out. One extraction pass per kind:
-    ffmpeg (mkvextract as the fallback) for PGS, mkvextract for VobSub."""
+    ffmpeg (mkvextract as the fallback) for PGS, mkvextract for VobSub, and
+    for DVB ffmpeg's conversion to DVD ones, then mkvextract."""
     embedded = [t for t in plan if not t.get("external_path")]
     pgs = [(t, os.path.join(workdir, f"s{t['stream_index']}.sup")) for t in embedded if t["codec"] in _PGS_CODECS]
     vob = [(t, os.path.join(workdir, f"s{t['stream_index']}.idx")) for t in embedded if t["codec"] in _VOBSUB_CODECS]
+    dvb = [(t, os.path.join(workdir, f"s{t['stream_index']}.idx")) for t in embedded if t["codec"] in _DVB_CODECS]
     if pgs:
         cmd = ["ffmpeg", "-v", "error", "-y", "-i", input_path]
         for t, sup in pgs:
@@ -854,10 +870,20 @@ async def image_subs_to_srt(input_path: str, plan: list[dict], workdir: str) -> 
     if vob:
         await _run_extract(["mkvextract", "tracks", input_path, *[f"{t['stream_index']}:{idx}" for t, idx in vob]],
                            vob[0][1], timeout=3600)
+    if dvb:
+        cmd = ["ffmpeg", "-v", "error", "-y", "-i", input_path]
+        for t, idx in dvb:
+            cmd += ["-map", f"0:{t['stream_index']}", "-c:s", "dvdsub", idx[:-4] + ".mkv"]
+        await _run_extract(cmd, dvb[0][1][:-4] + ".mkv", timeout=3600)
+        for t, idx in dvb:
+            dvd = idx[:-4] + ".mkv"
+            if os.path.exists(dvd):
+                await _run_extract(["mkvextract", "tracks", dvd, f"0:{idx}"], idx, timeout=3600)
+                os.unlink(dvd)
 
     loop = asyncio.get_running_loop()
     out = []
-    for t, src in [*pgs, *vob]:
+    for t, src in [*pgs, *vob, *dvb]:
         if not (os.path.exists(src) and os.path.getsize(src) > 0):
             print(f"[IMG-OCR] Couldn't extract subtitle #{t['stream_index']} for OCR", flush=True)
             continue

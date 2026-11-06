@@ -89,7 +89,7 @@
     "always": "(siempre)",
     "convertFromHelp": "Selecciona qué códecs de origen se convertirán al códec de destino.",
     "directPlayOnConvert": "Arreglar para reproducción directa al convertir",
-    "directPlayOnConvertHelp": "Marca \"Arreglar para reproducción directa\" en Añadir a la cola, y cada conversión que se pone en cola de otra forma (descargas nuevas, políticas) también hace sus arreglos donde el archivo los necesita: copias SRT de los subtítulos de imagen (PGS, VobSub) y una pista estéreo de compatibilidad cuando el audio del idioma principal no es AAC, AC3, E-AC3 ni MP3.",
+    "directPlayOnConvertHelp": "Marca \"Arreglar para reproducción directa\" en Añadir a la cola, y cada conversión que se pone en cola de otra forma (descargas nuevas, políticas) también hace sus arreglos donde el archivo los necesita: copias SRT de los subtítulos de imagen (PGS, VobSub, DVB) y una pista estéreo de compatibilidad cuando el audio del idioma principal no es AAC, AC3, E-AC3 ni MP3.",
     "directPlayOnConvertSummary": "Cada conversión añade también copias SRT de los subtítulos de imagen y una pista estéreo donde haga falta.",
     "scale": {
       "highestQuality": "{{value}} (máxima calidad)",
@@ -503,9 +503,9 @@
     "imageSubs": {
       "title": "Subtítulos de imagen",
       "toSrt": "Convertir los subtítulos de imagen en texto (SRT)",
-      "toSrtHelp": "Los subtítulos PGS (Blu-ray) y VobSub (DVD) obligan a muchos reproductores a transcodificar para incrustarlos. Al convertir o limpiar un archivo, los subtítulos de imagen que conserva se leen con OCR y se añaden como pistas SRT en el mismo idioma (con el título «OCR»), salvo que ya tenga una pista de texto en ese idioma. La lectura tarda unos minutos por pista y no es perfecta. Cada idioma necesita su paquete de idioma de OCR (la imagen incluye los habituales).",
+      "toSrtHelp": "Los subtítulos PGS (Blu-ray), VobSub (DVD) y DVB (TV) obligan a muchos reproductores a transcodificar para incrustarlos. Al convertir o limpiar un archivo, los subtítulos de imagen que conserva se leen con OCR y se añaden como pistas SRT en el mismo idioma (con el título «OCR»), salvo que ya tenga una pista de texto en ese idioma. La lectura tarda unos minutos por pista y no es perfecta. Cada idioma necesita su paquete de idioma de OCR (la imagen incluye los habituales).",
       "keepOriginal": "Conservar también los subtítulos de imagen",
-      "toSrtSummary": "Los subtítulos de Blu-ray y DVD se leen con OCR en pistas SRT, para que los reproductores no transcodifiquen."
+      "toSrtSummary": "Los subtítulos de Blu-ray, DVD y TV se leen con OCR en pistas SRT, para que los reproductores no transcodifiquen."
     },
     "keepSummary": "Se conservan los subtítulos en estos idiomas; el resto se elimina."
   },

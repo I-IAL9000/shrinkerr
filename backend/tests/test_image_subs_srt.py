@@ -199,6 +199,21 @@ async def test_vobsub_tracks_are_read(tmp_path, monkeypatch):
     assert all(phrase in _words(text) for phrase, (_, text) in zip(PHRASES, english, strict=True))
 
 
+@needs_vobsub
+@pytest.mark.asyncio
+async def test_dvb_tracks_are_read(tmp_path, monkeypatch):
+    """A TV recording's DVB subtitles get an SRT copy (v0.10.0: "Fix for
+    direct play" counted them, then had nothing to read them with). Not the
+    cue times: ffmpeg's DVB encoder gives this fixture's later cues bogus
+    timestamps (a real recording's came out as its own SRT has them)."""
+    film = tmp_path / "Show - S13E30.mkv"
+    make_video(film, [("und", ENGLISH)], dvb=True)
+    [out] = await _read(film, monkeypatch, tmp_path)
+    english = _cues(open(out["path"], encoding="utf-8").read())
+    assert all(phrase in _words(text) for phrase, (_, text) in zip(PHRASES, english, strict=True))
+    assert sorted(os.listdir(os.path.dirname(out["path"]))) == ["s1.srt"]  # the DVD copy and its .idx gone
+
+
 @needs_ocr
 @pytest.mark.asyncio
 async def test_detection_still_reads_them(tmp_path):
@@ -247,6 +262,45 @@ async def test_detection_still_reads_vobsub(tmp_path):
     make_video(film, [("und", ENGLISH)], vobsub=True)
     lang, _ = await image_sub_ocr.detect_image_sub_language(str(film), 1, "dvd_subtitle")
     assert lang == "eng"
+
+
+@needs_vobsub
+@pytest.mark.asyncio
+async def test_detection_reads_dvb_subtitles(tmp_path):
+    """DVB subtitles (TV recordings) were "unsupported subtitle format for
+    detection": ffmpeg turns them into DVD ones, read as VobSub (v0.10.0)."""
+    film = tmp_path / "Show - S13E30.mkv"
+    make_video(film, [("und", ENGLISH)], dvb=True)
+    assert [s["codec_name"] for s in _subs(film)] == ["dvb_subtitle"]
+    lang, _ = await image_sub_ocr.detect_image_sub_language(str(film), 1, "dvb_subtitle")
+    assert lang == "eng"
+
+
+@pytest.mark.skipif(not _has("ffmpeg"), reason="needs ffmpeg")
+@pytest.mark.asyncio
+async def test_detect_languages_reads_a_dvb_subtitle(test_db, tmp_path, monkeypatch):
+    """Detect languages gives an und DVB track to OCR instead of noting it
+    unsupported (v0.10.0)."""
+    import backend.routes.scan as scan_route
+    monkeypatch.setattr(scan_route, "DB_PATH", test_db)
+    film = tmp_path / "Show - S13E30.mkv"
+    make_video(film, [("und", ENGLISH)], dvb=True)
+    asked = []
+
+    async def ocr(path, stream_index, codec, progress_cb=None, outcome=None):
+        asked.append((stream_index, codec))
+        return ("eng", 0.99)
+    monkeypatch.setattr(image_sub_ocr, "detect_image_sub_language", ocr)
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO scan_results (file_path, file_size, native_language, language_source, "
+                         "audio_tracks_json, subtitle_tracks_json, has_und_tracks_flag, scan_timestamp) "
+                         "VALUES (?, 1, 'eng', 'api', '[]', ?, 1, '2026-01-01')",
+                         (str(film), json.dumps([{"stream_index": 1, "language": "und", "codec": "dvb_subtitle"}])))
+        await db.commit()
+
+    await scan_route.detect_languages(scan_route.DetectLanguagesRequest(file_path=str(film)), notify_plex=False)
+
+    assert asked == [(1, "dvb_subtitle")]
 
 
 def _subs(path) -> list[dict]:

@@ -1,7 +1,7 @@
 """Real image subtitles for the OCR tests: write_sup() renders each cue's
 text with Pillow into a PGS (Blu-ray) display set; make_video() muxes it
 into an MKV beside a short test video, optionally converted to VobSub (DVD)
-by ffmpeg."""
+or DVB (TV) subtitles by ffmpeg."""
 import struct
 import subprocess
 
@@ -63,7 +63,8 @@ def write_sup(path, cues: list[tuple[float, float, str]], size=(1920, 1080), fon
 
 
 def make_video(path, subs: list[tuple[str, list[tuple[float, float, str]]]], seconds: int = 8,
-               vobsub: bool = False, extra_args: list[str] | None = None, font_path: str | None = None) -> None:
+               vobsub: bool = False, extra_args: list[str] | None = None, font_path: str | None = None,
+               dvb: bool = False) -> None:
     """An MKV with a test video and one image subtitle per (language, cues)."""
     sups = []
     for i, (_, cues) in enumerate(subs):
@@ -76,6 +77,6 @@ def make_video(path, subs: list[tuple[str, list[tuple[float, float, str]]]], sec
     cmd += ["-map", "0:v"]
     for i, (lang, _) in enumerate(subs):
         cmd += ["-map", f"{i + 1}:s", f"-metadata:s:s:{i}", f"language={lang}"]
-    cmd += ["-c:v", "libx264", "-preset", "ultrafast", "-c:s", "dvdsub" if vobsub else "copy",
+    cmd += ["-c:v", "libx264", "-preset", "ultrafast", "-c:s", "dvdsub" if vobsub else "dvbsub" if dvb else "copy",
             *(extra_args or []), str(path)]
     subprocess.run(cmd, check=True)

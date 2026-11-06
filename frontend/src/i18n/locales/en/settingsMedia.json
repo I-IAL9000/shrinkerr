@@ -89,7 +89,7 @@
     "always": "(always)",
     "convertFromHelp": "Select which source codecs should be converted to the target codec.",
     "directPlayOnConvert": "Fix for direct play when converting",
-    "directPlayOnConvertHelp": "Ticks \"Fix for direct play\" in Add to Queue, and every conversion queued another way (new downloads, policies) also makes its fixes where the file needs them: SRT copies of image subtitles (PGS, VobSub) and a stereo compatibility track when the main language's audio isn't AAC, AC3, E-AC3 or MP3.",
+    "directPlayOnConvertHelp": "Ticks \"Fix for direct play\" in Add to Queue, and every conversion queued another way (new downloads, policies) also makes its fixes where the file needs them: SRT copies of image subtitles (PGS, VobSub, DVB) and a stereo compatibility track when the main language's audio isn't AAC, AC3, E-AC3 or MP3.",
     "directPlayOnConvertSummary": "Every conversion also adds SRT copies of image subtitles and a stereo track where needed.",
     "scale": {
       "highestQuality": "{{value}} (Highest quality)",
@@ -502,9 +502,9 @@
     "imageSubs": {
       "title": "Image subtitles",
       "toSrt": "Convert image subtitles to text (SRT)",
-      "toSrtHelp": "PGS (Blu-ray) and VobSub (DVD) subtitles make many players transcode to burn them in. When a file is converted or cleaned up, the image subtitles it keeps are read with OCR and added as SRT tracks in the same language (titled \"OCR\"), unless it already has a text track in that language. Reading takes a few minutes per track and isn't perfect. Languages need their OCR language pack (the image includes the common ones).",
+      "toSrtHelp": "PGS (Blu-ray), VobSub (DVD) and DVB (TV) subtitles make many players transcode to burn them in. When a file is converted or cleaned up, the image subtitles it keeps are read with OCR and added as SRT tracks in the same language (titled \"OCR\"), unless it already has a text track in that language. Reading takes a few minutes per track and isn't perfect. Languages need their OCR language pack (the image includes the common ones).",
       "keepOriginal": "Keep the image subtitles too",
-      "toSrtSummary": "Blu-ray and DVD subtitles are read with OCR into SRT tracks, so players don't transcode."
+      "toSrtSummary": "Blu-ray, DVD and TV subtitles are read with OCR into SRT tracks, so players don't transcode."
     },
     "keepSummary": "Subtitles in these languages are kept; the rest are removed."
   },
