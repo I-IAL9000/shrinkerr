@@ -25,7 +25,7 @@ export default function StatsCards({ filesToConvert, audioCleanup, ignoredCount,
       </div>
       {ignoredCount != null && ignoredCount > 0 && (
         <div className="stat-card">
-          <div className="stat-value" style={{ color: "var(--text-secondary)" }}>{fmtNum(ignoredCount)}</div>
+          <div className="stat-value">{fmtNum(ignoredCount)}</div>
           <div className="stat-label">{t("scanner:stats.ignored")}</div>
         </div>
       )}
@@ -36,11 +36,11 @@ export default function StatsCards({ filesToConvert, audioCleanup, ignoredCount,
         </div>
       )}
       <div className="stat-card">
-        <div className="stat-value success">~{fmtBytes(estimatedSavingsGB * 1024 ** 3)}</div>
+        <div className="stat-value" style={{ color: "var(--accent-text)" }}>~{fmtBytes(estimatedSavingsGB * 1024 ** 3)}</div>
         <div className="stat-label">{settingsLabel ? t("scanner:stats.estSavingsWith", { settings: settingsLabel }) : t("scanner:stats.estSavings")}</div>
       </div>
       <div className="stat-card">
-        <div className="stat-value" style={{ color: "white" }}>{fmtBytes(totalScannedGB * 1024 ** 3)}</div>
+        <div className="stat-value">{fmtBytes(totalScannedGB * 1024 ** 3)}</div>
         <div className="stat-label">{t("scanner:stats.totalScanned")}</div>
       </div>
     </div>

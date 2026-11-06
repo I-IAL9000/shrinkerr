@@ -25,7 +25,8 @@
   --pink: #ff6b9d;            /* audio removed, genres */
   --plex: #e5a00d;
   --imdb: #f5c518;
-  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+  /* Figures — sizes, fps, ETAs, counts — so they line up (Geist Mono, bundled). */
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
   --radius: 6px;
   --radius-sm: 4px;
   /* Signal colors */
@@ -36,6 +37,11 @@
   --folder-root: #6860fe;
   --folder-show: #8e8adb;
   --folder-season: #8e8adb;
+  /* Charts: one accent leads, the rest are neutral steps. */
+  --chart-2: #5c5d6b;
+  --chart-3: #474857;
+  --chart-4: #393a47;
+  --chart-5: #2f303b;
 }
 
 [data-theme="light"] {
@@ -72,13 +78,17 @@
   --folder-root: #3c34c4;
   --folder-show: #5048d9;
   --folder-season: #5048d9;
+  --chart-2: #a3a5b3;
+  --chart-3: #bfc0cc;
+  --chart-4: #d2d3dd;
+  --chart-5: #e0e1e9;
 }
 /* Light mode overrides */
 [data-theme="light"] h1, [data-theme="light"] h2, [data-theme="light"] h3, [data-theme="light"] h4 {
   color: var(--text-primary) !important;
 }
 [data-theme="light"] body { color: var(--text-secondary); }
-[data-theme="light"] .stat-value { color: var(--accent-text) !important; }
+[data-theme="light"] .stat-value { color: var(--text-primary) !important; }
 [data-theme="light"] .stat-value.success { color: var(--success) !important; }
 
 /* Sidebar */
@@ -147,7 +157,7 @@
 /* Poster / stat cards */
 [data-theme="light"] .poster-card { border-color: var(--border); background: var(--bg-card); }
 [data-theme="light"] .poster-card:hover { box-shadow: 0 4px 16px rgba(17, 17, 26, 0.12); }
-[data-theme="light"] .poster-placeholder { background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--accent) 200%); }
+[data-theme="light"] .poster-placeholder { background: var(--bg-tertiary); }
 [data-theme="light"] .stat-card { background: var(--bg-card); }
 
 /* Scrollbar */
@@ -236,6 +246,7 @@ body {
   background: var(--bg-primary);
   color: var(--text-secondary);
   line-height: 1.5;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Scrollbar */
@@ -400,7 +411,7 @@ body {
   border-radius: var(--radius);
   text-align: center;
 }
-.stat-value { font-size: 24px; font-weight: bold; color: var(--accent-text); }
+.stat-value { font-size: 24px; font-weight: bold; color: var(--text-primary); }
 .stat-value.success { color: var(--success); }
 .stat-label { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 
@@ -568,9 +579,10 @@ body {
 .filter-category-button.dimmed { opacity: 0.6; } /* no files, but it still opens */
 .filter-pill:disabled { cursor: default; pointer-events: none; }
 .filter-pill-count {
-  padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: bold; line-height: 1.4;
-  background: color-mix(in srgb, var(--accent) 30%, transparent); color: var(--text-secondary);
+  padding: 0 2px; font-size: 11px; line-height: 1.4;
+  font-family: var(--font-mono); color: var(--text-muted);
 }
+.filter-pill.active .filter-pill-count { color: inherit; }
 .chevron { flex-shrink: 0; opacity: 0.75; }
 .btn svg.chevron, .sort-pill svg.chevron { margin: 0; vertical-align: middle; }
 .filter-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
@@ -700,7 +712,7 @@ input[type="checkbox"] { cursor: pointer; }
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--accent) 200%);
+  background: var(--bg-tertiary);
 }
 .poster-placeholder.hidden { display: none; }
 .poster-placeholder-text {
@@ -900,7 +912,7 @@ input[type="checkbox"] { cursor: pointer; }
 }
 .progress-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #4920F0, #6A64FF);
+  background: var(--accent);
   border-radius: 4px;
   transition: width 0.3s;
 }

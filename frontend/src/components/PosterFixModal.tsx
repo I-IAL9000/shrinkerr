@@ -172,7 +172,7 @@ export default function PosterFixModal({ folderPath, currentTitle, currentYear, 
                     {r.title}
                   </div>
                   <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
-                    {r.year || "—"}{r.rating ? ` · ⭐ ${r.rating}` : ""}
+                    {r.year || "—"}{r.rating ? ` · ★ ${r.rating}` : ""}
                   </div>
                 </button>
               ))}

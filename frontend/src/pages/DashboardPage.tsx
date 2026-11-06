@@ -15,55 +15,56 @@ import { useJobProgressMap } from "../jobProgressStore";
 
 const cardStyle: React.CSSProperties = { background: "var(--bg-card)", padding: 20, borderRadius: 6 };
 const headingStyle: React.CSSProperties = { color: "var(--text-primary)", fontSize: 14, marginBottom: 16 };
-const donutColors = ["var(--accent)", "#6882ff", "var(--info)", "#2cf4e8", "var(--success)", "var(--pink)", "var(--caution)"];
+// The share bars colour the largest segment (shares) with the accent.
+const donutColors = ["var(--accent)"];
 
+const axisTick = { fill: "var(--text-muted)", fontSize: 10, fontFamily: "var(--font-mono)" };
 const tooltipStyle = {
   contentStyle: { background: "var(--bg-tertiary)", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12 },
   labelStyle: { color: "var(--text-muted)" },
   cursor: { fill: "var(--bg-tertiary)", opacity: 0.5 },
 };
 
-// Donut chart with optional center text
+// A share (v0.10.0: was a donut per breakdown): the figure, one stacked bar
+// and a ranked list. One segment leads in the accent — the one the caller
+// coloured with it, else the largest; the rest are neutral steps.
+// `keepColors` keeps the callers' colours where they mean something (VMAF tiers).
 // Codec labels from /stats (stats._codec_label) → Scanner filter ids.
 const CODEC_FILTERS: Record<string, string> = { "H.264": "x264", "H.265": "x265", "AV1": "av1" };
+const NEUTRAL_STEPS = ["var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
+const isAccent = (c: string) => c === "var(--accent)" || c === "var(--accent-text)";
 
-function Donut({ segments, size = 120, hole = 0.65, centerText }: {
+function Donut({ segments, centerText, keepColors }: {
   /** `to`: a page the legend entry links to (e.g. the filtered Scanner). */
   segments: { value: number; color: string; label: string; to?: string }[];
-  size?: number; hole?: number; centerText?: string;
+  size?: number; hole?: number; centerText?: string; keepColors?: boolean;
 }) {
   const total = segments.reduce((s, seg) => s + seg.value, 0);
   if (total === 0) return null;
-  let cumDeg = 0;
-  const gradientStops = segments.map(seg => {
-    const start = cumDeg;
-    cumDeg += (seg.value / total) * 360;
-    return `${seg.color} ${start}deg ${cumDeg}deg`;
-  }).join(", ");
-
+  const shown = segments.filter(s => s.value > 0).sort((a, b) => b.value - a.value);
+  const leader = shown.find(s => isAccent(s.color)) ?? shown[0];
+  let step = 0;
+  const colour = new Map(shown.map(seg => [seg, keepColors ? seg.color
+    : seg === leader ? "var(--accent)" : NEUTRAL_STEPS[Math.min(step++, NEUTRAL_STEPS.length - 1)]]));
+  const pct = (v: number) => `${Math.round((v / total) * 100)}%`;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-      <div style={{
-        width: size, height: size, borderRadius: "50%",
-        background: `conic-gradient(${gradientStops})`,
-        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-      }}>
-        <div style={{
-          width: size * hole, height: size * hole, borderRadius: "50%",
-          background: "var(--bg-card)", display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-          {centerText && <span style={{ fontSize: 14, fontWeight: "bold", color: "var(--text-primary)" }}>{centerText}</span>}
-        </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {centerText && <div style={{ fontSize: 28, fontWeight: "bold", lineHeight: 1, color: "var(--text-primary)" }}>{centerText}</div>}
+      <div style={{ display: "flex", gap: 2, height: 8 }}>
+        {shown.map(seg => (
+          <div key={seg.label} title={`${seg.label}: ${seg.value.toLocaleString()}`}
+            style={{ flex: seg.value, minWidth: 4, background: colour.get(seg), borderRadius: 2 }} />
+        ))}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        {segments.filter(s => s.value > 0).map(seg => (
-          <div key={seg.label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-            <div style={{ width: 10, height: 10, borderRadius: 2, background: seg.color, flexShrink: 0 }} />
-            {seg.to ? (
-              <Link to={seg.to} style={{ color: "var(--text-muted)" }}>{seg.label}: <b style={{ color: "var(--text-secondary)" }}>{seg.value.toLocaleString()}</b></Link>
-            ) : (
-              <span style={{ color: "var(--text-muted)" }}>{seg.label}: <b style={{ color: "var(--text-secondary)" }}>{seg.value.toLocaleString()}</b></span>
-            )}
+        {shown.map(seg => (
+          <div key={seg.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, minHeight: 24 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: colour.get(seg), flexShrink: 0 }} />
+            {seg.to
+              ? <Link to={seg.to} style={{ color: "var(--text-secondary)", flex: 1, minWidth: 0 }}>{seg.label}</Link>
+              : <span style={{ color: "var(--text-secondary)", flex: 1, minWidth: 0 }}>{seg.label}</span>}
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-primary)" }}>{seg.value.toLocaleString()}</span>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)", width: 40, textAlign: "right" }}>{pct(seg.value)}</span>
           </div>
         ))}
       </div>
@@ -71,23 +72,22 @@ function Donut({ segments, size = 120, hole = 0.65, centerText }: {
   );
 }
 
-// Horizontal bar chart (renamed to avoid conflict with recharts BarChart)
-function HBarChart({ items, colors }: { items: { label: string; value: number }[]; colors?: string[] }) {
+// Ranked bars: the top one in the accent, the rest neutral.
+function HBarChart({ items }: { items: { label: string; value: number }[] }) {
   const max = Math.max(...items.map(i => i.value), 1);
-  const defaultColors = ["var(--accent)", "#7c5cff", "#6882ff", "#54a8ff", "var(--info)", "#2cf4e8", "var(--success)"];
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {items.filter(i => i.value > 0).map((item, idx) => (
-        <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ width: 80, fontSize: 11, color: "var(--text-muted)", textAlign: "right", flexShrink: 0 }}>{item.label}</span>
-          <div style={{ flex: 1, height: 18, background: "var(--bg-primary)", borderRadius: 3, overflow: "hidden" }}>
+        <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ width: 80, fontSize: 12, color: "var(--text-secondary)", flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</span>
+          <div style={{ flex: 1, height: 6, background: "var(--bg-primary)", borderRadius: 3, overflow: "hidden" }}>
             <div style={{
               height: "100%", width: `${(item.value / max) * 100}%`,
-              background: (colors || defaultColors)[idx % (colors || defaultColors).length],
+              background: idx === 0 ? "var(--accent)" : "var(--chart-2)",
               borderRadius: 3, transition: "width 0.3s",
             }} />
           </div>
-          <span style={{ width: 50, fontSize: 11, color: "var(--text-secondary)", fontWeight: "bold", textAlign: "right", flexShrink: 0 }}>{item.value}</span>
+          <span style={{ width: 48, fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--text-primary)", textAlign: "right", flexShrink: 0 }}>{item.value.toLocaleString()}</span>
         </div>
       ))}
     </div>
@@ -101,7 +101,7 @@ function MiniProgress({ progress }: { progress: number }) {
       <div style={{
         height: "100%", borderRadius: 2,
         width: `${Math.min(100, progress)}%`,
-        background: "linear-gradient(90deg, var(--accent), var(--info))",
+        background: "var(--accent)",
         transition: "width 0.5s",
       }} />
     </div>
@@ -128,7 +128,7 @@ const LiveConvertingCard = memo(function LiveConvertingCard({
     <div style={cardStyle}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: liveJobs.length > 0 ? 10 : 0 }}>
         <div>
-          <span style={{ fontSize: 28, fontWeight: "bold", color: liveJobs.length > 0 ? "var(--accent-text)" : "var(--text-muted)" }}>
+          <span style={{ fontSize: 28, fontWeight: "bold", color: liveJobs.length > 0 ? "var(--text-primary)" : "var(--text-muted)" }}>
             {liveJobs.length > 0 ? liveJobs.length : t("dashboard:live.idle")}
           </span>
           <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>
@@ -136,7 +136,7 @@ const LiveConvertingCard = memo(function LiveConvertingCard({
           </span>
         </div>
         {combinedFps > 0 && (
-          <span style={{ fontSize: 13, color: "var(--info)", fontWeight: 600 }}>{t("dashboard:live.fpsCombined", { fps: combinedFps.toFixed(0) })}</span>
+          <span style={{ fontSize: 13, color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>{t("dashboard:live.fpsCombined", { fps: combinedFps.toFixed(0) })}</span>
         )}
       </div>
       {liveJobs.length > 0 && (
@@ -147,7 +147,7 @@ const LiveConvertingCard = memo(function LiveConvertingCard({
               <div key={j.id}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 2 }}>
                   <span style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shortName}</span>
-                  <span style={{ color: "var(--success)", flexShrink: 0, marginLeft: 8 }}>
+                  <span style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)", flexShrink: 0, marginLeft: 8 }}>
                     {j.progress.toFixed(0)}%{j.fps ? ` ${j.fps.toFixed(0)}fps` : ""}
                   </span>
                 </div>
@@ -324,16 +324,16 @@ export default function DashboardPage() {
       {/* Today's summary bar */}
       <div style={{ ...cardStyle, display: "flex", gap: 28, padding: "12px 20px", flexWrap: "wrap" }}>
         <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>{t("dashboard:today.label")}</span>
-        <span style={{ fontSize: 12 }}><b style={{ color: "var(--accent-text)" }}>{fmtNum(today.jobs_completed)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.jobs")}</span></span>
-        <span style={{ fontSize: 12 }}><b style={{ color: "var(--success)" }}>{fmtBytes(today.space_saved || 0)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.saved")}</span></span>
+        <span style={{ fontSize: 12 }}><b style={{ color: "var(--text-primary)" }}>{fmtNum(today.jobs_completed)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.jobs")}</span></span>
+        <span style={{ fontSize: 12 }}><b style={{ color: "var(--text-primary)" }}>{fmtBytes(today.space_saved || 0)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.saved")}</span></span>
         {(today.avg_fps || 0) > 0 && (
-          <span style={{ fontSize: 12 }}><b style={{ color: "var(--info)" }}>{today.avg_fps.toFixed(0)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.avgFpsPerJob")}</span></span>
+          <span style={{ fontSize: 12 }}><b style={{ color: "var(--text-primary)" }}>{today.avg_fps.toFixed(0)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.avgFpsPerJob")}</span></span>
         )}
         {combinedFpsForSummary > 0 && (
-          <span style={{ fontSize: 12 }}><b style={{ color: "var(--info)" }}>{combinedFpsForSummary.toFixed(0)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.combinedFps")}</span></span>
+          <span style={{ fontSize: 12 }}><b style={{ color: "var(--text-primary)" }}>{combinedFpsForSummary.toFixed(0)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.combinedFps")}</span></span>
         )}
         {(today.original_size || 0) > 0 && (today.space_saved || 0) > 0 && (
-          <span style={{ fontSize: 12 }}><b style={{ color: "var(--success)" }}>{((today.space_saved / today.original_size) * 100).toFixed(0)}%</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.avgReduction")}</span></span>
+          <span style={{ fontSize: 12 }}><b style={{ color: "var(--text-primary)" }}>{((today.space_saved / today.original_size) * 100).toFixed(0)}%</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.avgReduction")}</span></span>
         )}
       </div>
 
@@ -375,10 +375,10 @@ export default function DashboardPage() {
               <h3 style={headingStyle}>{t("dashboard:summary.title")}</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {([
-                  [t("dashboard:summary.filesWithSavings"), s.files_with_savings, "var(--accent-text)"],
-                  [t("dashboard:summary.filesIgnored"), s.files_no_savings, "var(--text-secondary)"],
-                  [t("common:status.pending"), s.pending, "var(--text-secondary)"],
-                  [t("common:status.failed"), s.failed, "var(--danger)"],
+                  [t("dashboard:summary.filesWithSavings"), s.files_with_savings, "var(--text-primary)"],
+                  [t("dashboard:summary.filesIgnored"), s.files_no_savings, "var(--text-primary)"],
+                  [t("common:status.pending"), s.pending, "var(--text-primary)"],
+                  [t("common:status.failed"), s.failed, s.failed > 0 ? "var(--danger)" : "var(--text-primary)"],
                 ] as const).map(([label, val, color]) => (
                   <div key={label} style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{label}</span>
@@ -388,7 +388,7 @@ export default function DashboardPage() {
                 {s.avg_time_minutes > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:summary.avgTimePerFile")}</span>
-                    <span style={{ color: "var(--text-secondary)", fontWeight: "bold" }}>
+                    <span style={{ color: "var(--text-primary)", fontWeight: "bold" }}>
                       {s.avg_time_minutes >= 60 ? `${(s.avg_time_minutes / 60).toFixed(1)}h` : `${s.avg_time_minutes.toFixed(0)}m`}
                     </span>
                   </div>
@@ -396,14 +396,14 @@ export default function DashboardPage() {
                 {s.est_remaining_hours > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:summary.estRemaining")}</span>
-                    <span style={{ color: "var(--caution)", fontWeight: "bold" }}>
+                    <span style={{ color: "var(--text-primary)", fontWeight: "bold" }}>
                       {s.est_remaining_hours >= 24 ? t("dashboard:summary.days", { value: (s.est_remaining_hours / 24).toFixed(1) }) : `${s.est_remaining_hours.toFixed(1)}h`}
                     </span>
                   </div>
                 )}
                 <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, display: "flex", justifyContent: "space-between" }}>
                   <span style={{ color: "var(--text-muted)" }}>{t("dashboard:summary.totalSaved")}</span>
-                  <span style={{ color: "var(--accent-text)", fontWeight: "bold", fontSize: 16 }}>{fmtBytes(s.total_saved)}</span>
+                  <span style={{ color: "var(--text-primary)", fontWeight: "bold", fontSize: 16 }}>{fmtBytes(s.total_saved)}</span>
                 </div>
               </div>
             </div>
@@ -414,7 +414,7 @@ export default function DashboardPage() {
         {dash.projection && dash.projection.projected_days > 0 && (
           <div style={{ ...cardStyle, display: "flex", gap: 24, alignItems: "center" }}>
             <div style={{ textAlign: "center", minWidth: 100 }}>
-              <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent-text)" }}>~{fmtBytes(dash.projection.projected_savings)}</div>
+              <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--text-primary)" }}>~{fmtBytes(dash.projection.projected_savings)}</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("dashboard:projection.projectedSavings")}</div>
             </div>
             <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.8 }}>
@@ -433,9 +433,9 @@ export default function DashboardPage() {
                     : t("dashboard:projection.days", { value: dash.projection.projected_days }),
                 }}
                 components={{
-                  accent: <b style={{ color: "var(--accent-text)" }} />,
+                  accent: <b style={{ color: "var(--text-primary)" }} />,
                   b: <b />,
-                  success: <b style={{ color: "var(--success)" }} />,
+                  success: <b style={{ color: "var(--text-primary)" }} />,
                 }}
               />
             </div>
@@ -481,7 +481,7 @@ export default function DashboardPage() {
               <Donut
                 size={110}
                 segments={s.codecs.map(([label, value]: [string, number], i: number) => ({
-                  value, label, color: ["var(--danger)", "var(--accent)", "var(--info)", "var(--success)", "var(--caution)"][i % 5],
+                  value, label, color: donutColors[i % donutColors.length],
                   to: CODEC_FILTERS[label] && `/scanner?filter=${CODEC_FILTERS[label]}`,
                 }))}
                 centerText={`${s.scan_total}`}
@@ -497,7 +497,7 @@ export default function DashboardPage() {
                   <div key={src}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
                       <span style={{ color: "var(--text-muted)" }}>{src} ({fmtNum(data.count)})</span>
-                      <span style={{ color: "var(--success)", fontWeight: "bold" }}>{data.percent}%</span>
+                      <span style={{ color: "var(--text-secondary)", fontWeight: "bold" }}>{data.percent}%</span>
                     </div>
                     <div style={{ height: 8, background: "var(--bg-primary)", borderRadius: 4, overflow: "hidden" }}>
                       <div style={{ height: "100%", width: `${Math.min(100, data.percent)}%`, background: "var(--accent)", borderRadius: 4 }} />
@@ -527,7 +527,7 @@ export default function DashboardPage() {
             <Donut
               size={110}
               segments={(s.resolutions || []).map(([label, value]: [string, number], i: number) => ({
-                value, label, color: ["var(--accent)", "var(--info)", "var(--success)", "var(--caution)"][i % 4],
+                value, label, color: donutColors[i % donutColors.length],
               }))}
               centerText={`${totalCompleted}`}
             />
@@ -559,6 +559,7 @@ export default function DashboardPage() {
                     color: tierColor(r.tier),
                     label: vmafLabelWithRange(r.tier),
                   }))}
+                  keepColors
                   centerText={vm.avg?.toFixed(1) ?? ""}
                 />
               </div>
@@ -571,7 +572,7 @@ export default function DashboardPage() {
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:vmaf.average")}</span>
-                    <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{vm.avg?.toFixed(1)}</span>
+                    <span style={{ color: "var(--text-primary)", fontWeight: "bold" }}>{vm.avg?.toFixed(1)}</span>
                   </div>
                   <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
                     {tierRows.map(r => (
@@ -598,8 +599,8 @@ export default function DashboardPage() {
               <ResponsiveContainer width="100%" height={200}>
                 <AreaChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="date" tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
-                  <YAxis tick={{ fill: "var(--text-muted)", fontSize: 10 }} unit=" TB" />
+                  <XAxis dataKey="date" tick={axisTick} />
+                  <YAxis tick={axisTick} unit=" TB" />
                   <Tooltip {...tooltipStyle} />
                   <Area type="monotone" dataKey="cumulative_tb" stroke="var(--accent)" fill="rgba(104,96,254,0.2)" strokeWidth={2} name={t("dashboard:trends.tbSaved")} />
                 </AreaChart>
@@ -611,8 +612,8 @@ export default function DashboardPage() {
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="date" tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
-                  <YAxis tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
+                  <XAxis dataKey="date" tick={axisTick} />
+                  <YAxis tick={axisTick} />
                   <Tooltip {...tooltipStyle} formatter={(v: any) => [t("dashboard:trends.fpsValue", { value: Math.round(v) }), t("dashboard:trends.avgFpsJobSeries")]} />
                   <Line type="monotone" dataKey="avg_fps" stroke="var(--info)" dot={false} strokeWidth={2} name={t("dashboard:trends.avgFpsJobSeries")} connectNulls />
                 </LineChart>
@@ -627,8 +628,8 @@ export default function DashboardPage() {
               <ResponsiveContainer width="100%" height={200}>
                 <RBarChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="date" tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
-                  <YAxis tick={{ fill: "var(--text-muted)", fontSize: 10 }} unit=" GB" />
+                  <XAxis dataKey="date" tick={axisTick} />
+                  <YAxis tick={axisTick} unit=" GB" />
                   <Tooltip {...tooltipStyle} />
                   <Bar dataKey="saved_gb" fill="var(--success)" radius={[3, 3, 0, 0]} name={t("dashboard:trends.gbSaved")} />
                 </RBarChart>
@@ -640,8 +641,8 @@ export default function DashboardPage() {
               <ResponsiveContainer width="100%" height={200}>
                 <RBarChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="date" tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
-                  <YAxis tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
+                  <XAxis dataKey="date" tick={axisTick} />
+                  <YAxis tick={axisTick} />
                   <Tooltip {...tooltipStyle} />
                   <Bar dataKey="jobs_completed" fill="var(--accent)" radius={[3, 3, 0, 0]} name={t("dashboard:trends.jobs")} />
                 </RBarChart>
@@ -673,11 +674,11 @@ export default function DashboardPage() {
                     <div style={{ flex: 1, height: 18, background: "var(--bg-primary)", borderRadius: 3, overflow: "hidden" }}>
                       <div style={{
                         height: "100%", width: `${(f.value / s.top_folders[0].value) * 100}%`,
-                        background: donutColors[i % donutColors.length],
+                        background: i === 0 ? "var(--accent)" : "var(--chart-2)",
                         borderRadius: 3,
                       }} />
                     </div>
-                    <span style={{ width: 60, fontSize: 11, color: "var(--success)", fontWeight: "bold", textAlign: "right", flexShrink: 0 }}>
+                    <span style={{ width: 60, fontSize: 11, color: "var(--text-secondary)", fontFamily: "var(--font-mono)", textAlign: "right", flexShrink: 0 }}>
                       {fmtBytes(f.value)}
                     </span>
                   </div>
@@ -702,11 +703,11 @@ export default function DashboardPage() {
                     <div style={{ flex: 1, height: 20, background: "var(--bg-primary)", borderRadius: 3, overflow: "hidden" }}>
                       <div style={{
                         height: "100%", width: `${(job.space_saved / maxSaved) * 100}%`,
-                        background: "linear-gradient(90deg, var(--accent), var(--success))",
+                        background: idx === 0 ? "var(--accent)" : "var(--chart-2)",
                         borderRadius: 3,
                       }} />
                     </div>
-                    <span style={{ fontSize: 11, color: "var(--success)", fontWeight: "bold", width: 70, textAlign: "right", flexShrink: 0 }}>
+                    <span style={{ fontSize: 11, color: "var(--text-secondary)", fontFamily: "var(--font-mono)", width: 70, textAlign: "right", flexShrink: 0 }}>
                       {fmtBytes(job.space_saved)}
                     </span>
                   </div>
@@ -720,7 +721,7 @@ export default function DashboardPage() {
         {dash.bandwidth_pct > 0 && (
           <div style={{ ...cardStyle, display: "flex", gap: 24, alignItems: "center" }}>
             <div style={{ textAlign: "center", minWidth: 90 }}>
-              <div style={{ fontSize: 32, fontWeight: "bold", color: "var(--success)" }}>{dash.bandwidth_pct}%</div>
+              <div style={{ fontSize: 32, fontWeight: "bold", color: "var(--text-primary)" }}>{dash.bandwidth_pct}%</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("dashboard:bandwidth.avgReduction")}</div>
             </div>
             <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.7 }}>
@@ -763,11 +764,11 @@ export default function DashboardPage() {
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:audioRemoval.removedCompleted")}</span>
-                  <span style={{ color: "var(--pink)", fontWeight: "bold" }}>{s.audio_tracks_deleted}</span>
+                  <span style={{ color: "var(--text-primary)", fontWeight: "bold" }}>{s.audio_tracks_deleted}</span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:audioRemoval.markedForRemoval")}</span>
-                  <span style={{ color: "var(--caution)", fontWeight: "bold" }}>{s.tracks_marked_removal}</span>
+                  <span style={{ color: "var(--text-primary)", fontWeight: "bold" }}>{s.tracks_marked_removal}</span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:audioRemoval.totalScanned")}</span>
@@ -787,7 +788,6 @@ export default function DashboardPage() {
                 <h3 style={headingStyle}>{t("dashboard:audioRemoval.byLanguage")}</h3>
                 <HBarChart
                   items={s.removed_langs.map(([label, value]: [string, number]) => ({ label, value }))}
-                  colors={["var(--danger)", "var(--pink)", "#ff8fb0", "var(--caution)", "#ffc078", "#ffd8a8", "#ffe8cc"]}
                 />
               </div>
             )}
@@ -823,7 +823,7 @@ export default function DashboardPage() {
                 {cloudCosts.map(c => (
                   <div key={c.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 6 }}>
                     <span style={{ color: "var(--text-muted)" }}>{c.name}</span>
-                    <span style={{ color: "var(--success)", fontWeight: 600 }}>{t("dashboard:cloud.perMonth", { amount: (savedTB * c.perTB).toFixed(2) })}</span>
+                    <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{t("dashboard:cloud.perMonth", { amount: (savedTB * c.perTB).toFixed(2) })}</span>
                   </div>
                 ))}
               </div>
@@ -847,11 +847,11 @@ export default function DashboardPage() {
                     <div key={d.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 6 }}>
                       <span style={{ color: "var(--text-muted)" }}>{d.name} · ${d.price}</span>
                       <span style={{ display: "flex", gap: 12 }}>
-                        <span style={{ color: "var(--accent-text)", fontWeight: 600 }}>
+                        <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>
                           {drivesSaved >= 1 ? t("dashboard:drives.drivesSaved", { count: Math.floor(drivesSaved) }) : t("dashboard:drives.pctOfDrive", { pct: (drivesSaved * 100).toFixed(0) })}
                         </span>
                         {moneySaved > 0 && (
-                          <span style={{ color: "var(--success)", fontWeight: 600 }}>{t("dashboard:drives.moneySaved", { amount: moneySaved })}</span>
+                          <span style={{ color: "var(--text-secondary)", fontWeight: 600 }}>{t("dashboard:drives.moneySaved", { amount: moneySaved })}</span>
                         )}
                       </span>
                     </div>
@@ -878,20 +878,19 @@ export default function DashboardPage() {
                     <div key={src}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 12 }}>
                         <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
-                          {idx === 0 && "\u{1F947} "}{idx === 1 && "\u{1F948} "}{idx === 2 && "\u{1F949} "}
-                          {src}
+                                                    {src}
                         </span>
                         <span style={{ display: "flex", gap: 12, color: "var(--text-muted)" }}>
                           <span>{t("dashboard:efficiency.files", { count: data.count, num: fmtNum(data.count) })}</span>
                           <span>{t("dashboard:efficiency.saved", { size: fmtBytes(data.saved) })}</span>
-                          <span style={{ color: "var(--success)", fontWeight: 600 }}>{data.percent}%</span>
+                          <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{data.percent}%</span>
                         </span>
                       </div>
                       <div style={{ height: 8, background: "var(--bg-primary)", borderRadius: 4, overflow: "hidden" }}>
                         <div style={{
                           height: "100%",
                           width: `${(data.percent / maxPct) * 100}%`,
-                          background: idx === 0 ? "var(--success)" : idx === 1 ? "var(--accent)" : "var(--text-muted)",
+                          background: idx === 0 ? "var(--accent)" : "var(--chart-2)",
                           borderRadius: 4,
                           transition: "width 0.3s",
                         }} />

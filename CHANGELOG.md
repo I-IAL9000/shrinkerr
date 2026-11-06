@@ -73,6 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Placeholder text is a cool grey in the dark theme**, a little dimmer than other grey text, instead of the browser's neutral grey.
 - **The Scanner remembers its sort** when you come back to it, as it does its filters (it went back to A–Z).
 - **Files that came out larger aren't ignored**: they're marked **Came out larger** in the Scanner (when, and at what quality), new downloads and policies still leave them alone, and Add to Queue converts them again — with another quality, no override needed. Files you ignore stay ignored.
+- **A calmer look**: one figure per page in the accent (no more purple, green, orange and red numbers everywhere), share bars instead of the Dashboard's donuts, bars instead of Monitor's gauges, sizes, fps and ETAs in a monospace font, and a finished job's sizes as before → after.
 
 ### Security
 - The API key works only in the `X-Api-Key` header, not in URLs, where it ended up in logs and browser history; live updates use one-time tickets.

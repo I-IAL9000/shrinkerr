@@ -40,7 +40,7 @@ function JobCardImpl({ progress, jobIndex, fileSize, encoderLabel, jobType, audi
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
         <span style={{ color: "white", fontWeight: "bold" }}>{t("queue:card.now", { step: jobStep(progress) || t("queue:card.processing") })}</span>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ color: "var(--accent-text)" }}>
+          <span style={{ color: "var(--text-muted)" }}>
             {t("queue:card.jobOf", { current: fmtNum(progress.jobs_completed + (jobIndex ?? 0) + 1), total: fmtNum(progress.jobs_total) })}
           </span>
           {onCancel && (
@@ -64,12 +64,12 @@ function JobCardImpl({ progress, jobIndex, fileSize, encoderLabel, jobType, audi
       <div style={{ marginBottom: 8, fontSize: 13, display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}>{progress.file_name}</span>
         {fileSize != null && fileSize > 0 && (
-          <span style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>{fmtBytes(fileSize)}</span>
+          <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text-muted)", flexShrink: 0 }}>{fmtBytes(fileSize)}</span>
         )}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
         <div style={{ flex: 1 }}><ProgressBar progress={progress.progress} /></div>
-        <span style={{ color: "var(--success)", fontWeight: "bold" }}>
+        <span style={{ color: "var(--text-primary)", fontWeight: "bold", fontFamily: "var(--font-mono)" }}>
           {progress.step === "vmaf analysis" ? `VMAF ${progress.progress.toFixed(0)}%` : `${progress.progress.toFixed(1)}%`}
         </span>
       </div>
@@ -95,9 +95,9 @@ function JobCardImpl({ progress, jobIndex, fileSize, encoderLabel, jobType, audi
             {t("queue:card.removingSubs", { count: subtitleTracksToRemove.length })}
           </span>
         )}
-        {progress.fps ? <span>{progress.fps.toFixed(0)} fps</span> : null}
-        {progress.speed ? <span>{progress.speed.toFixed(1)}x</span> : null}
-        {progress.eta ? <span>{t("queue:card.eta", { eta: formatEta(progress.eta) })}</span> : null}
+        {progress.fps ? <span style={{ fontFamily: "var(--font-mono)" }}>{progress.fps.toFixed(0)} fps</span> : null}
+        {progress.speed ? <span style={{ fontFamily: "var(--font-mono)" }}>{progress.speed.toFixed(1)}x</span> : null}
+        {progress.eta ? <span style={{ fontFamily: "var(--font-mono)" }}>{t("queue:card.eta", { eta: formatEta(progress.eta) })}</span> : null}
         {progress.node_name && (
           <span style={{ color: "var(--text-muted)" }}>{t("queue:card.onNode", { node: progress.node_name })}</span>
         )}

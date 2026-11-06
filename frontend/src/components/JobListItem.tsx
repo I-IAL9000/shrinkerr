@@ -180,9 +180,10 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
       <span className="job-filename" style={{ flex: 1, minWidth: 0 }}>
         {fileName}
         {(job as any).original_size > 0 && (
-          <span style={{ marginLeft: 8, fontSize: 11, color: "var(--text-muted)" }}>
+          <span style={{ marginLeft: 8, fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+            {/* A finished file's saving as before → after (v0.10.0). */}
             {job.status === "completed" && job.space_saved > 0
-              ? fmtBytes((job as any).original_size - job.space_saved)
+              ? <>{fmtBytes((job as any).original_size)} → <span style={{ color: "var(--text-primary)" }}>{fmtBytes((job as any).original_size - job.space_saved)}</span></>
               : fmtBytes((job as any).original_size)}
           </span>
         )}

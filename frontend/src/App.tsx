@@ -30,6 +30,7 @@ import { dialogOpen } from "./useDialog";
 import { shortcutsEnabled } from "./shortcuts";
 
 export type ThemePref = "system" | "light" | "dark";
+import "@fontsource-variable/geist-mono";
 import "./theme.css";
 
 function VersionBadge() {
@@ -60,10 +61,9 @@ function VersionBadge() {
             style={{
               display: "inline-flex", alignItems: "center", gap: 8,
               padding: "7px 14px", borderRadius: 20,
-              background: "linear-gradient(90deg, #4920F0, #6A64FF)",
+              background: "var(--accent-btn)",
               color: "#ffffff", border: "none", cursor: "pointer",
               fontSize: 12, fontWeight: 600,
-              boxShadow: "0 2px 8px rgba(73,32,240,0.35)",
             }}
           >
             {/* Gift icon lifted from the Figma design-system file (node 91:31). */}
@@ -647,7 +647,7 @@ function AppContent() {
               gap: 10,
               fontSize: 12,
             }}>
-              <span style={{ color: "var(--warning)", fontWeight: 700, flexShrink: 0 }}>⚠</span>
+              <span style={{ color: "var(--warning)", fontWeight: 700, flexShrink: 0 }}>{"\u26A0\uFE0E"}</span>
               <div style={{ flex: 1, minWidth: 0, color: "var(--text-secondary)" }}>
                 <Trans i18nKey="nav:banner.tmdbMissing" components={{ b: <strong />, link: <NavLink to="/settings" style={{ color: "var(--accent-text)" }} /> }} />
               </div>

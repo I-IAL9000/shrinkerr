@@ -236,7 +236,7 @@ function NodeCard({ node, onRefresh, onOpenSettings }: {
       {/* Stats */}
       <div style={{ display: "flex", gap: 16, fontSize: 11, color: "var(--text-muted)" }}>
         <span>{t("nodes:card.completed")} <strong style={{ color: "var(--text-secondary)" }}>{node.jobs_completed.toLocaleString()}</strong></span>
-        <span>{t("nodes:card.saved")} <strong style={{ color: "var(--success)" }}>{fmtBytes(node.total_space_saved)}</strong></span>
+        <span>{t("nodes:card.saved")} <strong style={{ color: "var(--text-primary)" }}>{fmtBytes(node.total_space_saved)}</strong></span>
         <span>{t("nodes:card.parallel")} <strong style={{ color: "var(--text-secondary)" }}>{node.max_jobs}</strong></span>
       </div>
 
