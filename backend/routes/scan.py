@@ -2934,6 +2934,63 @@ async def realign_audio_flags_once() -> int:
     return changed
 
 
+async def measure_missing_audio_bitrates_once() -> int:
+    """Audio tracks scanned with no bitrate (AAC, Opus, FLAC, TrueHD in an
+    MKV — ffprobe gives none) get one measured, and their size with it:
+    scanner.measure_audio_bitrates, as scans now do (v0.10.0). Once per
+    install, in the background, a file at a time (a 10-second read each over
+    the share). A row changed meanwhile is left as its writer left it.
+    Returns the files updated."""
+    from backend.scanner import measure_audio_bitrates
+    sentinel = "audio_bitrates_measured"
+    db = await connect_db()
+    try:
+        async with db.execute("SELECT value FROM settings WHERE key = ?", (sentinel,)) as cur:
+            if await cur.fetchone():
+                return 0
+        async with db.execute(
+            "SELECT id, file_path, duration, audio_tracks_json FROM scan_results "
+            "WHERE disc_type IS NULL AND json_valid(audio_tracks_json) AND EXISTS ("
+            "SELECT 1 FROM json_each(audio_tracks_json) t WHERE t.type = 'object' "
+            "AND json_extract(t.value, '$.bitrate') IS NULL)"
+        ) as cur:
+            rows = [dict(r) for r in await cur.fetchall()]
+    finally:
+        await db.close()
+    updated = 0
+    for r in rows:
+        duration = r["duration"] or 0
+        measured = await measure_audio_bitrates(r["file_path"], duration)
+        tracks = json.loads(r["audio_tracks_json"])
+        changed = False
+        for t in tracks:
+            bitrate = measured.get(t.get("stream_index"))
+            if not t.get("bitrate") and bitrate:
+                t["bitrate"] = bitrate
+                t["size_estimate_bytes"] = int(bitrate * duration / 8) if duration > 0 else None
+                changed = True
+        if not changed:
+            continue
+        db = await connect_db()
+        try:
+            cur = await db.execute("UPDATE scan_results SET audio_tracks_json = ? WHERE id = ? AND audio_tracks_json = ?",
+                                   (json.dumps(tracks), r["id"], r["audio_tracks_json"]))
+            await db.commit()
+            updated += cur.rowcount
+        finally:
+            await db.close()
+    db = await connect_db()
+    try:
+        await db.execute("INSERT INTO settings (key, value) VALUES (?, '1') "
+                         "ON CONFLICT(key) DO UPDATE SET value = '1'", (sentinel,))
+        await db.commit()
+    finally:
+        await db.close()
+    if updated:
+        print(f"[SCAN] Measured the audio bitrates of {updated} file(s) scanned without them", flush=True)
+    return updated
+
+
 def schedule_audio_flags_realign() -> None:
     """realign_audio_flags() in the background (the reorder setting changed)."""
     task = asyncio.create_task(realign_audio_flags())

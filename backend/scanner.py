@@ -478,6 +478,49 @@ def video_facts(probe: dict) -> dict:
     }
 
 
+# v0.10.0: how much of a file measures the bitrate of audio ffprobe gives none
+# for. From the middle: the opening's logos and quiet read low.
+_BITRATE_SLICE_SECONDS = 10
+
+
+async def measure_audio_bitrates(path: str, duration: float) -> dict[int, int]:
+    """The audio streams' bitrates (bits/s, by stream index) from their
+    packets in a slice from the middle of `path` — for formats without one in
+    their headers (AAC, Opus, FLAC, TrueHD in an MKV). {} when it can't be
+    read. Every stream's packets: selecting the audio ones made ffprobe seek
+    without the video's index, reading the file up to the middle (8 s for a
+    1080p episode over the share, 0.2 s with it)."""
+    start = max(0.0, (duration or 0) / 2 - _BITRATE_SLICE_SECONDS / 2)
+    cmd = ["ffprobe", "-v", "error", "-read_intervals", f"{start:.3f}%+{_BITRATE_SLICE_SECONDS}",
+           "-show_entries", "packet=codec_type,stream_index,pts_time,size", "-of", "csv=p=0", path]
+    proc = None
+    try:
+        proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE,
+                                                    stderr=asyncio.subprocess.DEVNULL)
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=settings.ffprobe_timeout)
+    except (asyncio.TimeoutError, OSError):
+        if proc and proc.returncode is None:
+            try:
+                proc.kill()
+                await proc.wait()
+            except Exception:
+                pass
+        return {}
+    spans: dict[int, list] = {}  # stream → [bytes, first pts, last pts]
+    for line in stdout.decode(errors="replace").split():
+        try:
+            kind, index, pts, size = line.split(",")[:4]
+            index, pts, size = int(index), float(pts), int(size)
+        except ValueError:
+            continue
+        if kind != "audio":
+            continue
+        span = spans.setdefault(index, [0, pts, pts])
+        span[0] += size
+        span[1], span[2] = min(span[1], pts), max(span[2], pts)
+    return {i: int(size * 8 / (last - first)) for i, (size, first, last) in spans.items() if last - first >= 1}
+
+
 async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[dict]:
     """Run ffprobe on a file and return parsed metadata dict, or None on failure.
 
@@ -716,6 +759,13 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
 
     for t in audio_tracks + subtitle_tracks:
         t.pop("_stream_id", None)
+
+    # Audio ffprobe gives no bitrate for (AAC, Opus, FLAC, TrueHD in an MKV)
+    # is measured: for its label and what removing it saves (v0.10.0).
+    if not disc_type and any(not t.get("bitrate") for t in audio_tracks):
+        measured = await measure_audio_bitrates(probe_input, duration)
+        for t in audio_tracks:
+            t["bitrate"] = t.get("bitrate") or measured.get(t["stream_index"])
 
     # HDR is 10-bit or more; when the container doesn't say, the first frame
     # does (not for discs: reading into one is slow over the network).

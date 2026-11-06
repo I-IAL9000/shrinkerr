@@ -284,6 +284,13 @@ async def lifespan(app: FastAPI):
             _fire_and_forget(note_earlier_writes_once())
         except Exception as exc:
             print(f"[STARTUP] earlier-writes note skipped: {exc}", flush=True)
+        # v0.10.0: audio tracks scanned with no bitrate (AAC, TrueHD… in an
+        # MKV) are measured (a 10-second read per file: in its own task).
+        try:
+            from backend.routes.scan import _fire_and_forget, measure_missing_audio_bitrates_once
+            _fire_and_forget(measure_missing_audio_bitrates_once())
+        except Exception as exc:
+            print(f"[STARTUP] audio bitrate measuring skipped: {exc}", flush=True)
         try:
             from backend.database import remove_temp_scan_rows
             await remove_temp_scan_rows()
