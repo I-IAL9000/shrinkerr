@@ -75,6 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Files that came out larger aren't ignored**: they're marked **Came out larger** in the Scanner (when, and at what quality), new downloads and policies still leave them alone, and Add to Queue converts them again — with another quality, no override needed. Files you ignore stay ignored.
 - **A calmer look**: one figure per page in the accent (no more purple, green, orange and red numbers everywhere), share bars instead of the Dashboard's donuts (and one VMAF card, not two with the same counts), Monitor's gauges as full-width bars, one per line, with softer figures and no row repeating its cards, sizes, fps and ETAs in a monospace font, and a finished job's sizes as before → after.
 - Schedule no longer has Quick Actions; the queue starts and pauses from the Queue page.
+- A rule with its own VMAF target has no CQ to set: the target finds each file's quality, and a file it can't test gets Settings' quality.
 
 ### Security
 - The API key works only in the `X-Api-Key` header, not in URLs, where it ended up in logs and browser history; live updates use one-time tickets.

@@ -231,6 +231,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
     // v0.10.0: NVENC anti-banding: "" = Settings', "off", "light", "strong"
     nvenc_aq?: string;
   }>({ name: "", match_mode: "any", conditions: [{ type: "directory", operator: "is", value: "" }], action: "encode", encoder: "", nvenc_preset: "", nvenc_cq: "", libx265_crf: "", libx265_preset: "", target_resolution: "", audio_codec: "", audio_bitrate: "", queue_priority: "" });
+  // The rule sets its own VMAF target score: the search finds its quality,
+  // so it has no CQ / CRF of its own (v0.10.0).
+  const ruleTargetsOwn = ruleForm.action === "encode" && !!ruleForm.vmaf_target && ruleForm.vmaf_target !== "off";
   const [condOpts, setCondOpts] = useState<any>({ sources: [], resolutions: [], video_codecs: [], audio_codecs: [], media_types: [], release_groups: [], arr_tags: [] });
   const [ruleSyncing, setRuleSyncing] = useState(false);
   const [ruleDragIdx, setRuleDragIdx] = useState<number | null>(null);
@@ -4115,7 +4118,13 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                 });
                               }}
                               title={t("settingsIntegrations:rules.edit")}
-                            >&#9998;</button>
+                            >
+                              {/* The posters' edit icon (v0.10.0: a ✏ that read as clip art) */}
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                              </svg>
+                            </button>
                             <button aria-label={t("common:actions.delete")} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", padding: 2, fontSize: 12 }}
                               onClick={async () => {
                                 await deleteEncodingRule(rule.id);
@@ -4494,9 +4503,13 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           {(ruleForm.encoder === "qsv" || ruleForm.encoder === "vaapi" || ruleForm.encoder === "videotoolbox") && (
                             <div>
                               <label style={labelStyle}>CQ</label>
-                              <input type="number" style={{ ...inputStyle, width: "100%" }} value={ruleForm.nvenc_cq}
-                                aria-label="CQ" placeholder={t("settingsIntegrations:rules.form.default")} min={15} max={40}
-                                onChange={e => setRuleForm({ ...ruleForm, nvenc_cq: e.target.value })} />
+                              {ruleTargetsOwn ? (
+                                <div style={{ ...helpStyle, marginTop: 6 }}>{t("settingsIntegrations:rules.form.qualityByTarget")}</div>
+                              ) : (
+                                <input type="number" style={{ ...inputStyle, width: "100%" }} value={ruleForm.nvenc_cq}
+                                  aria-label="CQ" placeholder={t("settingsIntegrations:rules.form.default")} min={15} max={40}
+                                  onChange={e => setRuleForm({ ...ruleForm, nvenc_cq: e.target.value })} />
+                              )}
                             </div>
                           )}
                           {/* NVENC and libx265: preset and CQ / CRF (or the default
@@ -4520,6 +4533,11 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           </div>
                           <div>
                             <label style={labelStyle}>{ruleForm.encoder === "libx265" ? "CRF" : "CQ"}</label>
+                            {/* A rule's own VMAF target finds the quality (v0.10.0: the CQ
+                                field stayed, as if it had to be chosen too). */}
+                            {ruleTargetsOwn ? (
+                              <div style={{ ...helpStyle, marginTop: 6 }}>{t("settingsIntegrations:rules.form.qualityByTarget")}</div>
+                            ) : (
                             <input type="number" style={{ ...inputStyle, width: "100%" }}
                               value={ruleForm.encoder === "libx265" ? ruleForm.libx265_crf : ruleForm.nvenc_cq}
                               aria-label={t("settingsIntegrations:rules.form.default")} placeholder={t("settingsIntegrations:rules.form.default")} min={15} max={ruleForm.encoder === "libx265" ? 28 : 40}
@@ -4531,6 +4549,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                 }
                               }}
                             />
+                            )}
                           </div>
                           {(ruleForm.encoder || encoding?.default_encoder || "nvenc") === "nvenc" && (
                             <div>
@@ -4726,8 +4745,10 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             data.encoder = ruleForm.encoder || null;
                             data.nvenc_preset = ruleForm.nvenc_preset || null;
                             data.libx265_preset = ruleForm.libx265_preset || null;
-                            data.nvenc_cq = ruleForm.nvenc_cq ? parseInt(ruleForm.nvenc_cq) : null;
-                            data.libx265_crf = ruleForm.libx265_crf ? parseInt(ruleForm.libx265_crf) : null;
+                            // Under the rule's own VMAF target the search finds the quality;
+                            // a file it can't test gets Settings'.
+                            data.nvenc_cq = ruleForm.nvenc_cq && !ruleTargetsOwn ? parseInt(ruleForm.nvenc_cq) : null;
+                            data.libx265_crf = ruleForm.libx265_crf && !ruleTargetsOwn ? parseInt(ruleForm.libx265_crf) : null;
                             data.target_resolution = ruleForm.target_resolution || null;
                             data.output_codec = ruleForm.output_codec || null;
                             // NVENC only: a stale choice isn't kept for another encoder

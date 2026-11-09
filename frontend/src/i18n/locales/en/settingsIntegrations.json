@@ -237,6 +237,7 @@
       "qsvVaapiNote": "Quality on NVENC's CQ scale (lower is better), translated to this encoder's own setting. The preset comes from Settings → Video.",
       "preset": "Preset",
       "default": "Default",
+      "qualityByTarget": "Found by the VMAF target",
       "resolution": "Resolution",
       "audioCodec": "Audio codec",
       "copyNoConversion": "Copy (no conversion)",
@@ -290,7 +291,7 @@
         "vmafTargetHelp": {
           "settings": "Follows Settings → Video. With a target, this rule's quality is where the search starts; without one, it's the quality used.",
           "off": "No search: the files this rule matches are encoded at this rule's quality, even when Settings has a target.",
-          "custom": "Each file's quality is found for this score (80 to 99, not below the VMAF minimum); this rule's quality is where the search starts."
+          "custom": "Each file's quality is found for this score (80 to 99, not below the VMAF minimum). A file the search can't test, such as one under two minutes, gets Settings' quality."
         },
         "minSavings": "Skip if savings below (%)",
         "minSavingsHelp": "Leave the video alone when the estimated saving is smaller; track cleanup still runs.",

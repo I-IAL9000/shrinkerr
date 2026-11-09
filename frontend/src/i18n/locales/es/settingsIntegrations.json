@@ -245,6 +245,7 @@
       "qsvVaapiNote": "Calidad en la escala CQ de NVENC (más bajo es mejor), traducida al ajuste propio de este codificador. El ajuste predefinido viene de Ajustes → Vídeo.",
       "preset": "Preajuste",
       "default": "Predeterminado",
+      "qualityByTarget": "La encuentra el objetivo VMAF",
       "resolution": "Resolución",
       "audioCodec": "Códec de audio",
       "copyNoConversion": "Copiar (sin conversión)",
@@ -298,7 +299,7 @@
         "vmafTargetHelp": {
           "settings": "Sigue Ajustes → Vídeo. Con un objetivo, la calidad de esta regla es el punto de partida de la búsqueda; sin él, es la calidad que se usa.",
           "off": "Sin búsqueda: los archivos de esta regla se codifican con la calidad de la regla, aunque Ajustes tenga un objetivo.",
-          "custom": "La calidad de cada archivo se busca para esta puntuación (de 80 a 99, sin bajar del VMAF mínimo); la calidad de esta regla es el punto de partida de la búsqueda."
+          "custom": "La calidad de cada archivo se busca para esta puntuación (de 80 a 99, sin bajar del VMAF mínimo). Un archivo que la búsqueda no puede probar, como uno de menos de dos minutos, recibe la calidad de Ajustes."
         },
         "minSavings": "Omitir si el ahorro es menor de (%)",
         "minSavingsHelp": "No toca el vídeo cuando el ahorro estimado es menor; la limpieza de pistas se hace igualmente.",
