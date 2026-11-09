@@ -82,7 +82,7 @@ export default function WorkerSetup() {
           fontSize: 11, padding: 12, marginTop: 8, borderRadius: 4, background: "var(--bg-primary)",
           border: "1px solid var(--border)", color: "var(--text-secondary)", overflow: "auto", lineHeight: 1.6,
         }}>{build(shown)}</pre>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
           <button className="btn btn-sm btn-primary" onClick={copy} disabled={!info}>
             {t("nodes:setup.copy")}
           </button>
