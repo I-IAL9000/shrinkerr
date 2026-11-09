@@ -850,6 +850,25 @@ def _srt_has_text(path: str) -> bool:
         return False
 
 
+def _srt_language(path: str, language: str) -> str:
+    """An SRT track's language: the image track's, or for an "und" one the
+    language of its text under "Auto-detect languages" (v0.10.0: it stayed
+    und, as a text track the Scanner would have detected)."""
+    from backend.scanner import _is_cleanup_enabled
+    if language != "und" or not _is_cleanup_enabled("auto_detect_languages", default=True):
+        return language
+    from backend.language_detection import detect_subtitle_language
+    try:
+        with open(path, "rb") as fh:
+            text = _strip_srt(fh.read().decode("utf-8", errors="replace"))
+    except OSError:
+        return language
+    detected = detect_subtitle_language(text or "")[0]
+    if detected:
+        print(f"[IMG-OCR] {os.path.basename(path)} reads as {detected}", flush=True)
+    return detected or language
+
+
 async def image_subs_to_srt(input_path: str, plan: list[dict], workdir: str) -> list[dict]:
     """Read the planned tracks (srt_plan) into .srt files in `workdir`, as
     subtitles to merge: {path, codec, language, forced, title, stream_index}.
@@ -904,7 +923,7 @@ async def image_subs_to_srt(input_path: str, plan: list[dict], workdir: str) -> 
             print(f"[IMG-OCR] OCR read no text from subtitle #{t['stream_index']}", flush=True)
             continue
         print(f"[IMG-OCR] Subtitle #{t['stream_index']} ({t['language']}, {t['pack']}) read into SRT", flush=True)
-        out.append({"path": srt, "codec": "subrip", "language": t["language"], "forced": t["forced"],
+        out.append({"path": srt, "codec": "subrip", "language": _srt_language(srt, t["language"]), "forced": t["forced"],
                     "title": f"{t['title']} (OCR)" if t["title"] else OCR_TRACK_TITLE,
                     "stream_index": t["stream_index"]})
 
@@ -928,7 +947,7 @@ async def image_subs_to_srt(input_path: str, plan: list[dict], workdir: str) -> 
             print(f"[IMG-OCR] OCR read no text from {name} ({t['language']})", flush=True)
             continue
         print(f"[IMG-OCR] {name} ({t['language']}, {t['pack']}) read into SRT", flush=True)
-        out.append({"path": srt, "codec": "subrip", "language": t["language"], "forced": t["forced"],
+        out.append({"path": srt, "codec": "subrip", "language": _srt_language(srt, t["language"]), "forced": t["forced"],
                     "title": OCR_TRACK_TITLE, "stream_index": None,
                     "external_path": t["external_path"], "idx_stream": t.get("idx_stream")})
     return out

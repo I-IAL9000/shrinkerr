@@ -2812,6 +2812,11 @@ class QueueWorker:
         # exists") and the cleanup was silently lost.
         _inline_cleanup = False
         video_kept = None  # the refusal, when the video was kept as it is (is_video_kept)
+        # The file's "und" audio tracks: a conversion patches the languages it
+        # detects into `probe`, and the clean-up below stamps them when the
+        # video is kept (v0.10.0: they were lost, and the tracks stayed und).
+        und_audio = {t.get("stream_index") for t in (probe.get("audio_tracks") or [])
+                     if (t.get("language") or "und").lower() == "und"}
         # Why a completed job didn't replace the original — (error_log,
         # error_key, error_params) for the "completed" write, which cleared
         # them: a VMAF rejection's reason never reached the Queue (v0.10.0).
@@ -3360,6 +3365,33 @@ class QueueWorker:
             all_indices = [t["stream_index"] for t in raw_tracks]
             keep_indices = [i for i in all_indices if i not in audio_tracks_to_remove]
 
+            # v0.9.38: a language detected for an untaggable source (AVI) that
+            # couldn't be written in place — the remux-to-mkv applies it. This
+            # is a valid reason to remux even with NO track removal (pre-v0.9.38
+            # the block below only ran on a track change, so a pure
+            # language-fix job no-op'd and the language never landed).
+            from backend.converter import (_auto_detect_enabled, _detect_und_track_languages,
+                                           _load_detected_audio_languages)
+            _remux_audio_langs = await _load_detected_audio_languages(current_file_path)
+            for t in raw_tracks:
+                if (t.get("language") or "und").lower() == "und" and _remux_audio_langs.get(t["stream_index"]):
+                    t["language"] = _remux_audio_langs[t["stream_index"]]
+            # The kept "und" tracks still without one are detected here under
+            # "Auto-detect languages" (Settings → Audio), as before converting —
+            # by then a conversion that kept the video detected them already.
+            # The remux stamps them all, and the reorder below goes by them.
+            _undetected = [t for t in raw_tracks
+                           if t["stream_index"] in keep_indices and (t.get("language") or "und").lower() == "und"]
+            if _undetected and _auto_detect_enabled():
+                await ws_manager.send_job_progress(
+                    job_id=job_id, file_name=file_name, progress=0, fps=None, eta=None,
+                    step="Detecting language…", jobs_completed=jobs_completed, jobs_total=jobs_total,
+                    total_saved=total_saved)
+                await _detect_und_track_languages(current_file_path, _undetected, [], duration)
+            _remux_audio_langs.update({t["stream_index"]: t["language"] for t in raw_tracks
+                                       if t["stream_index"] in und_audio
+                                       and (t.get("language") or "und").lower() != "und"})
+
             # Reorder: native language tracks first so they become the default playback track
             # (only if enabled in audio settings — default on)
             try:
@@ -3400,14 +3432,6 @@ class QueueWorker:
             raw_subs = probe.get("subtitle_tracks", [])
             all_sub_indices = [t["stream_index"] for t in raw_subs]
             keep_sub_indices = [i for i in all_sub_indices if i not in subtitle_tracks_to_remove] if subtitle_tracks_to_remove else None
-
-            # v0.9.38: a language detected for an untaggable source (AVI) that
-            # couldn't be written in place — the remux-to-mkv applies it. This
-            # is a valid reason to remux even with NO track removal (pre-v0.9.38
-            # the block below only ran on a track change, so a pure
-            # language-fix job no-op'd and the language never landed).
-            from backend.converter import _load_detected_audio_languages
-            _remux_audio_langs = await _load_detected_audio_languages(current_file_path)
 
             # v0.10.0: image subtitles to read into SRT tracks are a reason
             # too (Settings → Subtitles).
