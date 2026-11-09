@@ -3,11 +3,6 @@
   "loadFailed": "Failed to load system metrics",
   "loading": "Loading metrics...",
   "autoRefresh": "Auto-refreshing every 3 seconds",
-  "top": {
-    "encodingJobs": "Encoding Jobs",
-    "plexStreams": "Plex Streams",
-    "encodingFps": "Encoding FPS"
-  },
   "gpu": {
     "utilization": "Utilization",
     "power": "Power",

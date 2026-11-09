@@ -3,11 +3,6 @@
   "loadFailed": "No se pudieron cargar las métricas del sistema",
   "loading": "Cargando métricas...",
   "autoRefresh": "Actualización automática cada 3 segundos",
-  "top": {
-    "encodingJobs": "Trabajos de codificación",
-    "plexStreams": "Transmisiones de Plex",
-    "encodingFps": "FPS de codificación"
-  },
   "gpu": {
     "utilization": "Uso",
     "power": "Potencia",
