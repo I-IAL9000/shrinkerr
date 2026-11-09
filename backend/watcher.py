@@ -1249,6 +1249,8 @@ class FileWatcher:
                 found_before = len(result)
                 for root, dirs, files in walk_media_dir(dir_path, unreadable_dirs):
                     root_path = Path(root)
+                    walked_folders.add(str(root_path))
+                    listed_known.update(p for p in (str(root_path / n) for n in files) if p in known_paths)
                     # The Scanner's own rules (SC-11): disc markers, and
                     # video files next to a disc too.
                     result.update(str(p) for p in folder_candidates(root_path, dirs, files, extensions))
@@ -1264,6 +1266,10 @@ class FileWatcher:
 
         unreadable_dirs: list[str] = []
         found_in: dict[str, int] = {}  # media folder -> files the walk found in it
+        # The folders listed, and the known files they listed (a file the walk
+        # leaves out on purpose is listed; one its folder's listing missed isn't).
+        walked_folders: set[str] = set()
+        listed_known: set[str] = set()
         disk_files, sub_folder_files = await asyncio.get_event_loop().run_in_executor(None, _walk_dirs)
         if unreadable_dirs:
             print(f"[WATCHER] Couldn't list {len(unreadable_dirs)} folder(s) this cycle; "
@@ -1300,6 +1306,17 @@ class FileWatcher:
 
         raw_stale = known_paths - disk_files
         stale_path_set = {p for p in raw_stale if _is_under_walked(p) and not _is_under_unreadable(p)}
+        # A file its folder was listed without, but still there (v0.10.0): on
+        # the SMB mount a listing left out an ISO Undo had put back a minute
+        # before, and its row went (under an open Add to Queue). Checked by
+        # name — a lookup, not the listing.
+        unlisted = [p for p in stale_path_set if p not in listed_known and str(Path(p).parent) in walked_folders]
+        if unlisted:
+            still_there = set(await asyncio.to_thread(lambda: [p for p in unlisted if os.path.lexists(p)]))
+            if still_there:
+                stale_path_set -= still_there
+                print(f"[WATCHER] {len(still_there)} file(s) left out of their folder's listing are on disk; "
+                      f"keeping their rows: {sorted(still_there)[:10]}", flush=True)
         # Paired with new paths below before the safety belts: a moved file
         # still exists, so moving its row is safe whatever else vanished.
         possibly_moved = set(stale_path_set)
@@ -1684,7 +1701,7 @@ async def scanned_from_probe(file_path: str, probe: dict, source_codecs: list, g
     # into their library. v0.6.3+.
     link_count = None  # v0.10.0: hardlinks (a disc folder: not counted)
     try:
-        if disc_type_val:
+        if disc_type_val and p.suffix.lower() != ".iso":  # an ISO is the file itself (v0.10.0)
             file_mtime = (await asyncio.to_thread(p.parent.parent.stat)).st_mtime
         else:
             st = await asyncio.to_thread(os.stat, file_path)

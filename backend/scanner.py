@@ -2660,7 +2660,7 @@ async def scan_directory(
         # into their library. v0.6.3+.
         link_count = None  # v0.10.0: hardlinks (a disc folder: not counted)
         try:
-            if disc_type_val:
+            if disc_type_val and file_path.suffix.lower() != ".iso":  # an ISO is the file itself (v0.10.0)
                 file_mtime = file_path.parent.parent.stat().st_mtime
             else:
                 st = os.stat(str(file_path))
