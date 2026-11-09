@@ -650,9 +650,13 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       <select aria-label={t("scannerModals:overrides.vmafTarget")} value={vmafMode}
                         onChange={e => setVmafChoice(e.target.value === "custom" ? String(settingsTarget ?? VMAF_TARGET_DEFAULT) : e.target.value)}
                         style={{ flex: 1, minWidth: 0, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
-                        <option value="">{settingsTarget !== null
-                          ? t("scannerModals:overrides.vmafTargetSettings", { score: settingsTarget })
-                          : t("scannerModals:overrides.vmafTargetSettingsOff")}</option>
+                        {/* Settings' target and the rules' scores (estimate.auto), as
+                            the other Autos: it said "Settings: off" over a rule's 95. */}
+                        <option value="">{estimate?.auto?.vmaf_target
+                          ? autoLabel("vmaf_target", v => v === "off" ? t("scannerModals:overrides.vmafTargetAutoOff") : v)
+                          : settingsTarget !== null
+                            ? t("scannerModals:overrides.vmafTargetSettings", { score: settingsTarget })
+                            : t("scannerModals:overrides.vmafTargetSettingsOff")}</option>
                         <option value="off">{t("scannerModals:overrides.vmafTargetOff")}</option>
                         <option value="custom">{t("scannerModals:overrides.vmafTargetCustom")}</option>
                       </select>

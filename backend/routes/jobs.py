@@ -2310,7 +2310,8 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         def _setting(key: str) -> str:
             return str(est_settings.get(key) or _ENCODING_DEFAULTS.get(key) or "")
         auto: dict[str, dict[str, dict[str, int]]] = {
-            field: {"settings": {}, "rules": {}} for field in ("encoder", "preset", "nvenc_aq", "audio", "resolution")}
+            field: {"settings": {}, "rules": {}}
+            for field in ("encoder", "preset", "nvenc_aq", "audio", "resolution", "vmaf_target")}
 
         def _auto(field: str, value: str, by_rule: bool) -> None:
             counts = auto[field]["rules" if by_rule else "settings"]
@@ -2427,6 +2428,12 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                       bool(r.get("audio_codec") or r.get("audio_bitrate")))
                 _auto("resolution", r.get("target_resolution") or _setting("target_resolution"),
                       bool(r.get("target_resolution")))
+                # The VMAF target's Auto, before the dialog's own choice (v0.10.0:
+                # it said "Settings: off" over a rule's 95).
+                auto_target = effective_target({**target_settings, **settings_overrides(
+                    {"vmaf_target": r.get("vmaf_target"), "vmaf_min_score": r.get("vmaf_min_score")})})
+                _auto("vmaf_target", "off" if auto_target is None else f"{auto_target:g}",
+                      r.get("vmaf_target") is not None)
 
             # Per-file time estimate — pick speed factor based on target encoder
             file_dur = float(row.get("duration") or 0)

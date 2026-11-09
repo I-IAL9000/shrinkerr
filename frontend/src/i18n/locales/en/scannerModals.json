@@ -157,6 +157,7 @@
     "vmafTarget": "VMAF target",
     "vmafTargetSettings": "Settings: {{score}}",
     "vmafTargetSettingsOff": "Settings: off",
+    "vmafTargetAutoOff": "off",
     "vmafTargetOff": "Off: the quality below",
     "vmafTargetCustom": "A score of your own",
     "vmafTargetScore": "VMAF target score",

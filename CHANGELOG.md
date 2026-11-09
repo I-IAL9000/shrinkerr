@@ -194,6 +194,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cumulative space saved ends at your total**: the Dashboard's chart started at 0 ninety days back, so it showed those days' savings under a card with the total.
 - **Clean-ups give unknown tracks their language**: the remux after a conversion that kept the video left the audio "und" though the conversion had detected it, a clean-up never detected any (as "Auto-detect languages" says it does), and an SRT read from an unknown image subtitle stayed unknown.
 - **A BR-DISK remuxed to MKV is named a Bluray Remux** (with its resolution; a DVD-R a DVD Remux): it kept "BR-DISK", so Radarr took the MKV for a full disc. A remux never replaces another file that has its new name.
+- **Add to Queue's VMAF target names a rule's score**: with Settings' target off it read "Settings: off" over "What will happen" saying a rule's VMAF target 95; it now reads "Rule: 95" (and Settings' beside it when other files follow Settings).
 
 ## [0.9.162] — 2026-11-04
 

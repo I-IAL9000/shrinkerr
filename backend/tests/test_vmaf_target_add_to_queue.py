@@ -102,12 +102,32 @@ async def test_the_estimate_says_what_each_auto_comes_to(library):
         "nvenc_aq": {"settings": {"light": 2}, "rules": {}},  # NVENC's files only
         "audio": {"settings": {"eac3:640": 2}, "rules": {"copy": 1}},
         "resolution": {"settings": {"copy": 2}, "rules": {"1080p": 1}},
+        "vmaf_target": {"settings": {"off": 3}, "rules": {}},
     }
     # The dialog's encoder decides which preset each file has.
     cpu = (await estimate_jobs(EstimateRequest(file_paths=[FILM, PLAIN], encoder="libx265")))["auto"]
     assert cpu["preset"] == {"settings": {"medium": 2}, "rules": {}}
     assert (await estimate_jobs(EstimateRequest(file_paths=[FILM], cleanup_only=True)))["auto"]["preset"] == {
         "settings": {}, "rules": {}}  # nothing converted
+
+
+@pytest.mark.asyncio
+async def test_the_vmaf_targets_auto_names_a_rules_score(library):
+    """With Settings' target off and a rule's 95 for films, the choice read
+    "Settings: off" over "What will happen" saying VMAF target 95. It names
+    the rule's score beside Settings' now, whatever the dialog chose (its
+    choice replaces the Auto)."""
+    from backend.routes.jobs import EstimateRequest, estimate_jobs
+    await _settings(library, vmaf_target_enabled="false")
+    await _rule("Films", "/m/Films", vmaf_target=95)
+    await _rule("Reality", "/m/Reality", vmaf_target=0)
+    for choice in (None, 90):
+        auto = (await estimate_jobs(EstimateRequest(file_paths=[FILM, PLAIN, REALITY],
+                                                    vmaf_target_override=choice)))["auto"]
+        assert auto["vmaf_target"] == {"settings": {"off": 1}, "rules": {"95": 1, "off": 1}}
+    await _settings(library, vmaf_target_enabled="true", vmaf_target_score=93)
+    auto = (await estimate_jobs(EstimateRequest(file_paths=[FILM, PLAIN, REALITY])))["auto"]
+    assert auto["vmaf_target"] == {"settings": {"93": 1}, "rules": {"95": 1, "off": 1}}
 
 
 async def _jobs(db_path):

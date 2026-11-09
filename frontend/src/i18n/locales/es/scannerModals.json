@@ -182,6 +182,7 @@
     "vmafTarget": "Objetivo VMAF",
     "vmafTargetSettings": "Ajustes: {{score}}",
     "vmafTargetSettingsOff": "Ajustes: desactivado",
+    "vmafTargetAutoOff": "desactivado",
     "vmafTargetOff": "Desactivado: la calidad de abajo",
     "vmafTargetCustom": "Una puntuación propia",
     "vmafTargetScore": "Puntuación del objetivo VMAF",
