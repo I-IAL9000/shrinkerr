@@ -337,7 +337,7 @@ export interface NodeMetricsEntry {
   age_seconds: number | null;
 }
 // Nodes → "Add a remote worker" (v0.10.0): image tags matching this server.
-export interface WorkerSetupInfo { image: string; tags: { cpu: string; intel_amd: string; nvidia: string }; media_root: string }
+export interface WorkerSetupInfo { image: string; tags: { cpu: string; intel_amd: string; nvidia: string }; media_roots: string[] }
 // Maintainerr (v0.10.0): read its collections now. folders: null = not set up.
 // Review mode (v0.10.0): approve (put in place) or reject held conversions.
 export const approveReviews = (jobIds: number[]) =>

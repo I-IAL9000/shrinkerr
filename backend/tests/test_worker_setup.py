@@ -27,14 +27,27 @@ def test_the_image_matches_the_server():
 async def test_the_library_is_mounted_where_the_server_sees_it(test_db, monkeypatch):
     from backend.routes.nodes import worker_setup
     monkeypatch.setenv("SHRINKERR_FFMPEG_BUILD", "master")
-    assert (await worker_setup())["media_root"] == "/media"  # no media folders yet
+    assert (await worker_setup())["media_roots"] == ["/media"]  # no media folders yet
     async with aiosqlite.connect(test_db) as db:
         await db.executemany("INSERT INTO media_dirs (path, enabled) VALUES (?, ?)",
                              [("/data/media/Movies/", 1), ("/data/media/TV", 1), ("/elsewhere", 0)])
         await db.commit()
     got = await worker_setup()
-    assert got["media_root"] == "/data/media" and got["tags"]["cpu"].endswith("-edge")
+    assert got["media_roots"] == ["/data/media"] and got["tags"]["cpu"].endswith("-edge")
     assert got["image"] == "ghcr.io/i-ial9000/shrinkerr"
+
+
+@pytest.mark.asyncio
+async def test_folders_under_different_top_level_folders_get_a_mount_each(test_db):
+    """Their common parent was "/", and the command mounted the library there
+    (`- /path/to/media:/`): Docker refuses "/" as a mount target. Each
+    top-level folder's group is mounted where the server sees it."""
+    from backend.routes.nodes import worker_setup
+    async with aiosqlite.connect(test_db) as db:
+        await db.executemany("INSERT INTO media_dirs (path, enabled) VALUES (?, 1)",
+                             [("/media/Misc/Movies2",), ("/media/TV",), ("/downloads/complete",), ("/movies",)])
+        await db.commit()
+    assert (await worker_setup())["media_roots"] == ["/downloads/complete", "/media", "/movies"]
 
 
 def _node_runs_typescript() -> bool:
@@ -48,8 +61,8 @@ needs_node = pytest.mark.skipif(not _node_runs_typescript(), reason="needs Node 
 
 def _command(**opts) -> str:
     base = {"gpu": "cpu", "format": "run", "image": "ghcr.io/i-ial9000/shrinkerr", "tag": "v0.10.0",
-            "serverUrl": "http://192.168.1.5:6680", "apiKey": "k$ey", "workerName": "", "hostMediaPath": "",
-            "mediaRoot": "/media"}
+            "serverUrl": "http://192.168.1.5:6680", "apiKey": "k$ey", "workerName": "",
+            "mounts": [{"root": "/media", "host": ""}]}
     script = (f"import({json.dumps(str(ROOT / 'frontend/src/workerCommand.ts'))})"
               f".then(m => process.stdout.write(m.workerCommand({json.dumps({**base, **opts})})))")
     return subprocess.run(["node", "--experimental-strip-types", "--no-warnings", "-e", script],
@@ -58,7 +71,7 @@ def _command(**opts) -> str:
 
 @needs_node
 def test_docker_run_is_one_valid_shell_command():
-    cmd = _command(gpu="nvidia", workerName="gaming pc", hostMediaPath="/mnt/my media")
+    cmd = _command(gpu="nvidia", workerName="gaming pc", mounts=[{"root": "/media", "host": "/mnt/my media"}])
     words = shlex.split(cmd.replace("\\\n", " "))
     assert words[:3] == ["docker", "run", "-d"] and words[-1] == "ghcr.io/i-ial9000/shrinkerr:v0.10.0"
     assert {"API_KEY=k$ey", "WORKER_NAME=gaming pc", "SERVER_URL=http://192.168.1.5:6680",
@@ -72,7 +85,8 @@ def test_docker_run_is_one_valid_shell_command():
 @pytest.mark.parametrize("gpu", ["nvidia", "intel_amd", "cpu"])
 def test_compose_is_valid_yaml(gpu):
     yaml = pytest.importorskip("yaml")
-    doc = yaml.safe_load(_command(format="compose", gpu=gpu, workerName="nas: box", hostMediaPath="/mnt/my media"))
+    doc = yaml.safe_load(_command(format="compose", gpu=gpu, workerName="nas: box",
+                                  mounts=[{"root": "/media", "host": "/mnt/my media"}]))
     svc = doc["services"]["shrinkerr-worker"]
     assert svc["image"] == "ghcr.io/i-ial9000/shrinkerr:v0.10.0"
     assert "WORKER_NAME=nas: box" in svc["environment"] and "API_KEY=k$ey" in svc["environment"]
@@ -80,3 +94,14 @@ def test_compose_is_valid_yaml(gpu):
     assert "shrinkerr-worker-data" in doc["volumes"]
     assert ("deploy" in svc) == (gpu == "nvidia")
     assert ("devices" in svc) == (gpu == "intel_amd")
+
+
+@needs_node
+def test_each_root_is_mounted_from_its_own_folder():
+    yaml = pytest.importorskip("yaml")
+    mounts = [{"root": "/downloads/complete", "host": "/mnt/dl"}, {"root": "/media", "host": ""}]
+    doc = yaml.safe_load(_command(format="compose", mounts=mounts))
+    assert doc["services"]["shrinkerr-worker"]["volumes"] == [
+        "/mnt/dl:/downloads/complete", "/path/to/media:/media", "shrinkerr-worker-data:/app/data"]
+    words = shlex.split(_command(mounts=mounts).replace("\\\n", " "))
+    assert {"/mnt/dl:/downloads/complete", "/path/to/media:/media"} <= set(words)

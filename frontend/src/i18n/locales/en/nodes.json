@@ -21,6 +21,7 @@
     },
     "workerName": "Worker name (optional)",
     "hostMedia": "Library folder on that machine",
+    "hostMediaFor": "Where {{path}} is on that machine",
     "noKey": "Workers need an API key — set one in <a>Settings → System</a>.",
     "localhost": "You opened Shrinkerr as localhost, which another machine can't reach: open it by this machine's network address (or edit SERVER_URL).",
     "copy": "Copy",

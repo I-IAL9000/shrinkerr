@@ -1052,11 +1052,30 @@ def worker_image_tags(version: str, ffmpeg_build: str) -> dict[str, str]:
     return {"cpu": cpu, "intel_amd": cpu, "nvidia": f"{prefix}{edge}-nvenc"}
 
 
+def media_mount_roots(dirs: list[str]) -> list[str]:
+    """The folders a worker mounts to see every media folder at this server's
+    path: their common parent, or, when that's "/" (Docker refuses it as a
+    mount target: the command mounted the library there), the common parent
+    of each top-level folder's (v0.10.0)."""
+    try:
+        common = os.path.commonpath(dirs) if dirs else "/media"
+    except ValueError:  # mixed absolute / relative
+        return ["/media"]
+    if common != "/":
+        return [common]
+    groups: dict[str, list[str]] = {}
+    for d in dirs:
+        top = d.strip("/").split("/", 1)[0]
+        if top:
+            groups.setdefault(top, []).append(d)
+    return sorted(os.path.commonpath(group) for group in groups.values()) or ["/media"]
+
+
 @router.get("/worker-setup")
 async def worker_setup():
     """What the Nodes page's worker command needs (v0.10.0): the image tags
     matching this server, and where its media folders live (a worker that
-    mounts the library at the same path needs no path mappings)."""
+    mounts the library at the same paths needs no path mappings)."""
     from backend.routes.stats import _get_current_version
     db = await connect_db()
     try:
@@ -1064,13 +1083,9 @@ async def worker_setup():
             dirs = [r[0].rstrip("/") for r in await cur.fetchall() if r[0]]
     finally:
         await db.close()
-    try:
-        media_root = os.path.commonpath(dirs) if dirs else "/media"
-    except ValueError:  # mixed absolute / relative
-        media_root = "/media"
     return {"image": WORKER_IMAGE,
             "tags": worker_image_tags(_get_current_version(), os.environ.get("SHRINKERR_FFMPEG_BUILD", "")),
-            "media_root": media_root or "/"}
+            "media_roots": media_mount_roots(dirs)}
 
 
 @router.get("/metrics")

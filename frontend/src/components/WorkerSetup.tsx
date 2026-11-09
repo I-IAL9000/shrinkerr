@@ -19,7 +19,7 @@ export default function WorkerSetup() {
   const [gpu, setGpu] = useState<WorkerGpu>("nvidia");
   const [format, setFormat] = useState<WorkerFormat>("compose");
   const [workerName, setWorkerName] = useState("");
-  const [hostMediaPath, setHostMediaPath] = useState("");
+  const [hostPaths, setHostPaths] = useState<Record<string, string>>({});
   const [showKey, setShowKey] = useState(false);
 
   useEffect(() => {
@@ -30,8 +30,9 @@ export default function WorkerSetup() {
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
   const build = (key: string) => info ? workerCommand({
     gpu, format, image: info.image, tag: info.tags[gpu], serverUrl: window.location.origin, apiKey: key,
-    workerName, hostMediaPath, mediaRoot: info.media_root,
+    workerName, mounts: info.media_roots.map(root => ({ root, host: hostPaths[root] || "" })),
   }) : "";
+  const roots = info?.media_roots || ["/media"];
   const shown = apiKey && !showKey ? `${"•".repeat(8)}${apiKey.slice(-4)}` : apiKey || "<api-key>";
   const copy = async () => {
     await copyText(build(apiKey || "<api-key>"));
@@ -66,8 +67,16 @@ export default function WorkerSetup() {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
         <input value={workerName} onChange={e => setWorkerName(e.target.value)} style={{ ...input, flex: "1 1 160px" }}
           aria-label={t("nodes:setup.workerName")} placeholder={t("nodes:setup.workerName")} />
-        <input value={hostMediaPath} onChange={e => setHostMediaPath(e.target.value)} style={{ ...input, flex: "2 1 240px" }}
-          aria-label={t("nodes:setup.hostMedia")} placeholder={t("nodes:setup.hostMedia")} />
+        {/* Where each folder the library is under is on that machine: one
+            when the media folders share a parent, else one per top-level
+            folder (v0.10.0: they were mounted at "/", which Docker refuses). */}
+        {roots.map(root => {
+          const label = roots.length > 1 ? t("nodes:setup.hostMediaFor", { path: root }) : t("nodes:setup.hostMedia");
+          return (
+            <input key={root} value={hostPaths[root] || ""} onChange={e => setHostPaths({ ...hostPaths, [root]: e.target.value })}
+              style={{ ...input, flex: "2 1 240px" }} aria-label={label} placeholder={label} />
+          );
+        })}
       </div>
 
       {apiKey === "" && (
@@ -95,7 +104,7 @@ export default function WorkerSetup() {
         </div>
       </div>
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.6 }}>
-        {t("nodes:setup.footer", { path: info?.media_root || "/media" })}
+        {t("nodes:setup.footer", { path: roots.join(", ") })}
       </div>
     </div>
   );

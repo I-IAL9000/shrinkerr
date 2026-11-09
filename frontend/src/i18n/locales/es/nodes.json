@@ -21,6 +21,7 @@
     },
     "workerName": "Nombre del worker (opcional)",
     "hostMedia": "Carpeta de la biblioteca en esa máquina",
+    "hostMediaFor": "Dónde está {{path}} en esa máquina",
     "noKey": "Los workers necesitan una clave de API: configúrala en <a>Ajustes → Sistema</a>.",
     "localhost": "Has abierto Shrinkerr como localhost, al que otra máquina no puede llegar: ábrelo con la dirección de red de esta máquina (o edita SERVER_URL).",
     "copy": "Copiar",

@@ -12,8 +12,10 @@ export interface WorkerCommandOptions {
   serverUrl: string;
   apiKey: string;
   workerName: string;      // "" = the container's hostname
-  hostMediaPath: string;   // the library on the worker machine
-  mediaRoot: string;       // where the server sees it — mounted there, no path mappings
+  // Each folder the server's media folders are under (`root`, where the
+  // worker mounts it: no path mappings) and where it is on the worker
+  // machine (`host`, "" for a placeholder).
+  mounts: { root: string; host: string }[];
 }
 
 /** A shell word, single-quoted when it needs to be (nothing expands inside). */
@@ -33,7 +35,7 @@ export function workerCommand(o: WorkerCommandOptions): string {
     `API_KEY=${o.apiKey}`,
     ...(o.workerName.trim() ? [`WORKER_NAME=${o.workerName.trim()}`] : []),
   ];
-  const media = `${o.hostMediaPath.trim() || "/path/to/media"}:${o.mediaRoot}`;
+  const media = o.mounts.map(m => `${m.host.trim() || `/path/to${m.root}`}:${m.root}`);
   const image = `${o.image}:${o.tag}`;
 
   if (o.format === "run") {
@@ -42,7 +44,7 @@ export function workerCommand(o: WorkerCommandOptions): string {
       "--name shrinkerr-worker",
       "--restart unless-stopped",
       ...env.map(e => `-e ${sh(e)}`),
-      `-v ${sh(media)}`,
+      ...media.map(m => `-v ${sh(m)}`),
       "-v shrinkerr-worker-data:/app/data",
       ...(o.gpu === "nvidia" ? ["--runtime=nvidia --gpus all"] : []),
       ...(o.gpu === "intel_amd" ? ["--device /dev/dri:/dev/dri", "--group-add video", "--group-add render"] : []),
@@ -60,7 +62,7 @@ export function workerCommand(o: WorkerCommandOptions): string {
     "    environment:",
     ...env.map(e => `      - ${yaml(e)}`),
     "    volumes:",
-    `      - ${yaml(media)}`,
+    ...media.map(m => `      - ${yaml(m)}`),
     "      - shrinkerr-worker-data:/app/data",
   ];
   if (o.gpu === "nvidia") {

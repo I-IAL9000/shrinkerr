@@ -197,6 +197,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Add to Queue's VMAF target names a rule's score**: with Settings' target off it read "Settings: off" over "What will happen" saying a rule's VMAF target 95; it now reads "Rule: 95" (and Settings' beside it when other files follow Settings).
 - **A file stays listed when a folder listing misses it**: the watcher deleted a restored ISO's row because the NAS's listing of its folder left it out for a moment; it came back ten minutes later as a new file. A file still on disk keeps its row.
 - An ISO's Added date is its own; it took its media folder's.
+- **The remote worker command starts with media folders under different top-level folders**: it mounted the library at "/", which Docker refuses; each top-level folder is mounted where the server sees it, with its own field for where it is on the worker.
 
 ## [0.9.162] — 2026-11-04
 
