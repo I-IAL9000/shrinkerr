@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Trans, useTranslation } from "react-i18next";
-import { getSchedule, setSchedule, cancelSchedule, startQueue, pauseQueue, setRunHours, getEncodingSettings, updateEncodingSettings } from "../api";
+import { getSchedule, setSchedule, cancelSchedule, setRunHours, getEncodingSettings, updateEncodingSettings } from "../api";
 import { useToast } from "../useToast";
 import { fmtDateTime } from "../fmt";
 
@@ -146,40 +146,28 @@ export default function SchedulePage() {
           <button className="btn btn-primary" onClick={load}>{t("common:actions.retry")}</button>
         </div>
       )}
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: 300, background: "var(--bg-card)", padding: 20, borderRadius: 6 }}>
-          <h3 style={{ color: "var(--text-primary)", marginBottom: 16 }}>{t("schedule:start.title")}</h3>
-          <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("schedule:start.timeLabel")}</label>
-          <input
-            type="datetime-local"
-            value={inputTime}
-            onChange={(e) => setInputTime(e.target.value)}
-            style={{
-              display: "block", width: "100%", boxSizing: "border-box" as const, marginTop: 4, marginBottom: 12,
-              backgroundColor: "var(--bg-primary)", color: "var(--text-secondary)",
-              border: "1px solid var(--border)", padding: 8, borderRadius: 4, fontSize: 14,
-            }}
-          />
-          {scheduledTime && (
-            <div style={{ marginBottom: 12 }}>
-              <span style={{ color: "var(--success)" }}>
-                {t("schedule:start.scheduled", { time: fmtDateTime(scheduledTime) })}
-              </span>
-              <button className="btn btn-xs btn-secondary" onClick={handleCancel} style={{ marginLeft: 8 }}>{t("common:actions.cancel")}</button>
-            </div>
-          )}
-          <button className="btn btn-primary" onClick={handleSchedule}>{t("schedule:start.submit")}</button>
-        </div>
-
-        <div style={{ flex: 1, minWidth: 300, background: "var(--bg-card)", padding: 20, borderRadius: 6 }}>
-          <h3 style={{ color: "var(--text-primary)", marginBottom: 16 }}>{t("schedule:quick.title")}</h3>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <button className="btn btn-secondary" style={{ textAlign: "left" }}
-              onClick={async () => { await startQueue(); toast(t("schedule:quick.toastStarted"), "success"); }}>{t("schedule:quick.startNow")}</button>
-            <button className="btn btn-secondary" style={{ textAlign: "left" }}
-              onClick={async () => { await pauseQueue(); toast(t("schedule:quick.toastPaused")); }}>{t("schedule:quick.pauseAfterCurrent")}</button>
+      <div style={{ background: "var(--bg-card)", padding: 20, borderRadius: 6 }}>
+        <h3 style={{ color: "var(--text-primary)", marginBottom: 16 }}>{t("schedule:start.title")}</h3>
+        <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("schedule:start.timeLabel")}</label>
+        <input
+          type="datetime-local"
+          value={inputTime}
+          onChange={(e) => setInputTime(e.target.value)}
+          style={{
+            display: "block", width: "100%", maxWidth: 280, boxSizing: "border-box" as const, marginTop: 4, marginBottom: 12,
+            backgroundColor: "var(--bg-primary)", color: "var(--text-secondary)",
+            border: "1px solid var(--border)", padding: 8, borderRadius: 4, fontSize: 14,
+          }}
+        />
+        {scheduledTime && (
+          <div style={{ marginBottom: 12 }}>
+            <span style={{ color: "var(--success)" }}>
+              {t("schedule:start.scheduled", { time: fmtDateTime(scheduledTime) })}
+            </span>
+            <button className="btn btn-xs btn-secondary" onClick={handleCancel} style={{ marginLeft: 8 }}>{t("common:actions.cancel")}</button>
           </div>
-        </div>
+        )}
+        <button className="btn btn-primary" onClick={handleSchedule}>{t("schedule:start.submit")}</button>
       </div>
 
       {/* Run Hours */}

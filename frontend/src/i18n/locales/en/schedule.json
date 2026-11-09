@@ -15,13 +15,6 @@
     "toastScheduled": "Queue start scheduled",
     "toastCancelled": "Schedule cancelled"
   },
-  "quick": {
-    "title": "Quick Actions",
-    "startNow": "Start queue now",
-    "pauseAfterCurrent": "Pause after current job",
-    "toastStarted": "Queue started",
-    "toastPaused": "Queue paused"
-  },
   "runHours": {
     "title": "Run During These Hours Only",
     "hint": "Click or drag to toggle hours on/off:",

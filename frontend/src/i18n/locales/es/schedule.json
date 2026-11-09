@@ -15,13 +15,6 @@
     "toastScheduled": "Inicio de la cola programado",
     "toastCancelled": "Programación cancelada"
   },
-  "quick": {
-    "title": "Acciones rápidas",
-    "startNow": "Iniciar la cola ahora",
-    "pauseAfterCurrent": "Pausar tras el trabajo actual",
-    "toastStarted": "Cola iniciada",
-    "toastPaused": "Cola en pausa"
-  },
   "runHours": {
     "title": "Ejecutar solo durante estas horas",
     "hint": "Haz clic o arrastra para activar/desactivar horas:",
