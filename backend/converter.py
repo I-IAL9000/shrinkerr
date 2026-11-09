@@ -1506,6 +1506,22 @@ def resolution_label(width: int | None, height: int | None) -> str:
 _RESOLUTION_TOKEN_RE = re.compile(r"\b(?:2160p|1080p|1080i|720p|576p|480p|4k|uhd)\b", re.IGNORECASE)
 _DISC_TIER_RE = re.compile(r"\bBR[\s._-]?DISK\b|\bBD[\s._-]?(?:25|50|100)\b|\bDVD[\s._-]?(?:R|5|9)\b", re.IGNORECASE)
 
+
+def remux_output_stem(stem: str, width: int | None, height: int | None) -> str:
+    """A disc rip's name once a remux has put its streams, untouched, in an
+    MKV: BR-DISK (BD25/50/100) becomes "Bluray Remux" and DVD-R (DVD5/9)
+    "DVD Remux", with the resolution in front when the name has none, as a
+    conversion's "1080p Bluray" (v0.10.0: a BR-DISK .m2ts remuxed to MKV kept
+    "BR-DISK", and Radarr took the MKV for a full disc)."""
+    m = _DISC_TIER_RE.search(stem)
+    if not m:
+        return stem
+    sep = "." if " " not in stem and "." in stem else " "
+    if height and not _RESOLUTION_TOKEN_RE.search(stem):
+        stem = stem[:m.start()] + resolution_label(width, height) + sep + stem[m.start():]
+    stem = re.sub(r"\bBR[\s._-]?DISK\b|\bBD[\s._-]?(?:25|50|100)\b", f"Bluray{sep}Remux", stem, flags=re.IGNORECASE)
+    return re.sub(r"\bDVD[\s._-]?(?:R|5|9)\b", f"DVD{sep}Remux", stem, flags=re.IGNORECASE)
+
 # Metadata-ID tags ([tt1234567], [imdb-tt..], [tmdb-..], {tvdb-..}) plus the
 # whitespace before them. They belong on the folder (per *arr convention), not
 # in a converted disc's filename. v0.6.8+.

@@ -193,6 +193,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A clean-up that found nothing left to do still runs the post-conversion script and shows in Activity as completed.
 - **Cumulative space saved ends at your total**: the Dashboard's chart started at 0 ninety days back, so it showed those days' savings under a card with the total.
 - **Clean-ups give unknown tracks their language**: the remux after a conversion that kept the video left the audio "und" though the conversion had detected it, a clean-up never detected any (as "Auto-detect languages" says it does), and an SRT read from an unknown image subtitle stayed unknown.
+- **A BR-DISK remuxed to MKV is named a Bluray Remux** (with its resolution; a DVD-R a DVD Remux): it kept "BR-DISK", so Radarr took the MKV for a full disc. A remux never replaces another file that has its new name.
 
 ## [0.9.162] — 2026-11-04
 

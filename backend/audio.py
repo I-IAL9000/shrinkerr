@@ -27,11 +27,9 @@ async def _probe_audio_stream_count(input_path: str) -> int:
     return len([ln for ln in stdout.decode().splitlines() if ln.strip()])
 
 
-async def _probe_video_map(input_path: str) -> str:
-    """`-map` for the film's video stream: the first video stream that isn't
-    a cover image (scanner.is_picture_stream), by index. `0:V:0?` when the
-    probe fails. v0.10.0 (SC-24): an MKV whose first track is a one-frame
-    cover kept the cover as its video after an audio cleanup."""
+async def _probe_film_stream(input_path: str) -> dict | None:
+    """The film's video stream: the first video stream that isn't a cover
+    image (scanner.is_picture_stream). None when the probe fails."""
     from backend.scanner import is_picture_stream
     proc = None
     try:
@@ -43,11 +41,22 @@ async def _probe_video_map(input_path: str) -> str:
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
         for stream in json.loads(stdout or b"{}").get("streams", []):
             if not is_picture_stream(stream) and stream.get("index") is not None:
-                return f"0:{stream['index']}"
+                return stream
     except Exception:
         if proc is not None and proc.returncode is None:
             proc.kill()
-    return "0:V:0?"
+    return None
+
+
+def _video_map(film: dict | None) -> str:
+    """`-map` for the film's video stream, by index; `0:V:0?` when the probe
+    failed. v0.10.0 (SC-24): an MKV whose first track is a one-frame cover
+    kept the cover as its video after an audio cleanup."""
+    return f"0:{film['index']}" if film else "0:V:0?"
+
+
+async def _probe_video_map(input_path: str) -> str:
+    return _video_map(await _probe_film_stream(input_path))
 
 
 async def _probe_subtitle_stream_codecs(input_path: str) -> dict[int, str]:
@@ -410,8 +419,24 @@ async def _remux_audio(
             "error_key": "errors.wouldRemoveAllAudio",
         }
 
+    film = await _probe_film_stream(input_path)
     temp_path = str(p.parent / (p.stem + ".remuxing.mkv"))
-    final_path = str(p.parent / (p.stem + ".mkv"))
+    # Another container's MKV: a disc rip's is a remux now (v0.10.0).
+    stem = p.stem
+    if p.suffix.lower() != ".mkv":
+        from backend.converter import remux_output_stem
+        stem = remux_output_stem(stem, (film or {}).get("width"), (film or {}).get("height"))
+    final_path = str(p.parent / (stem + ".mkv"))
+    # Never replace an unrelated file that already has the output's name (on
+    # the NAS a rename onto it also sends it to the recycle bin) — v0.10.0,
+    # as a conversion (M4).
+    if os.path.abspath(final_path) != os.path.abspath(input_path) and os.path.lexists(final_path):
+        _taken = Path(final_path).name
+        return {
+            "success": False, "output_path": None, "space_saved": 0,
+            "error": f"A file named {_taken} already exists; not replacing it",
+            "error_key": "errors.outputExists", "error_params": {"name": _taken},
+        }
 
     # v0.7.18: probe subtitle codecs so the remux command can convert
     # mov_text / tx3g to srt instead of failing the mux on `-c copy`
@@ -433,7 +458,7 @@ async def _remux_audio(
         external_subtitle_files=[*(ext_subs or []), *(ocr_subs or [])] or None,
         subtitle_stream_codecs=sub_codecs or None,
         audio_languages=audio_languages,
-        video_map=await _probe_video_map(input_path),
+        video_map=_video_map(film),
         compat_track=compat_track,
         drop_dolby_vision=drop_dolby_vision,
     )
