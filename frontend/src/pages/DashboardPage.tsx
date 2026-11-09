@@ -4,7 +4,7 @@ import { Trans, useTranslation } from "react-i18next";
 import { getDashboardData, getStatsTimeline, getStatsSummary, dismissSetup } from "../api";
 import SetupWizard from "../components/SetupWizard";
 import SavingsCard from "../components/SavingsCard";
-import { fmtNum, fmtBytes } from "../fmt";
+import { fmtNum, fmtBytes, fmtDecimal } from "../fmt";
 import { tierColor, vmafLabelWithRange } from "../utils/vmaf";
 import { useVisibleInterval } from "../useVisibleInterval";
 import {
@@ -34,10 +34,12 @@ const CODEC_FILTERS: Record<string, string> = { "H.264": "x264", "H.265": "x265"
 const NEUTRAL_STEPS = ["var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
 const isAccent = (c: string) => c === "var(--accent)" || c === "var(--accent-text)";
 
-function Donut({ segments, centerText, keepColors }: {
+function Donut({ segments, centerText, caption, keepColors }: {
   /** `to`: a page the legend entry links to (e.g. the filtered Scanner). */
   segments: { value: number; color: string; label: string; to?: string }[];
   size?: number; hole?: number; centerText?: string; keepColors?: boolean;
+  /** What the figure is, beside it (VMAF: "average of 17,476 scored files"). */
+  caption?: string;
 }) {
   const total = segments.reduce((s, seg) => s + seg.value, 0);
   if (total === 0) return null;
@@ -49,7 +51,10 @@ function Donut({ segments, centerText, keepColors }: {
   const pct = (v: number) => `${Math.round((v / total) * 100)}%`;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {centerText && <div style={{ fontSize: 28, fontWeight: "bold", lineHeight: 1, color: "var(--text-primary)" }}>{centerText}</div>}
+      {centerText && <div style={{ fontSize: 28, fontWeight: "bold", lineHeight: 1, color: "var(--text-primary)" }}>
+        {centerText}
+        {caption && <span style={{ fontSize: 13, fontWeight: "normal", color: "var(--text-muted)", marginLeft: 10 }}>{caption}</span>}
+      </div>}
       <div style={{ display: "flex", gap: 2, height: 8 }}>
         {shown.map(seg => (
           <div key={seg.label} title={`${seg.label}: ${seg.value.toLocaleString()}`}
@@ -484,7 +489,7 @@ export default function DashboardPage() {
                   value, label, color: donutColors[i % donutColors.length],
                   to: CODEC_FILTERS[label] && `/scanner?filter=${CODEC_FILTERS[label]}`,
                 }))}
-                centerText={`${s.scan_total}`}
+                centerText={fmtNum(s.scan_total)}
               />
             </div>
           )}
@@ -518,7 +523,7 @@ export default function DashboardPage() {
               segments={(s.source_types || []).map(([label, value]: [string, number], i: number) => ({
                 value, label, color: donutColors[i % donutColors.length],
               }))}
-              centerText={`${totalCompleted}`}
+              centerText={fmtNum(totalCompleted)}
             />
           </div>
 
@@ -529,7 +534,7 @@ export default function DashboardPage() {
               segments={(s.resolutions || []).map(([label, value]: [string, number], i: number) => ({
                 value, label, color: donutColors[i % donutColors.length],
               }))}
-              centerText={`${totalCompleted}`}
+              centerText={fmtNum(totalCompleted)}
             />
           </div>
         </div>
@@ -560,29 +565,9 @@ export default function DashboardPage() {
                     label: vmafLabelWithRange(r.tier),
                   }))}
                   keepColors
-                  centerText={vm.avg?.toFixed(1) ?? ""}
+                  centerText={vm.avg != null ? fmtDecimal(vm.avg, 1) : ""}
+                  caption={t("dashboard:vmaf.averageOf", { count: vm.count, num: fmtNum(vm.count) })}
                 />
-              </div>
-              <div style={cardStyle}>
-                <h3 style={headingStyle}>{t("dashboard:vmaf.details")}</h3>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:vmaf.totalScored")}</span>
-                    <span style={{ color: "var(--text-secondary)", fontWeight: "bold" }}>{vm.count}</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:vmaf.average")}</span>
-                    <span style={{ color: "var(--text-primary)", fontWeight: "bold" }}>{vm.avg?.toFixed(1)}</span>
-                  </div>
-                  <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-                    {tierRows.map(r => (
-                      <div key={r.tier} style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{vmafLabelWithRange(r.tier)}</span>
-                        <span style={{ color: tierColor(r.tier), fontWeight: "bold", fontSize: 12 }}>{r.count}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
               </div>
             </div>
           );
@@ -740,7 +725,7 @@ export default function DashboardPage() {
                 segments={(s.native_langs || []).map(([label, value]: [string, number], i: number) => ({
                   value, label, color: donutColors[i % donutColors.length],
                 }))}
-                centerText={`${s.scan_total}`}
+                centerText={fmtNum(s.scan_total)}
               />
             </div>
 

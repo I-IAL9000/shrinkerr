@@ -132,9 +132,8 @@
   },
   "vmaf": {
     "scores": "VMAF Scores",
-    "details": "VMAF Details",
-    "totalScored": "Total scored",
-    "average": "Average VMAF"
+    "averageOf_one": "average of {{num}} scored file",
+    "averageOf_other": "average of {{num}} scored files"
   },
   "trends": {
     "title": "Trends",

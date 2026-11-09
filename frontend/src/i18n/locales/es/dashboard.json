@@ -135,9 +135,9 @@
   },
   "vmaf": {
     "scores": "Puntuaciones VMAF",
-    "details": "Detalles de VMAF",
-    "totalScored": "Total puntuados",
-    "average": "VMAF medio"
+    "averageOf_one": "media de {{num}} archivo puntuado",
+    "averageOf_many": "media de {{num}} archivos puntuados",
+    "averageOf_other": "media de {{num}} archivos puntuados"
   },
   "trends": {
     "title": "Tendencias",
