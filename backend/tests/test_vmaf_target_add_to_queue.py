@@ -103,6 +103,7 @@ async def test_the_estimate_says_what_each_auto_comes_to(library):
         "audio": {"settings": {"eac3:640": 2}, "rules": {"copy": 1}},
         "resolution": {"settings": {"copy": 2}, "rules": {"1080p": 1}},
         "vmaf_target": {"settings": {"off": 3}, "rules": {}},
+        "priority": {"settings": {"0": 3}, "rules": {}},
     }
     # The dialog's encoder decides which preset each file has.
     cpu = (await estimate_jobs(EstimateRequest(file_paths=[FILM, PLAIN], encoder="libx265")))["auto"]

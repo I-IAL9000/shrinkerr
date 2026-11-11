@@ -109,6 +109,9 @@ async def add_bulk_jobs(payload: BulkJobCreate):
 class BulkQueueFromScanRequest(BaseModel):
     file_paths: list[str] = []
     priority: int = 0  # 0=Normal, 1=High, 2=Highest
+    # Add to Queue's own pick (v0.10.0): the jobs' priority, over a rule's and
+    # an unwatched title's; None (Auto) takes the higher of those and priority.
+    priority_override: Optional[int] = None
     override_rules: bool = False  # Convert ignored files too: ignore and skip rules passed over
     # Add to Queue (v0.10.0): a file already waiting in the queue takes this
     # request's settings (JobQueue.update_pending_jobs) instead of being skipped.
@@ -330,6 +333,28 @@ async def refresh_pending_jobs(paths: Optional[list[str]] = None) -> int:
         return len(updates)
     finally:
         await db.close()
+
+
+async def _unwatched_folders(db) -> set[str]:
+    """Plex's unwatched titles' folders, when Plex puts those first."""
+    try:
+        async with db.execute("SELECT value FROM settings WHERE key = 'plex_prioritize_unwatched'") as cur:
+            row = await cur.fetchone()
+        if not (row and row["value"].lower() == "true"):
+            return set()
+        async with db.execute(
+            "SELECT folder_path FROM plex_metadata_cache WHERE metadata_type = 'watch_status' AND metadata_value = 'unwatched'"
+        ) as cur:
+            return {r["folder_path"] for r in await cur.fetchall()}
+    except Exception:
+        return set()
+
+
+def _auto_priority(rule: Optional[dict], fp: str, unwatched: set[str]) -> int:
+    """A job's priority on Add to Queue's Auto: its rule's, raised to High for
+    an unwatched title."""
+    return max((rule or {}).get("queue_priority") or 0,
+               1 if any(fp.startswith(uf) for uf in unwatched) else 0)
 
 
 async def _originals_setting(db) -> dict:
@@ -605,20 +630,7 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
         smart_settings = smart_cq_settings(filter_settings)
         default_encoder = filter_settings.get("default_encoder", "nvenc")
 
-        # Check if unwatched prioritization is enabled
-        plex_prioritize = False
-        unwatched_folders: set[str] = set()
-        try:
-            async with db.execute("SELECT value FROM settings WHERE key = 'plex_prioritize_unwatched'") as cur:
-                row = await cur.fetchone()
-                plex_prioritize = row and row["value"].lower() == "true"
-            if plex_prioritize:
-                async with db.execute(
-                    "SELECT folder_path FROM plex_metadata_cache WHERE metadata_type = 'watch_status' AND metadata_value = 'unwatched'"
-                ) as cur:
-                    unwatched_folders = {r["folder_path"] for r in await cur.fetchall()}
-        except Exception:
-            pass
+        unwatched_folders = await _unwatched_folders(db)
 
         # Batch-load all scan_results up front (avoids N+1 queries)
         scan_rows: dict[str, dict] = {}
@@ -816,11 +828,8 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
                 "direct_play": None if payload.direct_play is None else ",".join(sorted(problems)),
                 "audio_codec": audio_codec,
                 "audio_bitrate": audio_bitrate,
-                "priority": max(
-                    payload.priority,
-                    rule.get("queue_priority") or 0 if rule else 0,
-                    1 if plex_prioritize and any(fp.startswith(uf) for uf in unwatched_folders) else 0,
-                ),
+                "priority": max(0, min(2, payload.priority_override)) if payload.priority_override is not None
+                else max(payload.priority, _auto_priority(rule, fp, unwatched_folders)),
                 "not_before": not_before,
             })
 
@@ -2221,6 +2230,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         from backend.maintainerr import in_folders, leaving_folders
         leaving = (await leaving_folders(db)
                    if (est_settings.get("maintainerr_skip") or "true").lower() == "true" else [])
+        unwatched_folders = await _unwatched_folders(db)
         # Per-file CQ values actually used in the savings calculation. The
         # response returns the median of these as the "representative" CQ,
         # which the modal's slider initializes to. Pre-v0.3.98 the response
@@ -2311,7 +2321,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             return str(est_settings.get(key) or _ENCODING_DEFAULTS.get(key) or "")
         auto: dict[str, dict[str, dict[str, int]]] = {
             field: {"settings": {}, "rules": {}}
-            for field in ("encoder", "preset", "nvenc_aq", "audio", "resolution", "vmaf_target")}
+            for field in ("encoder", "preset", "nvenc_aq", "audio", "resolution", "vmaf_target", "priority")}
 
         def _auto(field: str, value: str, by_rule: bool) -> None:
             counts = auto[field]["rules" if by_rule else "settings"]
@@ -2382,6 +2392,8 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                 jt = "audio"
 
             total_files += 1
+            _auto("priority", str(_auto_priority(rule, fp, unwatched_folders)),
+                  (rule or {}).get("queue_priority") is not None)
             total_size += row["file_size"]
             by_type[jt] = by_type.get(jt, 0) + 1
             if "container" in fixes:

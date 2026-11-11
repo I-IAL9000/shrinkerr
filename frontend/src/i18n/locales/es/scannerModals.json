@@ -31,6 +31,7 @@
       "high": "Alta",
       "highest": "Máxima"
     },
+    "priorityAutoHelp": "La prioridad de la regla de cada archivo; si no, Normal (Alta para contenido no visto si “Priorizar contenido no visto” está activado). La prioridad que elijas aquí se aplica a todos los archivos, por encima de las reglas.",
     "failed": "No se pudo calcular la estimación",
     "unknownError": "Error desconocido",
     "addToQueue": "Añadir {{num}} a la cola",

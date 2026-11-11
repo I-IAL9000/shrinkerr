@@ -30,6 +30,7 @@
       "high": "High",
       "highest": "Highest"
     },
+    "priorityAutoHelp": "Each file's rule priority, else Normal (High for unwatched content when “Prioritize unwatched content” is on). A priority picked here is every file's, over the rules.",
     "failed": "Failed to estimate",
     "unknownError": "Unknown error",
     "addToQueue": "Add {{num}} to Queue",

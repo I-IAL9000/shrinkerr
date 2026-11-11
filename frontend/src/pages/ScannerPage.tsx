@@ -1211,7 +1211,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     ];
   };
 
-  const handleConfirmAdd = async (priority: number, overrideRules: boolean = false, encodingOverrides?: any, start: boolean = false) => {
+  const handleConfirmAdd = async (priority: number | null, overrideRules: boolean = false, encodingOverrides?: any, start: boolean = false) => {
     if (!estimatePaths) return;
     // Snapshot the count before clearing estimatePaths — drives the
     // in-flight overlay's "Adding N items to queue…" copy. We can't
@@ -1227,6 +1227,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       // it was skipped, and the dialog's choices dropped).
       const extra: Record<string, any> = {};
       extra.update_pending = true;
+      // A priority picked is every file's, over the rules (null: Auto)
+      if (priority !== null) extra.priority_override = priority;
       if (encodingOverrides) {
         if (encodingOverrides.encoder) extra.encoder_override = encodingOverrides.encoder;
         if (encodingOverrides.nvenc_preset) extra.nvenc_preset_override = encodingOverrides.nvenc_preset;
@@ -1246,7 +1248,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         if (encodingOverrides.nvenc_aq) extra.nvenc_aq_override = encodingOverrides.nvenc_aq;
       }
       if (filter !== "all") extra.filter = filter;
-      const result = await addJobsFromScan(estimatePaths, priority, overrideRules, extra) as any;
+      const result = await addJobsFromScan(estimatePaths, 0, overrideRules, extra) as any;
       if (!estimateKeepsSelection) {
         setSelectAllActive(false);
         setSelectedPaths(new Set());
@@ -1259,7 +1261,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         toast(t("queue:toasts.queueStarted"), "success");
       }
       if (result.added > 0) {
-        const priorityLabel = priority > 0 ? t(priority === 1 ? "scanner:toasts.priorityHigh" : "scanner:toasts.priorityHighest") : "";
+        const priorityLabel = priority ? t(priority === 1 ? "scanner:toasts.priorityHigh" : "scanner:toasts.priorityHighest") : "";
         const dupsNote = (updated > 0 ? t("scanner:toasts.updatedNote", { n: updated }) : "")
           + (skippedExisting > 0 ? t("scanner:toasts.alreadyQueuedNote", { n: skippedExisting }) : "");
         toast(

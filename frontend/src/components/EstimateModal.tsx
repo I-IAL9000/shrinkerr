@@ -75,7 +75,8 @@ interface EstimateModalProps {
   filePaths: string[];
   hasIgnoredFiles?: boolean;
   activeFilter?: string;
-  onConfirm: (priority: number, overrideRules: boolean, encodingOverrides?: EncodingOverrides, start?: boolean) => void;
+  // priority: null is Auto (each file's rule's); a number is every file's
+  onConfirm: (priority: number | null, overrideRules: boolean, encodingOverrides?: EncodingOverrides, start?: boolean) => void;
   onCancel: () => void;
 }
 
@@ -83,7 +84,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   const { t } = useTranslation(["scannerModals", "common"]);
   const [estimate, setEstimate] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [priority, setPriority] = useState(0);
+  const [priority, setPriority] = useState<number | null>(null);
   // Off (v0.10.0): ignored files get only their clean-up, as rules have it.
   const [overrideRules, setOverrideRules] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -215,6 +216,18 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
     ];
     return parts.length ? parts.join(" · ") : t("scannerModals:overrides.auto");
   };
+  // Priority's Auto (v0.10.0: a rule's Highest raised a High picked here,
+  // unsaid): the priorities files get with no rule's, and the rules'.
+  const autoPriority = (() => {
+    const found = estimate?.auto?.priority;
+    const name = (v: string) => t(`scannerModals:estimate.priorities.${PRIORITY_KEYS[Number(v)]}`);
+    const rules = Object.keys(found?.rules || {}).map(name);
+    return [
+      t("scannerModals:overrides.auto"),
+      ...Object.keys(found?.settings || {}).map(name),
+      ...(rules.length ? [t("scannerModals:overrides.autoRule", { count: rules.length, value: rules.join(", ") })] : []),
+    ].join(" · ");
+  })();
   const presetName = (v: string) => CPU_PRESETS.find(p => p.value === v)?.label ?? v.toUpperCase();
   const audioName = (v: string) => {
     if (v === "copy") return t("scannerModals:overrides.audioCopy");
@@ -589,18 +602,22 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
             {/* Priority selector */}
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>{t("scannerModals:estimate.priority")}</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                {PRIORITY_KEYS.map((labelKey, i) => (
-                  <button key={i}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {[
+                  { value: null, label: autoPriority, color: "var(--accent-text)", title: t("scannerModals:estimate.priorityAutoHelp") },
+                  ...PRIORITY_KEYS.map((labelKey, i) => (
+                    { value: i, label: t(`scannerModals:estimate.priorities.${labelKey}`), color: PRIORITY_COLORS[i], title: undefined })),
+                ].map(({ value, label, color, title }) => (
+                  <button key={String(value)} title={title} aria-pressed={priority === value}
                     style={{
                       padding: "5px 14px", borderRadius: 4, fontSize: 12, cursor: "pointer",
-                      border: priority === i ? `1px solid ${PRIORITY_COLORS[i]}` : "1px solid var(--border)",
-                      background: priority === i ? `color-mix(in srgb, ${PRIORITY_COLORS[i]} 13%, transparent)` : "var(--bg-primary)",
-                      color: priority === i ? PRIORITY_COLORS[i] : "var(--text-secondary)",
-                      fontWeight: priority === i ? 600 : 400,
+                      border: priority === value ? `1px solid ${color}` : "1px solid var(--border)",
+                      background: priority === value ? `color-mix(in srgb, ${color} 13%, transparent)` : "var(--bg-primary)",
+                      color: priority === value ? color : "var(--text-secondary)",
+                      fontWeight: priority === value ? 600 : 400,
                     }}
-                    onClick={() => setPriority(i)}
-                  >{t(`scannerModals:estimate.priorities.${labelKey}`)}</button>
+                    onClick={() => setPriority(value)}
+                  >{label}</button>
                 ))}
               </div>
             </div>

@@ -60,7 +60,8 @@ Conditions in a rule combine with `match_mode` — `any` (OR) or `all`
 - **Encode** — the default. Apply the rule's encoder override (any
   combination of `encoder`, `nvenc_preset`, `nvenc_cq`, `libx265_preset`,
   `libx265_crf`, `target_resolution`, output codec, `audio_codec`,
-  `audio_bitrate`, `queue_priority`). **Output codec** HEVC (the default)
+  `audio_bitrate`, `queue_priority` — Add to Queue's Priority, left on
+  Auto, names it; a priority picked there replaces it). **Output codec** HEVC (the default)
   or **AV1** — see [AV1 output](encoding-guide.md#av1-output). With QSV,
   VAAPI or VideoToolbox the rule's **CQ** (NVENC's scale) is translated to
   the encoder's own quality setting. With NVENC, **Anti-banding** (Off,
@@ -471,7 +472,8 @@ What you get:
 - **Plex trash cleanup** — also empties Plex's trash after the refresh.
 - **Watch-status rules** — skip or prioritize based on watched / unwatched.
 - **Prioritize unwatched content** (off by default) — unwatched files are
-  queued with at least High priority, so they convert first. Watch status
+  queued with at least High priority, so they convert first (unless Add to
+  Queue's Priority is set to one: then that is every file's). Watch status
   is read after every full scan, or with **Sync from Plex** above the
   Encoding Rules.
 - **Pause on stream** (Schedule page) — stop encoding if Plex is currently transcoding a
