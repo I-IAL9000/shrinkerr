@@ -344,11 +344,8 @@ export default function QueuePage() {
     toast(t("queue:toasts.moving", { count: selectedIds.length, position: t(`queue:positions.${position}`) }));
   };
 
-  // A quality preset sets both the CQ (NVENC, QSV, VAAPI and VideoToolbox
-  // read it) and libx265's CRF, so it holds whichever encoder runs the job.
-  // Optimistic UI update — apply immediately, then sync in background.
-  // A change to what pending jobs do (a track edit in a job's panel, a
-  // quality preset) — the pending summary reloads.
+  // A change to what pending jobs do (a track edit in a job's panel, Edit
+  // settings) — the pending summary reloads.
   const [planEdits, setPlanEdits] = useState(0);
 
   // Edit settings (v0.10.0): Add to Queue's dialog for pending jobs, which
@@ -371,39 +368,6 @@ export default function QueuePage() {
     } catch (e) {
       toast(e instanceof Error ? e.message : String(e), "error");
     }
-  };
-
-  const handleBulkVideoPreset = async (job: { nvenc_cq: number; libx265_crf: number }) => {
-    const selectedSet = new Set(selectedIds);
-    setJobs(prev => prev.map(j => selectedSet.has(j.id) ? { ...j, ...job } : j));
-    toast(t("queue:toasts.videoPresetApplied", { count: selectedIds.length }), "success");
-    await bulkUpdateJobSettings({ job_ids: selectedIds, ...job });
-    setPlanEdits(n => n + 1);
-  };
-
-  // The selected conversions' VMAF target (v0.10.0): 0 off — each job's own
-  // quality, no search — else the score to search for.
-  const handleBulkVmafTarget = async (target: number) => {
-    const conversions = new Set(jobs.filter(j => selectedJobIds.has(j.id)
-      && (j.job_type === "convert" || j.job_type === "combined")).map(j => j.id));
-    try {
-      await bulkUpdateJobSettings({ job_ids: selectedIds, vmaf_target: target });
-      setJobs(prev => prev.map(j => conversions.has(j.id) ? { ...j, vmaf_target: target } : j));
-      // Not counted: a selection can reach past the jobs loaded here.
-      toast(target ? t("queue:toasts.vmafTargetSet", { score: target }) : t("queue:toasts.vmafTargetOff"), "success");
-      setPlanEdits(n => n + 1);
-    } catch (e: any) {
-      toast(e?.message || String(e), "error");
-    }
-  };
-
-  const handleBulkAudioPreset = async (codec: string, bitrate: number) => {
-    const selectedSet = new Set(selectedIds);
-    setJobs(prev => prev.map(j =>
-      selectedSet.has(j.id) ? { ...j, audio_codec: codec, audio_bitrate: bitrate } : j
-    ));
-    bulkUpdateJobSettings({ job_ids: selectedIds, audio_codec: codec, audio_bitrate: bitrate });
-    toast(t("queue:toasts.audioPresetApplied", { count: selectedIds.length }), "success");
   };
 
   const handleBulkIgnore = async () => {
@@ -969,12 +933,6 @@ export default function QueuePage() {
               onMoveDown={() => handleBulkMove("down")}
               onMoveBottom={() => handleBulkMove("bottom")}
               onEdit={() => setEditing(pending.filter(j => selectedJobIds.has(j.id)))}
-              onChangeVideoPreset={handleBulkVideoPreset}
-              onChangeAudioPreset={handleBulkAudioPreset}
-              onChangeVmafTarget={handleBulkVmafTarget}
-              settingsTarget={encodingDefaults?.vmaf_target_enabled === true || encodingDefaults?.vmaf_target_enabled === "true"
-                ? Number(encodingDefaults?.vmaf_target_score) || null : null}
-              defaultEncoder={encodingDefaults?.default_encoder}
               onChangePriority={async (priority: number) => {
                 await bulkUpdateJobSettings({ job_ids: selectedIds, priority });
                 toast(t("queue:toasts.prioritySet", { priority: t(`queue:priority.${["normal", "high", "highest"][priority]}`) }));

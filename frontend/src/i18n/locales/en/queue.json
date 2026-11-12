@@ -54,10 +54,6 @@
     "fileIgnored": "File ignored and removed from queue",
     "moving_one": "Moving {{count}} job {{position}}",
     "moving_other": "Moving {{count}} jobs {{position}}",
-    "videoPresetApplied_one": "Video preset applied to {{count}} job",
-    "videoPresetApplied_other": "Video preset applied to {{count}} jobs",
-    "audioPresetApplied_one": "Audio preset applied to {{count}} job",
-    "audioPresetApplied_other": "Audio preset applied to {{count}} jobs",
     "ignored_one": "{{count}} job ignored",
     "ignored_other": "{{count}} jobs ignored",
     "removed_one": "{{count}} job removed",
@@ -76,9 +72,7 @@
     "rerequested_other": "Re-requested {{count}} files from Sonarr/Radarr",
     "rerequestPartial": "{{succeeded}} re-requested, {{failed}} failed: {{reason}}",
     "clearedFailed_one": "Cleared {{count}} failed job",
-    "clearedFailed_other": "Cleared {{count}} failed jobs",
-    "vmafTargetSet": "VMAF target {{score}} for the selected conversions",
-    "vmafTargetOff": "VMAF target off for the selected conversions"
+    "clearedFailed_other": "Cleared {{count}} failed jobs"
   },
   "confirm": {
     "ignoreSelected_one": "Ignore {{count}} selected job?",
@@ -251,18 +245,7 @@
     "moveUp": "Move up",
     "moveDown": "Move down",
     "moveBottom": "Move to bottom",
-    "videoPresetPlaceholder": "Video preset...",
-    "audioPresetPlaceholder": "Audio preset...",
-    "priorityPlaceholder": "Priority...",
-    "audioPresets": {
-      "copy": "Copy (no conversion)",
-      "bluray": "Blu-ray quality",
-      "streaming": "streaming",
-      "compact": "compact"
-    },
-    "vmafTargetPlaceholder": "VMAF target...",
-    "vmafTargetOff": "Off: each job's quality",
-    "vmafTargetScore": "Target {{score}}"
+    "priorityPlaceholder": "Priority..."
   },
   "plan": {
     "title": "What will happen",

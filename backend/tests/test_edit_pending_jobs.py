@@ -10,7 +10,7 @@ import aiosqlite
 import pytest
 
 from backend.tests.test_vmaf_target_rules import FILM, REALITY, _rule, library  # noqa: F401  (a fixture)
-from backend.tests.test_vmaf_target_ui import PLURALS, _placeholders, _source
+from backend.tests.test_vmaf_target_ui import PLURALS, _placeholders, _source, _text
 
 
 async def _waiting(db_path, *jobs):
@@ -114,3 +114,16 @@ def test_the_dialog_saves_an_edit_and_keeps_priorities():
     footer = src[src.index('className="estimate-modal-footer"'):]
     assert footer.index("{!editing &&") < footer.index("scannerModals:estimate.addAndStart")  # no Add & start
     assert 't("common:actions.save")' in footer
+
+
+def test_the_selection_bar_edits_settings_in_one_place():
+    """Edit settings replaces the Video preset, Audio preset and VMAF target
+    menus (it does what they did, and more): with them the bar took two
+    lines. Priority stays a menu."""
+    bar = _source("QueueControlPanel.tsx")
+    assert not re.search(r"onChange(VideoPreset|AudioPreset|VmafTarget)", bar + _source("QueuePage.tsx"))
+    assert "onChangePriority" in bar
+    for lang in PLURALS:
+        for key in ("panel.videoPresetPlaceholder", "panel.audioPresetPlaceholder", "panel.vmafTargetPlaceholder",
+                    "toasts.videoPresetApplied_other", "toasts.vmafTargetSet"):
+            assert _text(lang, f"queue:{key}") is None, (lang, key)  # unused strings went with them

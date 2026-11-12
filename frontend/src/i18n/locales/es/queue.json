@@ -58,12 +58,6 @@
     "moving_one": "Moviendo {{count}} trabajo {{position}}",
     "moving_many": "Moviendo {{count}} trabajos {{position}}",
     "moving_other": "Moviendo {{count}} trabajos {{position}}",
-    "videoPresetApplied_one": "Preajuste de video aplicado a {{count}} trabajo",
-    "videoPresetApplied_many": "Preajuste de video aplicado a {{count}} trabajos",
-    "videoPresetApplied_other": "Preajuste de video aplicado a {{count}} trabajos",
-    "audioPresetApplied_one": "Preajuste de audio aplicado a {{count}} trabajo",
-    "audioPresetApplied_many": "Preajuste de audio aplicado a {{count}} trabajos",
-    "audioPresetApplied_other": "Preajuste de audio aplicado a {{count}} trabajos",
     "ignored_one": "{{count}} trabajo ignorado",
     "ignored_many": "{{count}} trabajos ignorados",
     "ignored_other": "{{count}} trabajos ignorados",
@@ -90,9 +84,7 @@
     "rerequestPartial": "{{succeeded}} solicitados de nuevo, {{failed}} fallidos: {{reason}}",
     "clearedFailed_one": "{{count}} trabajo fallido borrado",
     "clearedFailed_many": "{{count}} trabajos fallidos borrados",
-    "clearedFailed_other": "{{count}} trabajos fallidos borrados",
-    "vmafTargetSet": "Objetivo VMAF {{score}} para las conversiones seleccionadas",
-    "vmafTargetOff": "Objetivo VMAF desactivado para las conversiones seleccionadas"
+    "clearedFailed_other": "{{count}} trabajos fallidos borrados"
   },
   "confirm": {
     "ignoreSelected_one": "¿Ignorar {{count}} trabajo seleccionado?",
@@ -279,18 +271,7 @@
     "moveUp": "Subir",
     "moveDown": "Bajar",
     "moveBottom": "Mover al final",
-    "videoPresetPlaceholder": "Preajuste de video...",
-    "audioPresetPlaceholder": "Preajuste de audio...",
-    "priorityPlaceholder": "Prioridad...",
-    "audioPresets": {
-      "copy": "Copiar (sin conversión)",
-      "bluray": "calidad Blu-ray",
-      "streaming": "streaming",
-      "compact": "compacto"
-    },
-    "vmafTargetPlaceholder": "Objetivo VMAF...",
-    "vmafTargetOff": "Desactivado: la calidad de cada trabajo",
-    "vmafTargetScore": "Objetivo {{score}}"
+    "priorityPlaceholder": "Prioridad..."
   },
   "plan": {
     "title": "Qué va a pasar",

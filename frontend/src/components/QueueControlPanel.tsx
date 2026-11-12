@@ -1,8 +1,5 @@
-import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ActionMenu from "./ActionMenu";
-import { getQualityPresets, type QualityPreset } from "../api";
-import { presetSetting } from "../qualityPresets";
 
 interface QueueControlPanelProps {
   selectedCount: number;
@@ -11,40 +8,20 @@ interface QueueControlPanelProps {
   onMoveDown: () => void;
   onMoveBottom: () => void;
   /** Add to Queue's settings for the selected jobs (v0.10.0): any encoder,
-   *  quality, Force re-encode, the rules. */
+   *  quality, Force re-encode, the rules. It replaced the Video preset,
+   *  Audio preset and VMAF target menus. */
   onEdit: () => void;
-  /** A quality preset's values for the selected jobs (any encoder reads them). */
-  onChangeVideoPreset: (job: QualityPreset["job"]) => void;
-  onChangeAudioPreset: (codec: string, bitrate: number) => void;
   onChangePriority: (priority: number) => void;
-  /** The selected conversions' VMAF target: 0 off (each job's quality), else a score. */
-  onChangeVmafTarget: (target: number) => void;
-  /** Settings' VMAF target, offered with the usual scores (null: off). */
-  settingsTarget?: number | null;
   onIgnore: () => void;
   onRemove: () => void;
   onSelectAll: () => void;
   onDeselectAll: () => void;
-  defaultEncoder?: string;
 }
 
 const PRIORITIES = [
   { labelKey: "normal", value: 0 },
   { labelKey: "high", value: 1 },
   { labelKey: "highest", value: 2 },
-];
-
-// labelKey (whole label) / noteKey (parenthetical) → queue:panel.audioPresets.*;
-// plain `label` is technical and not translated.
-const AUDIO_PRESETS = [
-  { labelKey: "copy", codec: "copy", bitrate: 0 },
-  { label: "EAC3 640k", noteKey: "bluray", codec: "eac3", bitrate: 640 },
-  { label: "EAC3 448k", noteKey: "streaming", codec: "eac3", bitrate: 448 },
-  { label: "EAC3 256k", noteKey: "compact", codec: "eac3", bitrate: 256 },
-  { label: "AC3 640k", codec: "ac3", bitrate: 640 },
-  { label: "AC3 448k", codec: "ac3", bitrate: 448 },
-  { label: "AAC 256k", codec: "aac", bitrate: 256 },
-  { label: "AAC 128k", codec: "aac", bitrate: 128 },
 ];
 
 const moveBtnStyle: React.CSSProperties = {
@@ -91,24 +68,13 @@ export default function QueueControlPanel({
   onMoveDown,
   onMoveBottom,
   onEdit,
-  onChangeVideoPreset,
-  onChangeAudioPreset,
   onChangePriority,
-  onChangeVmafTarget,
-  settingsTarget = null,
   onIgnore,
   onRemove,
   onSelectAll,
   onDeselectAll,
-  defaultEncoder = "nvenc",
 }: QueueControlPanelProps) {
   const { t } = useTranslation(["queue", "common"]);
-  // The shared quality presets (v0.10.0): quality only — the speed preset
-  // stays the Settings choice — and every encoder takes them.
-  const [presets, setPresets] = useState<QualityPreset[]>([]);
-  useEffect(() => {
-    getQualityPresets(defaultEncoder).then(r => setPresets(r.presets)).catch(() => {});
-  }, [defaultEncoder]);
 
   return (
     <div
@@ -200,33 +166,7 @@ export default function QueueControlPanel({
         {t("queue:panel.editSettings")}
       </button>
 
-      {/* Video preset / audio preset / priority: menus, not selects (FE#28) */}
-      <ActionMenu
-        label={t("queue:panel.videoPresetPlaceholder")}
-        buttonStyle={selectStyle}
-        items={presets.map(p => ({
-          label: `${t(`common:qualityPresets.${p.id}.name`)} — ${presetSetting(p)} · ${t("common:qualityPresets.savings", { pct: p.savings_pct })}`,
-          onSelect: () => onChangeVideoPreset(p.job),
-        }))}
-      />
-      <ActionMenu
-        label={t("queue:panel.audioPresetPlaceholder")}
-        buttonStyle={selectStyle}
-        items={AUDIO_PRESETS.map(p => ({
-          label: (p.labelKey ? t(`queue:panel.audioPresets.${p.labelKey}`) : p.label)
-            + (p.noteKey ? ` (${t(`queue:panel.audioPresets.${p.noteKey}`)})` : ""),
-          onSelect: () => onChangeAudioPreset(p.codec, p.bitrate),
-        }))}
-      />
-      <ActionMenu
-        label={t("queue:panel.vmafTargetPlaceholder")}
-        buttonStyle={selectStyle}
-        items={[
-          { label: t("queue:panel.vmafTargetOff"), onSelect: () => onChangeVmafTarget(0) },
-          ...[...new Set([90, 93, 95, ...(settingsTarget ? [settingsTarget] : [])])].sort((a, b) => a - b)
-            .map(score => ({ label: t("queue:panel.vmafTargetScore", { score }), onSelect: () => onChangeVmafTarget(score) })),
-        ]}
-      />
+      {/* Priority: a menu, not a select (FE#28) */}
       <ActionMenu
         label={t("queue:panel.priorityPlaceholder")}
         buttonStyle={selectStyle}
