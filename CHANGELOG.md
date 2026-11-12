@@ -158,7 +158,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A job's own quality (presets, rules, content type) reaches Quick Sync, VAAPI and VideoToolbox.
 - Widescreen films get the right resolution (a 1920×800 film counted as 720p).
 - The Dashboard's VMAF card and library names work.
-- The Dashboard's source cards count converted discs and ISOs as "Disc / ISO" (they were Other).
+- The Dashboard's source cards and Add to Queue's By Source count discs and ISOs as "Disc / ISO" (they were Other), and Add to Queue counts a Blu-ray Remux as Remux, as the Dashboard does; the Resolution card takes a conversion's source size when the name doesn't say (a disc's never does), not Unknown.
 - Sizes and times read the same everywhere, in your language.
 - On installs without an API key or password, the Monitor's node cards and the Nodes page's actions work.
 - The health check after a scan is no longer cancelled as a hung scan after 15 minutes.

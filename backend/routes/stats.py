@@ -11,15 +11,17 @@ from pathlib import Path
 from fastapi import APIRouter, Query, Response
 
 from backend.database import connect_db
+from backend.resolution import resolution_tier
 
 router = APIRouter(prefix="/api/stats")
 
 
-def _source_type(path: str) -> str:
+def source_type(path: str) -> str:
     """A source's kind from its path. A disc or ISO is one of its own
     (v0.10.0; "Disc / ISO", as the Scanner's filter calls it): its path is
     the marker in the disc's folder (BDMV/index.bdmv, VIDEO_TS/VIDEO_TS.IFO)
-    or the .iso. The rest are told by the file's name, not its folders'."""
+    or the .iso. The rest are told by the file's name, not its folders'.
+    Add to Queue's By Source sorts with it too."""
     if re.search(r"\.iso$|/(bdmv|video_ts)/", path, re.I):
         return "Disc / ISO"
     n = path.rsplit("/", 1)[-1].lower()
@@ -121,7 +123,7 @@ def _stats_summary(db_path: str) -> dict:
         # the user has actually processed.
         completed = [dict(r) for r in con.execute(
             "SELECT file_path, original_file_path, job_type, status, space_saved, original_size, "
-            "audio_tracks_to_remove, started_at, completed_at "
+            "audio_tracks_to_remove, started_at, completed_at, encoding_stats "
             "FROM jobs WHERE status = 'completed'"
         )]
 
@@ -261,11 +263,16 @@ def _stats_summary(db_path: str) -> dict:
         # back to fname for legacy jobs without original_file_path.
         src_path = j.get("original_file_path") or j["file_path"]
         src_name = src_path.rsplit("/", 1)[-1]
-        src = _source_type(src_path)
+        src = source_type(src_path)
         source_types[src] += 1
         # Resolution-by-source uses the same source name so the two
         # cards (Source Types pie + Avg Reduction by Source) align.
-        resolutions[_resolution(src_name)] += 1
+        res = _resolution(src_name)
+        if res == "Unknown":  # the name doesn't tell (a disc's never does): the source's size
+            enc = _parse_json(j["encoding_stats"])
+            tier = resolution_tier(enc.get("source_width"), enc.get("source_height")) if isinstance(enc, dict) else None
+            res = {"4k": "4K", "sd": "SD"}.get(tier, tier) or res
+        resolutions[res] += 1
 
         # Savings by source
         if orig > 0:

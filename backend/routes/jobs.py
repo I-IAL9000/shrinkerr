@@ -2161,7 +2161,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
     from backend.rule_resolver import resolve_rules_for_batch
     from backend.content_detect import smart_cq, smart_cq_settings
     from backend.resolution import resolution_tier
-    import re
+    from backend.routes.stats import source_type
 
     # Selected folders through the active filter.
     file_paths = list(payload.file_paths)
@@ -2527,15 +2527,8 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                 estimated_savings += int(row["file_size"] * pct)
                 file_cqs.append(file_cq)
 
-            # Source type
-            name = fp.rsplit("/", 1)[-1].lower()
-            src = "Other"
-            if re.search(r"blu[\-\s]?ray|bdremux|bdrip", name): src = "Blu-ray"
-            elif "web-dl" in name or "webdl" in name: src = "WEB-DL"
-            elif "webrip" in name: src = "WEBRip"
-            elif "hdtv" in name: src = "HDTV"
-            elif "dvd" in name: src = "DVD"
-            elif "remux" in name: src = "Remux"
+            # Source type: as the Dashboard sorts them (v0.10.0: discs, Remux first)
+            src = source_type(fp)
             by_source[src] = by_source.get(src, 0) + 1
 
         # Get parallel_jobs for time estimate
