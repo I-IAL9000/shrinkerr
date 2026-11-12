@@ -319,11 +319,10 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex",
       alignItems: "center", justifyContent: "center", zIndex: 1000,
     }} onClick={e => { if (e.target === e.currentTarget) onCancel(); }}>
-      <div ref={modalRef} {...dialog} style={{
-        background: "var(--bg-card)", borderRadius: 8, padding: "20px", width: "95%", maxWidth: 620,
-        maxHeight: "90vh", overflowY: "auto", boxSizing: "border-box" as const,
-        border: "1px solid var(--border)",
-      }}>
+      <div ref={modalRef} {...dialog} className="estimate-modal">
+        {/* The body scrolls and the buttons stay under it (v0.10.0): they
+            were below the fold with the encoding settings open. */}
+        <div className="estimate-modal-body">
         <h3 style={{ color: "white", margin: "0 0 16px", fontSize: 16 }}>{t("scannerModals:estimate.title")}</h3>
 
         {/* Override rules toggle */}
@@ -350,13 +349,17 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
           </div>
         )}
 
-        {loading ? (
+        {/* Only before the first estimate (v0.10.0): replacing the body on
+            every change shrank the dialog and sent it back to the top. */}
+        {loading && !estimate ? (
           <div style={{ display: "flex", alignItems: "center", gap: 12, padding: 20, justifyContent: "center" }}>
             <div className="spinner" style={{ width: 20, height: 20 }} />
             <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("scannerModals:estimate.estimating")}</span>
           </div>
         ) : estimate ? (
           <>
+            {/* The estimate's numbers, dimmed while the next one comes. */}
+            <div className="estimate-stale" aria-busy={loading}>
             {/* Summary */}
             <div className="estimate-summary-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 16 }}>
               <div style={{ background: "var(--bg-primary)", padding: 12, borderRadius: 4, textAlign: "center" }}>
@@ -557,6 +560,8 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                 </div>
               );
             })()}
+
+            </div>
 
             {/* Fix for direct play (v0.10.0): what makes media servers
                 transcode, fixed where the files need it — each fix with the
@@ -949,9 +954,16 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
             {estimate?.error && <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 8 }}>{estimate.error}</div>}
           </div>
         )}
+        </div>
 
         {/* Actions */}
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <div className="estimate-modal-footer">
+          {loading && estimate && (
+            <span className="estimate-modal-status">
+              <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />
+              {t("scannerModals:estimate.estimating")}
+            </span>
+          )}
           <button className="btn btn-sm btn-secondary" onClick={onCancel}>
             {t("common:actions.cancel")}
           </button>

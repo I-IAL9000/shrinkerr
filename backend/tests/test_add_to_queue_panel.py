@@ -6,7 +6,7 @@ converting ignored files keeps the encode rules. The frontend has no test
 runner: these check the component's source and its catalogs."""
 import re
 
-from backend.tests.test_vmaf_target_ui import PLURALS, _placeholders, _source, _text
+from backend.tests.test_vmaf_target_ui import FRONTEND, PLURALS, _placeholders, _source, _text
 
 
 def test_the_target_comes_before_the_quality_and_the_preset_after_it():
@@ -64,3 +64,19 @@ def test_a_waiting_target_job_says_the_target_finds_its_quality():
     for lang in PLURALS:
         assert all(p == {"encoder", "preset", "target"} for p in _placeholders(lang, "queue:plan.videoTarget")), lang
         assert all(p == {"encoder", "target"} for p in _placeholders(lang, "queue:plan.videoTargetNoPreset")), lang
+
+
+def test_a_new_estimate_leaves_the_settings_where_they_are():
+    """Each change below the fold re-estimated with a spinner in the body's
+    place: the dialog shrank, scrolled to the top, and came back there. The
+    body stays (its numbers dimmed) after the first estimate, and the
+    buttons sit under the scrolling body, always in view."""
+    src = _source("EstimateModal.tsx")
+    assert "{loading && !estimate ? (" in src
+    assert re.search(r'className="estimate-stale"[^>]*\{loading\}', src)  # aria-busy, dimmed
+    body, settings, footer = (src.index(s) for s in (
+        'className="estimate-modal-body"', "{/* Encoding Settings", 'className="estimate-modal-footer"'))
+    assert body < settings < footer
+    css = (FRONTEND / "theme.css").read_text(encoding="utf-8")
+    assert re.search(r"\.estimate-modal-body \{[^}]*overflow-y: auto", css)
+    assert ".estimate-stale[aria-busy=\"true\"]" in css
