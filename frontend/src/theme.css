@@ -457,6 +457,8 @@ body {
 
 /* Button with icon */
 .btn svg { vertical-align: -2px; margin-right: 4px; }
+/* An icon alone (⋯): a line tall, as the label's line makes the others. */
+.btn-icon svg { height: 1lh; margin-right: 0; }
 
 /* Filter pills */
 .filter-pill {

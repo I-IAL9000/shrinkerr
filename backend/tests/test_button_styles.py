@@ -70,3 +70,20 @@ def test_no_button_is_nested_in_a_link():
     for path in sorted(ROOT.rglob("*.tsx")):
         source = path.read_text()
         assert not re.search(r"<a\b[^>]*>\s*<button\b", source), path.name
+
+
+def test_an_icon_only_button_is_as_tall_as_one_with_a_label():
+    """A pill's height is its line of text: the Scanner's ⋯, an icon alone,
+    was 26 px beside 31 px pills. .btn-icon makes the icon a line tall."""
+    css = (ROOT / "theme.css").read_text()
+    assert re.search(r"\.btn-icon svg \{[^}]*height: 1lh", css)
+    icon_menus = []  # ActionMenu's button: buttonClassName, which _btn_tags doesn't see
+    for path in sorted(ROOT.rglob("*.tsx")):
+        source = path.read_text()
+        for m in re.finditer(r"<ActionMenu\b", source):
+            tag = source[m.start():_tag_end(source, m.end())]
+            cls = re.search(r'buttonClassName="([^"]*)"', tag)
+            if "icon=" in tag and cls and "btn" in cls.group(1).split():
+                icon_menus.append((path.name, cls.group(1).split()))
+    assert icon_menus
+    assert all("btn-icon" in classes for _, classes in icon_menus), icon_menus

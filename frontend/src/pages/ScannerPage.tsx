@@ -1703,8 +1703,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                   </button>
                 )}
                 {/* The rest under ⋯ (v0.10.0): the bar took two lines. */}
-                <ActionMenu label={t("scanner:selection.more")} buttonClassName="btn btn-sm btn-pill btn-secondary" floating
-                  icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ margin: 0 }}>
+                <ActionMenu label={t("scanner:selection.more")} buttonClassName="btn btn-sm btn-pill btn-secondary btn-icon" floating
+                  icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                     <circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" />
                   </svg>}
                   items={[
