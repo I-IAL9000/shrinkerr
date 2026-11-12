@@ -73,6 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Placeholder text is a cool grey in the dark theme**, a little dimmer than other grey text, instead of the browser's neutral grey.
 - **The Scanner remembers its sort** when you come back to it, as it does its filters (it went back to A–Z).
 - **The Scanner opens in the poster view**; the folder tree is a click away, and a view you picked stays as it was.
+- **The Scanner's selection bar fits on one line**: Add to Queue, Rescan, Ignore and ⋯ for the rest (detect languages, rename, health checks, Sonarr / Radarr, remove, trash files). Refresh Posters is gone (posters are fetched after every scan, every few hours, and as the poster view shows titles), and the filter pills' counts sit on a faint badge.
 - **Files that came out larger aren't ignored**: they're marked **Came out larger** in the Scanner (when, and at what quality), new downloads and policies still leave them alone, and Add to Queue converts them again — with another quality, no override needed. Files you ignore stay ignored.
 - **A calmer look**: one figure per page in the accent (no more purple, green, orange and red numbers everywhere), share bars instead of the Dashboard's donuts (and one VMAF card, not two with the same counts), Monitor's gauges as full-width bars, one per line, with softer figures and no row repeating its cards, sizes, fps and ETAs in a monospace font, and a finished job's sizes as before → after.
 - Schedule no longer has Quick Actions; the queue starts and pauses from the Queue page.

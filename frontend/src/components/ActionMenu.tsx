@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Chevron from "./Chevron";
 
@@ -6,6 +6,8 @@ export interface ActionMenuItem {
   label: string;
   onSelect: () => void;
   danger?: boolean;
+  title?: string;  // what it does, on hover
+  divider?: boolean;  // a line above it: set apart (Trash files)
 }
 
 /**
@@ -61,7 +63,9 @@ export default function ActionMenu({ label, items, buttonStyle, icon, buttonClas
       const tall = items.length * 30 + 12;  // about: opens upwards when it wouldn't fit below
       const vertical = box.bottom + 4 + tall > window.innerHeight
         ? { bottom: window.innerHeight - box.top + 4 } : { top: box.bottom + 4 };
-      const horizontal = align === "right" ? { right: window.innerWidth - box.right } : { left: box.left };
+      // Anchored left, it runs off a narrow screen's right edge: then right.
+      const horizontal = align === "right" || box.left + 260 > window.innerWidth
+        ? { right: window.innerWidth - box.right } : { left: box.left };
       setAt({ position: "fixed", ...vertical, ...horizontal, zIndex: 1000 });
     }
     setOpen(o => !o);
@@ -114,16 +118,19 @@ export default function ActionMenu({ label, items, buttonStyle, icon, buttonClas
           }}
         >
           {items.map((item, i) => (
-            <button
-              key={i}
-              ref={el => { itemRefs.current[i] = el; }}
-              type="button"
-              role="menuitem"
-              className={`action-menu-item${item.danger ? " danger" : ""}`}
-              onClick={() => { close(true); item.onSelect(); }}
-            >
-              {item.label}
-            </button>
+            <Fragment key={i}>
+              {item.divider && <div role="separator" className="action-menu-divider" />}
+              <button
+                ref={el => { itemRefs.current[i] = el; }}
+                type="button"
+                role="menuitem"
+                className={`action-menu-item${item.danger ? " danger" : ""}`}
+                title={item.title}
+                onClick={() => { close(true); item.onSelect(); }}
+              >
+                {item.label}
+              </button>
+            </Fragment>
           ))}
         </div>,
       )}

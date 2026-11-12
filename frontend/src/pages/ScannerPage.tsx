@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useTranslation, Trans } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
-import { startQueue, getScanTree, getScanStats, getFilterCounts, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, getPosterPrefetchStatus, startPosterPrefetch, queueHealthChecks, arrActionBulk, getSelectionFiles, getSelectionSummary, type DetectBatchProgress, type FacetLists } from "../api";
+import { startQueue, getScanTree, getScanStats, getFilterCounts, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, getPosterPrefetchStatus, queueHealthChecks, arrActionBulk, getSelectionFiles, getSelectionSummary, type DetectBatchProgress, type FacetLists } from "../api";
 import { fmtNum } from "../fmt";
 import { naturalCompare } from "../utils/naturalCompare";
 import StatsCards from "../components/StatsCards";
@@ -10,7 +10,7 @@ import ViewsMenu from "../components/ViewsMenu";
 import { decodeAdvanced } from "../advancedSearch";
 import FilterBar from "../components/FilterBar";
 import { CATEGORIES, normalizeFilters, selectedIn, toggleFilter } from "../filterCatalog";
-import Chevron from "../components/Chevron";
+import ActionMenu from "../components/ActionMenu";
 import FileTree from "../components/FileTree";
 import PosterGrid, { groupFolders, sortGroups } from "../components/PosterGrid";
 import type { FolderInfo } from "../components/FileTree";
@@ -31,20 +31,6 @@ let _cachedFolders: FolderInfo[] | null = null;
 let _cachedImdbIds: Record<string, string> = {};
 let _cachedFilter: string = "all";
 let _cacheTimestamp: number = 0;
-
-// Shared style for dropdown menu items (arr actions menu, etc)
-const menuItemStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "flex-start",
-  gap: 10,
-  padding: "8px 10px",
-  background: "transparent",
-  border: "none",
-  borderRadius: 4,
-  cursor: "pointer",
-  textAlign: "left",
-  width: "100%",
-};
 
 // "Savings": what converting would save, biggest first (v0.10.0).
 const SORT_OPTIONS = [
@@ -162,11 +148,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const detectPollRef = useRef(false);  // mirrors detectPolling for start's guard
   const [detectPolling, setDetectPolling] = useState(false);
   const detectWasActiveRef = useRef(false);
-  const [arrMenuOpen, setArrMenuOpen] = useState(false);
-  const arrMenuRef = useRef<HTMLDivElement | null>(null);
-  const [healthMenuOpen, setHealthMenuOpen] = useState(false);
   const [replaceCorruptOpen, setReplaceCorruptOpen] = useState(false);
-  const healthMenuRef = useRef<HTMLDivElement | null>(null);
   // Fall back to the legacy squeezarr_viewMode key so users upgrading from
   // the old app name keep their view preference. New writes use the canonical
   // shrinkerr_viewMode key below. Posters unless a view was picked (v0.10.0).
@@ -387,30 +369,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   }, []);
   useEffect(() => { pollBackendScanning(); }, [pollBackendScanning]);
   useVisibleInterval(pollBackendScanning, 5000);
-
-  // Close the *arr actions dropdown when clicking outside it.
-  useEffect(() => {
-    if (!arrMenuOpen) return;
-    const onDocClick = (e: MouseEvent) => {
-      if (arrMenuRef.current && !arrMenuRef.current.contains(e.target as Node)) {
-        setArrMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [arrMenuOpen]);
-
-  // Close the Health-check dropdown when clicking outside it.
-  useEffect(() => {
-    if (!healthMenuOpen) return;
-    const onDocClick = (e: MouseEvent) => {
-      if (healthMenuRef.current && !healthMenuRef.current.contains(e.target as Node)) {
-        setHealthMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [healthMenuOpen]);
 
   // Poll poster prefetch progress
   useVisibleInterval(async () => {
@@ -1149,15 +1107,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     bazarrReady: !!(encodingSettings?.bazarr_url && encodingSettings?.bazarr_api_key),
   }), [encodingSettings]);
 
-  // The bar's dropdowns open towards the side with room (v0.10.0): wrapped to
-  // the bar's left edge, one anchored right ran under the sidebar.
-  const [menuSide, setMenuSide] = useState<"left" | "right">("right");
-  const sideWithRoom = (el: HTMLElement | null): "left" | "right" => {
-    const box = el?.getBoundingClientRect();
-    const bar = el?.closest(".queue-control-panel")?.getBoundingClientRect();
-    return box && bar && box.right - 320 < bar.left ? "left" : "right";
-  };
-
   const handleRename = () => {
     // Pass all selected paths (folder + file) — server expands folders
     const paths = Array.from(selectedPaths);
@@ -1481,21 +1430,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         )}
         {viewMode === "tree" ? t("scanner:toolbar.posters") : t("scanner:toolbar.tree")}
       </button>
-      {viewMode === "poster" && (
-        <button
-          className="btn btn-sm btn-pill btn-secondary"
-          disabled={posterPrefetching}
-          onClick={async () => {
-            await startPosterPrefetch();
-            setPosterPrefetching(true);
-          }}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-          </svg>
-          {posterPrefetching ? t("scanner:toolbar.fetchingPosters", { resolved: posterProgress.resolved, total: posterProgress.total }) : t("scanner:toolbar.refreshPosters")}
-        </button>
-      )}
     </>
   );
 
@@ -1754,187 +1688,44 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                   {t("common:actions.addToQueue")}
                 </button>
-                {/* After the main action (v0.10.0), not before it. */}
-                <button className="btn btn-sm btn-pill btn-secondary" title={t("scanner:selection.detectSelectedTitle")}
-                  onClick={handleBulkDetectLanguages}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-                  </svg>
-                  {t("scanner:selection.detectSelected", { n: selectedCount })}
-                </button>
                 <button className="btn btn-sm btn-pill btn-secondary" onClick={handleBulkRescan}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                   {t("common:actions.rescan")}
                 </button>
-                {/* v0.9.20: "Detect selected" is now the adaptive button above,
-                    so the per-selection detect button here is removed. */}
-                <button
-                  className="btn btn-sm btn-pill btn-secondary"
-                  title={t("scanner:selection.renameTitle")}
-                  onClick={handleRename}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                  </svg>
-                  {t("scanner:selection.rename")}
-                </button>
-                {/* Health check dropdown: quick / thorough */}
-                <div ref={healthMenuRef} style={{ position: "relative", display: "inline-flex" }}>
-                  <button
-                    className="btn btn-sm btn-pill btn-secondary"
-                    title={t("scanner:selection.healthCheckTitle")}
-                    onClick={() => { setMenuSide(sideWithRoom(healthMenuRef.current)); setHealthMenuOpen(o => !o); }}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-                    </svg>
-                    {t("scanner:selection.healthCheck")}
-                    <Chevron />
-                  </button>
-                  {healthMenuOpen && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: "calc(100% + 4px)",
-                        [menuSide]: 0,
-                        zIndex: 100,
-                        background: "var(--bg-card)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 6,
-                        boxShadow: "0 6px 20px rgba(0,0,0,0.4)",
-                        padding: 4,
-                        minWidth: 240,
-                        display: "flex",
-                        flexDirection: "column",
-                      }}
-                    >
-                      <button
-                        onClick={() => { setHealthMenuOpen(false); handleHealthCheck("quick"); }}
-                        style={menuItemStyle}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--success)" }}>
-                          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
-                        </svg>
-                        <div style={{ textAlign: "left" }}>
-                          <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>{t("scanner:selection.quickCheck")}</div>
-                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{t("scanner:selection.quickCheckDesc")}</div>
-                        </div>
-                      </button>
-                      <button
-                        onClick={() => { setHealthMenuOpen(false); handleHealthCheck("thorough"); }}
-                        style={menuItemStyle}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--caution)" }}>
-                          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                        </svg>
-                        <div style={{ textAlign: "left" }}>
-                          <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>{t("scanner:selection.thoroughCheck")}</div>
-                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{t("scanner:selection.thoroughCheckDesc")}</div>
-                        </div>
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* *arr actions dropdown: upgrade / missing / replace */}
-                <div ref={arrMenuRef} style={{ position: "relative", display: "inline-flex" }}>
-                  <button
-                    className="btn btn-sm btn-pill btn-secondary"
-                    title={t("scanner:arr.menuTitle")}
-                    onClick={() => { setMenuSide(sideWithRoom(arrMenuRef.current)); setArrMenuOpen(o => !o); }}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="10"/>
-                      <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-                    </svg>
-                    {t("scanner:arr.menu")}
-                    <Chevron />
-                  </button>
-                  {arrMenuOpen && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: "calc(100% + 4px)",
-                        [menuSide]: 0,
-                        zIndex: 100,
-                        background: "var(--bg-card)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 6,
-                        boxShadow: "0 6px 20px rgba(0,0,0,0.4)",
-                        padding: 4,
-                        minWidth: 240,
-                        display: "flex",
-                        flexDirection: "column",
-                      }}
-                    >
-                      <button
-                        onClick={() => { setArrMenuOpen(false); handleBulkArrAction("upgrade"); }}
-                        style={menuItemStyle}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--success)" }}>
-                          <polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/>
-                        </svg>
-                        <div style={{ textAlign: "left" }}>
-                          <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>{t("scanner:arr.upgrade")}</div>
-                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{t("scanner:arr.upgradeDesc")}</div>
-                        </div>
-                      </button>
-                      <button
-                        onClick={() => { setArrMenuOpen(false); handleBulkArrAction("missing"); }}
-                        style={menuItemStyle}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--info)" }}>
-                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-                        </svg>
-                        <div style={{ textAlign: "left" }}>
-                          <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>{t("scanner:arr.missing")}</div>
-                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{t("scanner:arr.missingDesc")}</div>
-                        </div>
-                      </button>
-                      <button
-                        onClick={() => { setArrMenuOpen(false); handleBulkArrAction("replace"); }}
-                        style={menuItemStyle}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--danger)" }}>
-                          <path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/>
-                        </svg>
-                        <div style={{ textAlign: "left" }}>
-                          <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>{t("scanner:arr.replace")}</div>
-                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{t("scanner:arr.replaceDesc")}</div>
-                        </div>
-                      </button>
-                    </div>
-                  )}
-                </div>
                 {allSelectedIgnored ? (
                   <button className="btn btn-sm btn-pill btn-secondary" title={t("scanner:selection.unignoreTitle")} onClick={handleBulkUnignore}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                     {t("common:actions.unignore")}
                   </button>
                 ) : (
-                  <>
-                    <button className="btn btn-sm btn-pill btn-secondary" title={t("scanner:selection.ignoreTitle")} onClick={handleBulkIgnore}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-                      {t("common:actions.ignore")}
-                    </button>
-                    {someSelectedIgnored && (
-                      <button className="btn btn-sm btn-pill btn-secondary" title={t("scanner:selection.unignoreTitle")} onClick={handleBulkUnignore}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                        {t("common:actions.unignore")}
-                      </button>
-                    )}
-                  </>
+                  <button className="btn btn-sm btn-pill btn-secondary" title={t("scanner:selection.ignoreTitle")} onClick={handleBulkIgnore}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                    {t("common:actions.ignore")}
+                  </button>
                 )}
-                <button className="btn btn-sm btn-pill btn-secondary" title={t("scanner:selection.removeTitle")} onClick={handleBulkRemove}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                  {t("common:actions.remove")}
-                </button>
-                <span style={{ width: 1, height: 14, background: "var(--border)" }} />
-                <button className="btn btn-sm btn-pill btn-danger btn-secondary" title={t("scanner:selection.trashTitle")} onClick={handleBulkDelete}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-                  {t("scanner:selection.trashFiles")}
-                </button>
+                {/* The rest under ⋯ (v0.10.0): the bar took two lines. */}
+                <ActionMenu label={t("scanner:selection.more")} buttonClassName="btn btn-sm btn-pill btn-secondary" floating
+                  icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ margin: 0 }}>
+                    <circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" />
+                  </svg>}
+                  items={[
+                    { label: t("scanner:selection.detectSelected", { n: selectedCount }), title: t("scanner:selection.detectSelectedTitle"),
+                      onSelect: handleBulkDetectLanguages },
+                    { label: t("scanner:selection.rename"), title: t("scanner:selection.renameTitle"), onSelect: handleRename },
+                    { label: `${t("scanner:selection.healthCheck")}: ${t("scanner:selection.quickCheck")}`,
+                      title: t("scanner:selection.quickCheckDesc"), onSelect: () => handleHealthCheck("quick") },
+                    { label: `${t("scanner:selection.healthCheck")}: ${t("scanner:selection.thoroughCheck")}`,
+                      title: t("scanner:selection.thoroughCheckDesc"), onSelect: () => handleHealthCheck("thorough") },
+                    { label: t("scanner:arr.upgrade"), title: t("scanner:arr.upgradeDesc"), onSelect: () => handleBulkArrAction("upgrade") },
+                    { label: t("scanner:arr.missing"), title: t("scanner:arr.missingDesc"), onSelect: () => handleBulkArrAction("missing") },
+                    { label: t("scanner:arr.replace"), title: t("scanner:arr.replaceDesc"), onSelect: () => handleBulkArrAction("replace") },
+                    ...(someSelectedIgnored && !allSelectedIgnored
+                      ? [{ label: t("common:actions.unignore"), title: t("scanner:selection.unignoreTitle"), onSelect: handleBulkUnignore }]
+                      : []),
+                    { label: t("common:actions.remove"), title: t("scanner:selection.removeTitle"), onSelect: handleBulkRemove },
+                    { label: t("scanner:selection.trashFiles"), title: t("scanner:selection.trashTitle"), onSelect: handleBulkDelete,
+                      danger: true, divider: true },
+                  ]} />
               </>;
             })()}
           </div>

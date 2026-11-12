@@ -470,8 +470,6 @@ export const previewRenamePattern = (pattern: string, filePath?: string, setting
     method: "POST",
     body: JSON.stringify({ pattern, file_path: filePath, settings: settings || {} }),
   });
-export const startPosterPrefetch = () =>
-  apiFetch<{ status: string }>("/posters/prefetch", { method: "POST" });
 export const getPosterPrefetchStatus = () =>
   apiFetch<{ status: string; total: number; resolved: number; cached: number; phase?: "details" }>("/posters/prefetch-status");
 export const getRecentConversions = (limit: number = 20) =>
