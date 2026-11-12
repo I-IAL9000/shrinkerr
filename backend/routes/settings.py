@@ -906,36 +906,53 @@ class IgnoreFileRequest(BaseModel):
     reason: str = "manual"
 
 
-@router.post("/ignored")
-async def ignore_file(req: IgnoreFileRequest):
+class IgnoreFilesRequest(BaseModel):
+    file_paths: list[str]
+    reason: str = "manual"
+
+
+async def _ignore(paths: list[str], reason: str) -> None:
+    """Ignore files and folders (a folder path ends in "/"); their pending
+    jobs go."""
     from datetime import datetime, timezone
+    from backend.database import prefix_clause
+    now = datetime.now(timezone.utc).isoformat()
     db = await aiosqlite.connect(DB_PATH)
     try:
-        await db.execute(
+        await db.executemany(
             "INSERT OR REPLACE INTO ignored_files (file_path, reason, ignored_at) VALUES (?, ?, ?)",
-            (req.file_path, req.reason, datetime.now(timezone.utc).isoformat()),
+            [(p, reason, now) for p in paths],
         )
-        # Remove pending jobs for ignored files
-        if req.file_path.endswith("/"):
-            # Folder ignore — remove all pending jobs under this folder
-            from backend.database import prefix_clause
-            under_sql, under_params = prefix_clause([req.file_path])
+        # Remove pending jobs for ignored files — a folder's, all under it
+        folders = [p for p in paths if p.endswith("/")]
+        if folders:
+            under_sql, under_params = prefix_clause(folders)
             await db.execute(f"DELETE FROM jobs WHERE status = 'pending' AND {under_sql}", under_params)
-        else:
+        files = [p for p in paths if not p.endswith("/")]
+        for i in range(0, len(files), 500):
+            chunk = files[i:i + 500]
             await db.execute(
-                "DELETE FROM jobs WHERE status = 'pending' AND file_path = ?",
-                (req.file_path,),
-            )
+                f"DELETE FROM jobs WHERE status = 'pending' AND file_path IN ({','.join('?' * len(chunk))})", chunk)
         await db.commit()
     finally:
         await db.close()
-    try:
-        from backend.file_events import log_event, EVENT_IGNORED
-        await log_event(req.file_path, EVENT_IGNORED, f"Ignored ({req.reason})", {"reason": req.reason},
-                        summary_key="ignoredWithReason", summary_params={"reason": req.reason})
-    except Exception:
-        pass
+    from backend.file_events import log_events_bulk, EVENT_IGNORED
+    await log_events_bulk([(p, EVENT_IGNORED, f"Ignored ({reason})", {"reason": reason},
+                            "ignoredWithReason", {"reason": reason}) for p in paths])
+
+
+@router.post("/ignored")
+async def ignore_file(req: IgnoreFileRequest):
+    await _ignore([req.file_path], req.reason)
     return {"status": "ignored"}
+
+
+@router.post("/ignored/bulk")
+async def ignore_files(req: IgnoreFilesRequest):
+    """Many at once (v0.10.0): the Scanner's Select all ignores the filtered
+    list's files, thousands of them."""
+    await _ignore(req.file_paths, req.reason)
+    return {"status": "ignored", "count": len(req.file_paths)}
 
 
 @router.delete("/ignored/{file_path:path}")

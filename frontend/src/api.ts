@@ -807,6 +807,9 @@ export const clearIgnored = () =>
   apiFetch("/settings/ignored", { method: "DELETE" });
 export const ignoreFile = (filePath: string) =>
   apiFetch("/settings/ignored", { method: "POST", body: JSON.stringify({ file_path: filePath }) });
+// Many in one request (v0.10.0): the Scanner's Select all.
+export const ignoreFiles = (filePaths: string[]) =>
+  apiFetch("/settings/ignored/bulk", { method: "POST", body: JSON.stringify({ file_paths: filePaths }) });
 
 
 // Encoding rules

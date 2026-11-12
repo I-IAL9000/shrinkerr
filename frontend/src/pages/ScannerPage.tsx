@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useTranslation, Trans } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
-import { startQueue, getScanTree, getScanStats, getFilterCounts, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, getPosterPrefetchStatus, queueHealthChecks, arrActionBulk, getSelectionFiles, getSelectionSummary, type DetectBatchProgress, type FacetLists } from "../api";
+import { startQueue, getScanTree, getScanStats, getFilterCounts, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, ignoreFiles, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, getPosterPrefetchStatus, queueHealthChecks, arrActionBulk, getSelectionFiles, getSelectionSummary, type DetectBatchProgress, type FacetLists } from "../api";
 import { fmtNum } from "../fmt";
 import { naturalCompare } from "../utils/naturalCompare";
 import StatsCards from "../components/StatsCards";
@@ -588,6 +588,14 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     if (!files.length) toast(t("scanner:toasts.noSelection"));
     return files;
   };
+  // The paths an action takes: those picked, or on Select all the filtered
+  // list's files (v0.10.0): Ignore, Rescan, Rename and the Sonarr / Radarr
+  // actions had none to send then, and did nothing.
+  const selectionPaths = async (): Promise<string[]> => {
+    if (selectAllActive) return (await fetchSelectionFiles()).map(f => f.file_path);
+    if (!selectedPaths.size) toast(t("scanner:toasts.noSelection"));
+    return Array.from(selectedPaths);
+  };
 
   // How many of the selection's files are ignored, from the server (v0.10.0):
   // the bar offers Un-ignore from it — an ignored title the page hadn't
@@ -696,12 +704,12 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   };
 
   const handleBulkIgnore = async () => {
-    const paths = Array.from(selectedPaths);
+    const paths = await selectionPaths();
     if (!paths.length) return;
     if (!await confirm({ message: t("scanner:confirm.ignore", { count: selectedCount }), confirmLabel: t("common:actions.ignore"), danger: true })) return;
     setBulkAction(t("scanner:bulk.ignoring", { count: selectedCount }));
     try {
-      await Promise.all(paths.map(p => ignoreFile(p)));
+      await ignoreFiles(paths);
       setSelectAllActive(false);
       setSelectedPaths(new Set());
       loadTree();
@@ -715,7 +723,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
 
   const handleBulkRescan = async () => {
     // Build folder set from selections — handle both file paths and folder paths
-    const paths = Array.from(selectedPaths);
+    const paths = await selectionPaths();
+    if (!paths.length) return;
     const folderSet = new Set<string>();
     for (const p of paths) {
       if (p.endsWith("/")) {
@@ -732,10 +741,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     for (const f of selected) {
       const parts = f.file_path.split("/");
       folderSet.add(parts.slice(0, -1).join("/"));
-    }
-    if (folderSet.size === 0) {
-      toast(t("scanner:toasts.noSelection"));
-      return;
     }
     if (!await confirm({ message: t("scanner:confirm.rescan", { count: folderSet.size }), confirmLabel: t("common:actions.rescan") })) return;
     for (const folder of folderSet) {
@@ -783,11 +788,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     // to their files via scan_results (for replace/upgrade) and resolves
     // folder paths to the owning series via path-walking (for missing).
     // No frontend tree-expansion required.
-    const paths = Array.from(selectedPaths);
-    if (paths.length === 0) {
-      toast(t("scanner:toasts.noSelection"));
-      return;
-    }
+    const paths = await selectionPaths();
+    if (paths.length === 0) return;
 
     const labels = {
       replace: { name: t("scanner:arr.replaceName"), danger: true, verb: t("scanner:arr.replaceVerb") },
@@ -1107,13 +1109,10 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     bazarrReady: !!(encodingSettings?.bazarr_url && encodingSettings?.bazarr_api_key),
   }), [encodingSettings]);
 
-  const handleRename = () => {
+  const handleRename = async () => {
     // Pass all selected paths (folder + file) — server expands folders
-    const paths = Array.from(selectedPaths);
-    if (paths.length === 0) {
-      toast(t("scanner:toasts.noSelection"));
-      return;
-    }
+    const paths = await selectionPaths();
+    if (paths.length === 0) return;
     setRenamePaths(paths);
   };
 
