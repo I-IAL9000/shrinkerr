@@ -89,7 +89,7 @@ export default function PosterFixModal({ folderPath, currentTitle, currentYear, 
         </div>
 
         {/* Search bar */}
-        <div style={{ padding: 14, borderBottom: "1px solid var(--border)", display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ padding: 14, borderBottom: "1px solid var(--border)", display: "flex", gap: 8, alignItems: "stretch" }}>
           <input
             type="text"
             value={query}

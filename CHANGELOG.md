@@ -194,6 +194,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scans skip hidden and system folders, including Shrinkerr's own backups and NAS recycle bins.
 - Activity search treats `%` and `_` as plain characters; a VMAF cross-check that times out stops; Settings' test encode no longer hangs on long output.
 - On phones the header stays put and the Scanner tree and poster grid render; tree rows stay on one line; the path picker keeps the Scan button on screen; the development version label fits the sidebar.
+- Fix match's title and year fields are as tall as its Search button.
 - Settings' checkbox labels line up with their checkboxes (some sat a few pixels high).
 - The checkbox on posters shows on dark posters too, and turns purple when you hover the poster.
 - A clean-up that found nothing left to do still runs the post-conversion script and shows in Activity as completed.

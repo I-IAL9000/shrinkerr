@@ -87,3 +87,11 @@ def test_an_icon_only_button_is_as_tall_as_one_with_a_label():
                 icon_menus.append((path.name, cls.group(1).split()))
     assert icon_menus
     assert all("btn-icon" in classes for _, classes in icon_menus), icon_menus
+
+
+def test_fix_matchs_fields_are_as_tall_as_its_search_button():
+    """The title and year were 29 px beside a 32 px Search: the row centred
+    them. Stretched, they take the button's height."""
+    src = (ROOT / "components/PosterFixModal.tsx").read_text()
+    row = src[src.index("{/* Search bar */}"):src.index('t("library:fix.search")')]
+    assert re.search(r'<div style=\{\{[^}]*display: "flex"[^}]*alignItems: "stretch"', row)
