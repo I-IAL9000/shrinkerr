@@ -169,11 +169,11 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const healthMenuRef = useRef<HTMLDivElement | null>(null);
   // Fall back to the legacy squeezarr_viewMode key so users upgrading from
   // the old app name keep their view preference. New writes use the canonical
-  // shrinkerr_viewMode key below.
+  // shrinkerr_viewMode key below. Posters unless a view was picked (v0.10.0).
   const [viewMode, setViewMode] = useState<"tree" | "poster">(() =>
     (localStorage.getItem("shrinkerr_viewMode") as "tree" | "poster") ||
     (localStorage.getItem("squeezarr_viewMode") as "tree" | "poster") ||
-    "tree"
+    "poster"
   );
   const [posterPrefetching, setPosterPrefetching] = useState(false);
   const [posterProgress, setPosterProgress] = useState<{ total: number; resolved: number; phase?: string }>({ total: 0, resolved: 0 });
