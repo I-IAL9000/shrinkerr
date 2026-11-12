@@ -15,8 +15,14 @@ from backend.database import connect_db
 router = APIRouter(prefix="/api/stats")
 
 
-def _source_type(name: str) -> str:
-    n = name.lower()
+def _source_type(path: str) -> str:
+    """A source's kind from its path. A disc or ISO is one of its own
+    (v0.10.0; "Disc / ISO", as the Scanner's filter calls it): its path is
+    the marker in the disc's folder (BDMV/index.bdmv, VIDEO_TS/VIDEO_TS.IFO)
+    or the .iso. The rest are told by the file's name, not its folders'."""
+    if re.search(r"\.iso$|/(bdmv|video_ts)/", path, re.I):
+        return "Disc / ISO"
+    n = path.rsplit("/", 1)[-1].lower()
     # v0.5.25: Remux checked BEFORE Blu-ray. Scene-naming convention
     # marks remuxes with BOTH tags ("Movie.1080p.BluRay.Remux.AVC..."),
     # and "Remux" is the more specific / dashboard-meaningful category
@@ -253,8 +259,9 @@ def _stats_summary(db_path: str) -> dict:
         # + `rename_source_quality_in_filename`, so reading the current
         # path under-reports Remux / over-counts plain Blu-ray. Fall
         # back to fname for legacy jobs without original_file_path.
-        src_name = (j.get("original_file_path") or j["file_path"]).rsplit("/", 1)[-1]
-        src = _source_type(src_name)
+        src_path = j.get("original_file_path") or j["file_path"]
+        src_name = src_path.rsplit("/", 1)[-1]
+        src = _source_type(src_path)
         source_types[src] += 1
         # Resolution-by-source uses the same source name so the two
         # cards (Source Types pie + Avg Reduction by Source) align.
