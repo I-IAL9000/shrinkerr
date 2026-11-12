@@ -8,6 +8,13 @@ const CODECS: Record<string, string> = {
   mp3: "MP3", mp2: "MP2", vorbis: "Vorbis", alac: "ALAC",
 };
 
+// Subtitle formats by ffprobe's name; others in capitals ("MOV_TEXT", as Plex shows it).
+const SUBTITLE_FORMATS: Record<string, string> = {
+  subrip: "SRT", ass: "ASS", ssa: "SSA", webvtt: "WebVTT", hdmv_pgs_subtitle: "PGS", dvd_subtitle: "VobSub",
+  dvb_subtitle: "DVB", dvb_teletext: "Teletext", eia_608: "CEA-608", hdmv_text_subtitle: "HDMV Text",
+  subviewer: "SubViewer",
+};
+
 // The server names a language by its ISO 639-2 B code ("fre"); the language
 // list calls most of those "French (alt)" (or lacks them: "wel") and names
 // the T code ("fra") plainly. Chinese is the other way round ("chi" plain).
@@ -38,6 +45,8 @@ export function facetValueLabel(facet: string, value: string, t: T, label?: stri
         : t(`settingsMedia:languages.${NAMED_AS[value] ?? value}`, { defaultValue: value });
     case "acodec":
       return CODECS[value] ?? (value.startsWith("pcm") ? "PCM" : value.toUpperCase());
+    case "scodec":
+      return SUBTITLE_FORMATS[value] ?? value.toUpperCase();
     case "achan":
       return t(`scanner:facets.channels.${value}`, { defaultValue: value });
     case "genre":

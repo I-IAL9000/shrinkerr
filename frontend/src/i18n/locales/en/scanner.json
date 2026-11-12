@@ -187,6 +187,8 @@
       "kind": "Kind",
       "subCleanup": "Cleanup",
       "subtitleLanguage": "Subtitle language",
+      "format": "Format",
+      "subtitleFormat": "Subtitle format",
       "language": "Language",
       "genre": "Genre",
       "year": "Year",

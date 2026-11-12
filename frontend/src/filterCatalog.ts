@@ -71,9 +71,9 @@ export function listValue(facet: string, value: string): string | null {
   if (!value) return null;
   if (facet === "achan") return ["1", "2", "6", "8"].includes(value) ? value : null;
   if (facet === "genre") return value.trim().toLowerCase() === "science fiction" ? "sci-fi" : value;
-  if (facet !== "alang" && facet !== "slang" && facet !== "acodec") return value;
+  if (facet !== "alang" && facet !== "slang" && facet !== "acodec" && facet !== "scodec") return value;
   const text = value.replace(/^ +| +$/g, "").replace(/[A-Z]/g, c => c.toLowerCase());
-  return facet === "acodec" ? text || null : languageKey(text);
+  return facet === "acodec" || facet === "scodec" ? text || null : languageKey(text);
 }
 
 /** A list value's token parts, or null: "alang:fre" -> { facet: "alang", value: "fre" }. */

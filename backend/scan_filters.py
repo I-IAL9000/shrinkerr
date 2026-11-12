@@ -804,8 +804,10 @@ def _lang_cond(column: str) -> Callable[[str], tuple[str, tuple]]:
     return cond
 
 
-def _codec_cond(value: str) -> tuple[str, tuple]:
-    return _tracks("audio_tracks_json", f"{_track_text('codec')} = ?", hint=_hints([value])), (value,)
+def _codec_cond(column: str) -> Callable[[str], tuple[str, tuple]]:
+    def cond(value: str) -> tuple[str, tuple]:
+        return _tracks(column, f"{_track_text('codec')} = ?", hint=_hints([value])), (value,)
+    return cond
 
 
 def _achan_cond(value: str) -> tuple[str, tuple]:
@@ -841,11 +843,14 @@ _FACET_LIST = [
           cond=_lang_cond("audio_tracks_json"), combine=("audio_tracks_json", "text", "language")),
     Facet("slang", pairs_sql=_track_pairs("subtitle_tracks_json", "language"), normalize=fold_lang,
           cond=_lang_cond("subtitle_tracks_json"), combine=("subtitle_tracks_json", "text", "language")),
-    Facet("acodec", pairs_sql=_track_pairs("audio_tracks_json", "codec"), cond=_codec_cond,
+    Facet("acodec", pairs_sql=_track_pairs("audio_tracks_json", "codec"), cond=_codec_cond("audio_tracks_json"),
           combine=("audio_tracks_json", "text", "codec")),
     Facet("achan", pairs_sql=_ACHAN_PAIRS, normalize=channel_band, cond=_achan_cond,
           combine=("audio_tracks_json", "max", "channels"),
           canonical=lambda v: v if v in _CHANNEL_BANDS else None),
+    # Subtitle formats (SRT, ASS, PGS…), a file's own tracks and the files beside it.
+    Facet("scodec", pairs_sql=_track_pairs("subtitle_tracks_json", "codec"), cond=_codec_cond("subtitle_tracks_json"),
+          combine=("subtitle_tracks_json", "text", "codec")),
     # A media server's genre can be "" (_title_metadata).
     Facet("genre", values=lambda r, c: [g for g in row_title(r, c)["genres"] if g], inputs=(*_TITLE_INPUTS, "plex"),
           titles=True, parts=genre_parts),

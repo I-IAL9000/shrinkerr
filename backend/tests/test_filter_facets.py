@@ -35,7 +35,7 @@ def test_channel_and_rating_bands():
 
 def test_tokens_quote_their_value():
     assert facet_token("network", "Paramount+, HD") == "network:" + quote("Paramount+, HD", safe="")
-    assert set(FACETS) == {"alang", "slang", "acodec", "achan", "genre", "year", "rating", "country",
+    assert set(FACETS) == {"alang", "slang", "acodec", "achan", "scodec", "genre", "year", "rating", "country",
                            "network", "showstatus", "library", "actor", "director", "studio", "plabel"}
     # Exactly as the browser's encodeURIComponent, so both build the same token.
     assert facet_token("network", "/m/Films/Heat (1995) [tt0113277]") == \
@@ -50,6 +50,7 @@ def test_hand_written_values_read_as_the_index_keeps_them():
     assert ids("alang:FRA") == ["alang:fre"]
     assert ids("slang:%20EN%20") == ["slang:eng"]
     assert ids("acodec:TrueHD") == ["acodec:truehd"]
+    assert ids("scodec:%20SubRip") == ["scodec:subrip"]
     assert ids("achan:6,achan:12,achan:5,achan:7.1,achan:") == ["achan:6"]  # its bands only
     assert ids("acodec:%20,alang:") == []
     assert ids("genre:Drama") == ["genre:Drama"]  # Python lists: as given
@@ -83,10 +84,12 @@ def tr(lang, codec="aac", channels=2):
 
 ROWS = {
     # path: (audio tracks, subtitle tracks)
-    "/m/Films/Amelie (2001) [tt0211915]/Amelie.mkv": ([tr("fra", "ac3", 6)], [tr("eng")]),
+    "/m/Films/Amelie (2001) [tt0211915]/Amelie.mkv": ([tr("fra", "ac3", 6)], [tr("eng", "subrip")]),
     "/m/Films/Heat (1995) [tt0113277]/Heat.mkv": ([tr("eng", "truehd", 8), tr("fre", "ac3", 6)], []),
-    "/m/Films/Mute (2018) [tt1464335]/Mute.mkv": ([tr("", "aac", 1)], [tr("ger")]),
-    "/m/TV/The Wire (2002) [tvdb-79126]/Season 1/The Wire S01E01.mkv": ([tr("en", "eac3", 2)], []),
+    "/m/Films/Mute (2018) [tt1464335]/Mute.mkv": ([tr("", "aac", 1)], [tr("ger", "hdmv_pgs_subtitle")]),
+    # An .srt beside the file is one of its subtitle tracks (external).
+    "/m/TV/The Wire (2002) [tvdb-79126]/Season 1/The Wire S01E01.mkv": (
+        [tr("en", "eac3", 2)], [{**tr("eng", "subrip"), "external": True}]),
     "/m/Other, Stuff/Home Video.mkv": ([], []),
 }
 POSTERS = [
@@ -143,6 +146,11 @@ async def test_track_lists(library):
     assert await matching(db, "achan:1,achan:2") == ["Mute.mkv", "The Wire S01E01.mkv"]  # a list widens
     assert await matching(db, "alang:fre,acodec:truehd") == ["Heat.mkv"]                 # lists narrow
     assert await matching(db, "alang:fre,!acodec:truehd") == ["Amelie.mkv"]
+    # Subtitle formats: SRT in the file or beside it, PGS.
+    assert await matching(db, "scodec:subrip") == ["Amelie.mkv", "The Wire S01E01.mkv"]
+    assert await matching(db, "scodec:hdmv_pgs_subtitle,scodec:ass") == ["Mute.mkv"]
+    assert await matching(db, "scodec:subrip,!slang:eng") == []
+    assert await matching(db, "!scodec:subrip,!scodec:hdmv_pgs_subtitle") == ["Heat.mkv", "Home Video.mkv"]
 
 
 @pytest.mark.asyncio
@@ -196,10 +204,10 @@ def _stored(tracks):
 
 AWKWARD = {
     # name: (audio tracks, subtitle tracks): lists are stored as JSON, text as is
-    "tab.mkv": ([{"language": "\tfre", "codec": "AAC", "channels": "6"}], [{"language": " fre "}]),
-    "spaces.mkv": ([{"language": " fre ", "codec": "aac\n", "channels": 6.0}], [{"language": "FRA"}]),
-    "upper.mkv": ([{"language": "FRA", "codec": "ÄC3", "channels": None}], [{"language": 0}]),
-    "zero.mkv": ([{"language": 0, "codec": " ac3 ", "channels": 2}], [{"language": None}]),
+    "tab.mkv": ([{"language": "\tfre", "codec": "AAC", "channels": "6"}], [{"language": " fre ", "codec": "SubRip"}]),
+    "spaces.mkv": ([{"language": " fre ", "codec": "aac\n", "channels": 6.0}], [{"language": "FRA", "codec": " ass "}]),
+    "upper.mkv": ([{"language": "FRA", "codec": "ÄC3", "channels": None}], [{"language": 0, "codec": "subrip"}]),
+    "zero.mkv": ([{"language": 0, "codec": " ac3 ", "channels": 2}], [{"language": None, "codec": "DVD_SUBTITLE"}]),
     "null.mkv": ([{"language": None, "codec": None}], [{}]),
     "missing.mkv": ([{"codec": "dts"}], [{"language": "ÉNG"}]),
     "accent.mkv": ([{"language": "ÉNG", "channels": 8}, {"language": "en", "channels": 1}], [{"language": "\tfre"}]),
@@ -223,7 +231,8 @@ async def awkward(test_db):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("key, more", [("alang", ["und", "eng", "fre", "chi"]), ("slang", ["und", "eng", "fre"]),
-                                       ("acodec", ["aac", "ac3", "truehd"]), ("achan", ["1", "2", "6", "8"])])
+                                       ("acodec", ["aac", "ac3", "truehd"]), ("achan", ["1", "2", "6", "8"]),
+                                       ("scodec", ["subrip", "ass", "hdmv_pgs_subtitle"])])
 async def test_index_values_and_tokens_agree(awkward, key, more):
     """Every value the index would keep for a row lists exactly the rows
     that have it, however oddly the tracks are written."""

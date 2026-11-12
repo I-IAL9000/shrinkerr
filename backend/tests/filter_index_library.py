@@ -30,6 +30,7 @@ EXPRESSIONS = [
     _ADV_TITLE,
     "alang:fre", "alang:eng,alang:fre", "acodec:truehd,!x264", "achan:8,res_1080p", "genre:drama,year:1990s",
     "rating:8,type_tv", "network:HBO", "!slang:eng", "library:1", "alang:fre,!alang:eng",
+    "scodec:hdmv_pgs_subtitle", "scodec:subrip,!slang:eng", "!scodec:subrip,res_1080p",
     # Genres saved before they were kept split: a combined one is the titles
     # with all its parts (the parts' rows ANDed), "science fiction" is sci-fi.
     "genre:action%20%26%20adventure", "!genre:action%20%26%20adventure",

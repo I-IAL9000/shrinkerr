@@ -67,6 +67,7 @@
     ]},
     {"key": "subtitles", "labelKey": "scanner:filterBar.categories.subtitles", "sections": [
       {"key": "slang", "labelKey": "scanner:filterBar.sections.language", "chipLabelKey": "scanner:filterBar.sections.subtitleLanguage", "facet": "slang"},
+      {"key": "scodec", "labelKey": "scanner:filterBar.sections.format", "chipLabelKey": "scanner:filterBar.sections.subtitleFormat", "facet": "scodec"},
       {"key": "subtitles", "labelKey": "scanner:filterBar.sections.kind", "options": [
         {"key": "no_subs", "labelKey": "scanner:filters.noSubs"},
         {"key": "image_subs", "labelKey": "scanner:filters.imageSubs"},

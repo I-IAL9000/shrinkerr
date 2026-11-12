@@ -80,7 +80,7 @@ async def test_lists_read_in_one_pass_are_their_own_definitions(test_db):
     import dataclasses
     await seed(test_db)
     combined = [f for f in _FACET_LIST if f.combine]
-    assert {f.key for f in combined} == {"alang", "slang", "acodec", "achan"}
+    assert {f.key for f in combined} == {"alang", "slang", "acodec", "achan", "scodec"}
     async with aiosqlite.connect(test_db) as db:
         db.row_factory = aiosqlite.Row
         _, together, _ = await evaluate(db, [], None, facets=combined)

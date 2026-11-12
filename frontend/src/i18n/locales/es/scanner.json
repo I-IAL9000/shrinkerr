@@ -193,6 +193,8 @@
       "kind": "Clase",
       "subCleanup": "Limpieza",
       "subtitleLanguage": "Idioma de los subtítulos",
+      "format": "Formato",
+      "subtitleFormat": "Formato de los subtítulos",
       "language": "Idioma",
       "genre": "Género",
       "year": "Año",
