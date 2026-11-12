@@ -17,6 +17,7 @@ import type { FolderInfo } from "../components/FileTree";
 import { useToast } from "../useToast";
 import { useConfirm } from "../components/ConfirmModal";
 import EstimateModal from "../components/EstimateModal";
+import { queueRequestFields } from "../queueRequest";
 import { ScannerItemActionsContext } from "../scannerItemActions";
 import RenameModal from "../components/RenameModal";
 import ReplaceCorruptModal from "../components/ReplaceCorruptModal";
@@ -1173,28 +1174,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     try {
       // A file already waiting in the queue takes these settings (v0.10.0;
       // it was skipped, and the dialog's choices dropped).
-      const extra: Record<string, any> = {};
+      const extra = queueRequestFields(priority, encodingOverrides);
       extra.update_pending = true;
-      // A priority picked is every file's, over the rules (null: Auto)
-      if (priority !== null) extra.priority_override = priority;
-      if (encodingOverrides) {
-        if (encodingOverrides.encoder) extra.encoder_override = encodingOverrides.encoder;
-        if (encodingOverrides.nvenc_preset) extra.nvenc_preset_override = encodingOverrides.nvenc_preset;
-        if (encodingOverrides.nvenc_cq != null) extra.nvenc_cq_override = encodingOverrides.nvenc_cq;
-        if (encodingOverrides.libx265_preset) extra.libx265_preset_override = encodingOverrides.libx265_preset;
-        if (encodingOverrides.libx265_crf != null) extra.libx265_crf_override = encodingOverrides.libx265_crf;
-        if (encodingOverrides.audio_codec) extra.audio_codec_override = encodingOverrides.audio_codec;
-        if (encodingOverrides.audio_bitrate != null) extra.audio_bitrate_override = encodingOverrides.audio_bitrate;
-        if (encodingOverrides.target_resolution) extra.target_resolution_override = encodingOverrides.target_resolution;
-        if (encodingOverrides.force_reencode) extra.force_reencode = true;
-        if (encodingOverrides.cleanup_only) extra.cleanup_only = true;
-        // Fix for direct play (v0.10.0): ticked or not, the dialog's choice
-        if (encodingOverrides.direct_play != null) extra.direct_play = encodingOverrides.direct_play;
-        if (encodingOverrides.direct_play) extra.direct_play_fixes = encodingOverrides.direct_play_fixes;
-        if (encodingOverrides.vmaf_target != null) extra.vmaf_target_override = encodingOverrides.vmaf_target;
-        if (encodingOverrides.lossless_audio) extra.lossless_audio_override = encodingOverrides.lossless_audio;
-        if (encodingOverrides.nvenc_aq) extra.nvenc_aq_override = encodingOverrides.nvenc_aq;
-      }
       if (filter !== "all") extra.filter = filter;
       const result = await addJobsFromScan(estimatePaths, 0, overrideRules, extra) as any;
       if (!estimateKeepsSelection) {

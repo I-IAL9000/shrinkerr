@@ -349,12 +349,13 @@ class JobQueue:
         except Exception:
             pass
 
-    async def update_pending_jobs(self, jobs: list[dict]) -> set[str]:
+    async def update_pending_jobs(self, jobs: list[dict], keep_priority: bool = False) -> set[str]:
         """Files waiting in the queue, added again from Add to Queue: their
         pending jobs take these jobs' settings, in their place in the queue
         (v0.10.0 — they were skipped, and the dialog's choices dropped: a
         batch re-added at P4 kept P3). A job that has started is left as it
-        is. Returns the paths updated."""
+        is. `keep_priority`: the jobs keep theirs (Edit settings, with none
+        picked). Returns the paths updated."""
         if not jobs:
             return set()
         db = await self._connect()
@@ -375,6 +376,9 @@ class JobQueue:
             direct_play_default = await _direct_play_by_default(db)
             updates = [(j["file_path"], _job_values(j, target_default, direct_play_default))
                        for j in jobs if j["file_path"] in waiting]
+            if keep_priority:
+                for _, values in updates:
+                    del values["priority"]
             columns = list(updates[0][1])
             await db.executemany(
                 f"UPDATE jobs SET {', '.join(f'{c} = ?' for c in columns)} WHERE id = ? AND status = 'pending'",

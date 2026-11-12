@@ -78,9 +78,12 @@ interface EstimateModalProps {
   // priority: null is Auto (each file's rule's); a number is every file's
   onConfirm: (priority: number | null, overrideRules: boolean, encodingOverrides?: EncodingOverrides, start?: boolean) => void;
   onCancel: () => void;
+  // Edit settings, from the Queue (v0.10.0): this many pending jobs take
+  // the settings where they wait. Saved, not added; priority null keeps theirs.
+  editing?: number;
 }
 
-export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter, onConfirm, onCancel }: EstimateModalProps) {
+export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter, onConfirm, onCancel, editing }: EstimateModalProps) {
   const { t } = useTranslation(["scannerModals", "common"]);
   const [estimate, setEstimate] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -150,7 +153,8 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   // correctly on first open.
   const modalRef = useRef<HTMLDivElement>(null);
   useRangeFill(modalRef);
-  const dialog = useDialog(modalRef, onCancel, t("scannerModals:estimate.title"));
+  const title = editing ? t("scannerModals:estimate.editTitle", { count: editing }) : t("scannerModals:estimate.title");
+  const dialog = useDialog(modalRef, onCancel, title);
 
   // Connect WebSocket on mount for test encode progress (must be open before test starts)
   useEffect(() => {
@@ -323,7 +327,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
         {/* The body scrolls and the buttons stay under it (v0.10.0): they
             were below the fold with the encoding settings open. */}
         <div className="estimate-modal-body">
-        <h3 style={{ color: "white", margin: "0 0 16px", fontSize: 16 }}>{t("scannerModals:estimate.title")}</h3>
+        <h3 style={{ color: "white", margin: "0 0 16px", fontSize: 16 }}>{title}</h3>
 
         {/* Override rules toggle */}
         {hasIgnoredFiles && (
@@ -609,7 +613,8 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
               <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>{t("scannerModals:estimate.priority")}</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {[
-                  { value: null, label: autoPriority, color: "var(--accent-text)", title: t("scannerModals:estimate.priorityAutoHelp") },
+                  { value: null, label: editing ? t("scannerModals:estimate.priorityUnchanged") : autoPriority, color: "var(--accent-text)",
+                    title: t(editing ? "scannerModals:estimate.priorityUnchangedHelp" : "scannerModals:estimate.priorityAutoHelp") },
                   ...PRIORITY_KEYS.map((labelKey, i) => (
                     { value: i, label: t(`scannerModals:estimate.priorities.${labelKey}`), color: PRIORITY_COLORS[i], title: undefined })),
                 ].map(({ value, label, color, title }) => (
@@ -967,17 +972,20 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
           <button className="btn btn-sm btn-secondary" onClick={onCancel}>
             {t("common:actions.cancel")}
           </button>
-          <button className="btn btn-sm btn-secondary"
-            disabled={loading || !estimate || (estimate.total_files === 0 && !overrideRules)}
-            onClick={() => onConfirm(priority, overrideRules, buildOverrides(), true)}
-          >
-            {t("scannerModals:estimate.addAndStart")}
-          </button>
+          {!editing && (
+            <button className="btn btn-sm btn-secondary"
+              disabled={loading || !estimate || (estimate.total_files === 0 && !overrideRules)}
+              onClick={() => onConfirm(priority, overrideRules, buildOverrides(), true)}
+            >
+              {t("scannerModals:estimate.addAndStart")}
+            </button>
+          )}
           <button className="btn btn-sm btn-primary"
             disabled={loading || !estimate || (estimate.total_files === 0 && !overrideRules)}
             onClick={() => onConfirm(priority, overrideRules, buildOverrides())}
           >
-            {t("scannerModals:estimate.addToQueue", { num: fmtNum(estimate?.total_files || filePaths.length) })}
+            {editing ? t("common:actions.save")
+              : t("scannerModals:estimate.addToQueue", { num: fmtNum(estimate?.total_files || filePaths.length) })}
           </button>
         </div>
       </div>

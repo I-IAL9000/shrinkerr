@@ -1,12 +1,14 @@
 import ReviewList from "../components/ReviewList";
 import PlannerModal from "../components/PlannerModal";
+import EstimateModal, { type EncodingOverrides } from "../components/EstimateModal";
+import { queueRequestFields } from "../queueRequest";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { displayNameForPath } from "../utils/displayName";
 import { useTranslation } from "react-i18next";
 import { mergeHead } from "../utils/mergeHead";
 import { encoderSettingsLabel, jobEncoderSettings } from "../utils/encoderLabel";
 import VirtualJobList from "../components/VirtualJobList";
-import { getJobs, getJobIds, getJobStats, startQueue, pauseQueue, cancelJob, cancelCurrentJob, removeJob, retryJob, clearCompleted, clearPending, ignoreFile, bulkUpdateJobSettings, bulkMoveJobs, bulkIgnoreJobs, getEncodingSettings, getJobPlan, type JobPlan, reorderJobs, researchFilesBulk, getNodes, undoConversion, keepLarger } from "../api";
+import { getJobs, getJobIds, getJobStats, startQueue, pauseQueue, cancelJob, cancelCurrentJob, removeJob, retryJob, clearCompleted, clearPending, ignoreFile, bulkUpdateJobSettings, bulkMoveJobs, bulkIgnoreJobs, getEncodingSettings, getJobPlan, type JobPlan, reorderJobs, researchFilesBulk, getNodes, undoConversion, keepLarger, addJobsFromScan } from "../api";
 import { fmtNum, fmtBytes } from "../fmt";
 import JobCard from "../components/JobCard";
 import JobListItem from "../components/JobListItem";
@@ -349,6 +351,28 @@ export default function QueuePage() {
   // quality preset) — the pending summary reloads.
   const [planEdits, setPlanEdits] = useState(0);
 
+  // Edit settings (v0.10.0): Add to Queue's dialog for pending jobs, which
+  // take its settings where they wait — a clean-up can become a conversion
+  // (Force re-encode), and the rules apply as they do when adding.
+  const [editing, setEditing] = useState<Job[] | null>(null);
+  const handleConfirmEdit = async (priority: number | null, overrideRules: boolean, overrides?: EncodingOverrides) => {
+    if (!editing) return;
+    const paths = editing.map(j => j.file_path);
+    setEditing(null);
+    try {
+      const result = await addJobsFromScan(paths, 0, overrideRules,
+        { ...queueRequestFields(priority, overrides), edit_pending: true });
+      // Left as they were: nothing to do with these settings, or no longer waiting.
+      const unchanged = result.unchanged ? t("queue:toasts.settingsUnchanged", { count: result.unchanged }) : "";
+      if (result.updated) toast(`${t("queue:toasts.settingsSaved", { count: result.updated })}${unchanged ? ` ${unchanged}` : ""}`, "success");
+      else if (unchanged) toast(unchanged);
+      setPlanEdits(n => n + 1);
+      load();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "error");
+    }
+  };
+
   const handleBulkVideoPreset = async (job: { nvenc_cq: number; libx265_crf: number }) => {
     const selectedSet = new Set(selectedIds);
     setJobs(prev => prev.map(j => selectedSet.has(j.id) ? { ...j, ...job } : j));
@@ -515,6 +539,7 @@ export default function QueuePage() {
             loadRef.current();
             toast(t("queue:toasts.fileIgnored"));
           }}
+          onEdit={(edited) => setEditing([edited])}
           encodingDefaults={encodingDefaults}
           expanded={expandedIds.has(job.id)}
           onToggleExpand={toggleExpanded}
@@ -943,6 +968,7 @@ export default function QueuePage() {
               onMoveUp={() => handleBulkMove("up")}
               onMoveDown={() => handleBulkMove("down")}
               onMoveBottom={() => handleBulkMove("bottom")}
+              onEdit={() => setEditing(pending.filter(j => selectedJobIds.has(j.id)))}
               onChangeVideoPreset={handleBulkVideoPreset}
               onChangeAudioPreset={handleBulkAudioPreset}
               onChangeVmafTarget={handleBulkVmafTarget}
@@ -1038,6 +1064,14 @@ export default function QueuePage() {
         </>
       )}
 
+      {editing && (
+        <EstimateModal
+          filePaths={editing.map(j => j.file_path)}
+          editing={editing.length}
+          onConfirm={handleConfirmEdit}
+          onCancel={() => setEditing(null)}
+        />
+      )}
       {plannerOpen && <PlannerModal onClose={() => setPlannerOpen(false)} onQueued={() => load()} pendingCount={pendingCount} />}
     </div>
   );

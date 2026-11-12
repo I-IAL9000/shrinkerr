@@ -21,6 +21,8 @@ interface JobListItemProps {
   onRetry?: (id: number) => void;
   onRemove: (id: number) => void;
   onIgnore?: (id: number, filePath: string) => void;
+  // A pending job's settings, in Add to Queue's dialog (v0.10.0)
+  onEdit?: (job: Job) => void;
   onUndo?: (id: number) => void;
   // Why Restore original can't run (shown disabled, with the reason): "off" =
   // originals aren't kept, "notKept" = not for this job, "expired" = deleted
@@ -53,7 +55,7 @@ const videoKept = (job: Job) =>
 // Icons on one row share a centre whatever their glyph.
 const centeredIcon: React.CSSProperties = { display: "inline-flex", alignItems: "center", justifyContent: "center" };
 
-function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, undoBlocked = null, keepDays = 0, onKeepLarger, checked, onCheck, encodingDefaults, expanded: expandedProp, onToggleExpand, onPlanChanged }: JobListItemProps) {
+function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onEdit, onUndo, undoBlocked = null, keepDays = 0, onKeepLarger, checked, onCheck, encodingDefaults, expanded: expandedProp, onToggleExpand, onPlanChanged }: JobListItemProps) {
   const { t } = useTranslation(["queue", "common", "fileDetail"]);
   const { request: requestReplacement, requesting } = useRequestReplacement();
   // A damaged source (v0.10.0): its replacement is one click from the
@@ -311,6 +313,15 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, u
           </span>
           )}
           <div style={{ display: "inline-flex", alignItems: "center", gap: 2, marginLeft: 6 }}>
+            {onEdit && (
+              <button aria-label={t("queue:item.editSettings")} onClick={(e) => { e.stopPropagation(); onEdit(job); }}
+                style={{ ...iconBtnStyle, color: "var(--text-muted)", padding: "2px 4px", display: "inline-flex", alignItems: "center" }}
+                title={t("queue:item.editSettings")}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                </svg>
+              </button>
+            )}
             {onIgnore && (
               <button aria-label={t("queue:item.ignoreFile")} onClick={(e) => { e.stopPropagation(); onIgnore(job.id, job.file_path); }}
                 style={{ ...iconBtnStyle, color: "var(--text-muted)", padding: "2px 4px", fontSize: 16, display: "inline-flex", alignItems: "center" }}

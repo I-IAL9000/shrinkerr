@@ -7,6 +7,9 @@
   },
   "estimate": {
     "title": "Añadir a la cola",
+    "editTitle_one": "Editar {{count}} trabajo",
+    "editTitle_many": "Editar {{count}} trabajos",
+    "editTitle_other": "Editar {{count}} trabajos",
     "rulesWarningTitle": "Algunos archivos seleccionados están ignorados o cubiertos por reglas de codificación",
     "rulesWarningHelp": "Los archivos ignorados solo reciben su limpieza de audio y subtítulos. Márcalo para convertirlos también; las reglas de codificación siguen decidiendo cómo se convierten.",
     "overrideRules": "Convertirlos también",
@@ -32,6 +35,8 @@
       "highest": "Máxima"
     },
     "priorityAutoHelp": "La prioridad de la regla de cada archivo; si no, Normal (Alta para contenido no visto si “Priorizar contenido no visto” está activado). La prioridad que elijas aquí se aplica a todos los archivos, por encima de las reglas.",
+    "priorityUnchanged": "Sin cambios",
+    "priorityUnchangedHelp": "Cada trabajo conserva su prioridad. La prioridad que elijas aquí se aplica a todos los trabajos.",
     "failed": "No se pudo calcular la estimación",
     "unknownError": "Error desconocido",
     "addToQueue": "Añadir {{num}} a la cola",

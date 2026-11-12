@@ -116,6 +116,10 @@ class BulkQueueFromScanRequest(BaseModel):
     # Add to Queue (v0.10.0): a file already waiting in the queue takes this
     # request's settings (JobQueue.update_pending_jobs) instead of being skipped.
     update_pending: bool = False
+    # Edit settings, from the Queue (v0.10.0): only files waiting in the queue
+    # take this request's settings — nothing is added — and each keeps its
+    # priority unless one is picked (priority_override).
+    edit_pending: bool = False
     # Queued by Shrinkerr itself (policies; v0.10.0): files that came out
     # larger when converted are left as they are, as for new downloads.
     automatic: bool = False
@@ -949,6 +953,10 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
     # frontend uses `skipped_existing` to phrase the toast correctly when
     # everything submitted was already queued (vs. "no actionable items").
     # v0.3.60.
+    if payload.edit_pending:
+        updated = await _queue.update_pending_jobs(jobs_to_insert, keep_priority=payload.priority_override is None)
+        # Not updated: no work with these settings, or no longer waiting.
+        return {"job_ids": [], "added": 0, "updated": len(updated), "unchanged": len(file_paths) - len(updated)}
     updated = await _queue.update_pending_jobs(jobs_to_insert) if payload.update_pending else set()
     all_ids = await _queue.add_jobs_bulk([j for j in jobs_to_insert if j["file_path"] not in updated])
     job_ids = [jid for jid in all_ids if jid]

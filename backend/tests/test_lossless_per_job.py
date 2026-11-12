@@ -140,8 +140,8 @@ def test_add_to_queue_has_the_choice():
     assert audio < lossless  # under the audio codec
     assert '<option value="keep">' in src and '<option value="convert">' in src
     assert "if (lossless !== null) o.lossless_audio = lossless;" in src
-    assert ("extra.lossless_audio_override = encodingOverrides.lossless_audio"
-            in _source("ScannerPage.tsx"))
+    assert ("extra.lossless_audio_override = overrides.lossless_audio"
+            in _source("queueRequest.ts"))  # Add to Queue's request
     for lang in PLURALS:
         assert _placeholders(lang, "scannerModals:overrides.lossless") == [set()], lang
         assert _placeholders(lang, "scannerModals:overrides.losslessKeep") == [set()], lang

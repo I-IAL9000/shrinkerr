@@ -7,6 +7,8 @@
   },
   "estimate": {
     "title": "Add to Queue",
+    "editTitle_one": "Edit {{count}} job",
+    "editTitle_other": "Edit {{count}} jobs",
     "rulesWarningTitle": "Some selected files are ignored or covered by encoding rules",
     "rulesWarningHelp": "Ignored files only get their audio and subtitle clean-up. Tick to convert them too; encoding rules still decide how files are converted.",
     "overrideRules": "Convert them too",
@@ -31,6 +33,8 @@
       "highest": "Highest"
     },
     "priorityAutoHelp": "Each file's rule priority, else Normal (High for unwatched content when “Prioritize unwatched content” is on). A priority picked here is every file's, over the rules.",
+    "priorityUnchanged": "Unchanged",
+    "priorityUnchangedHelp": "Each job keeps its priority. A priority picked here is every job's.",
     "failed": "Failed to estimate",
     "unknownError": "Unknown error",
     "addToQueue": "Add {{num}} to Queue",

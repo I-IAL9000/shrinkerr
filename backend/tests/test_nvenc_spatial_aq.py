@@ -272,7 +272,7 @@ def test_the_dialog_has_the_choice():
     assert 'autoLabel("nvenc_aq"' in src
     assert "if (aq !== null && isNvenc) o.nvenc_aq = aq;" in src
     assert "isNvenc ? aq ?? undefined : undefined" in src  # the test encode
-    assert "extra.nvenc_aq_override = encodingOverrides.nvenc_aq" in _source("ScannerPage.tsx")
+    assert "extra.nvenc_aq_override = overrides.nvenc_aq" in _source("queueRequest.ts")  # Add to Queue's request
     for lang in PLURALS:
         for key in ("label", "off", "light", "strong"):
             assert _placeholders(lang, f"scannerModals:overrides.antiBanding.{key}") == [set()], (lang, key)
