@@ -104,6 +104,8 @@ export default function PendingJobPlan({ job, encodingDefaults, onChanged }: {
       target: `${plan.lossless.codec.toUpperCase()} ${plan.lossless.bitrate}k`,
     }) }] : []),
     ...(plan.lossless?.keep.length ? [{ text: t("queue:plan.losslessKeep", { tracks: losslessNames(plan.audio, plan.lossless.keep) }) }] : []),
+    // Its audio with no language, detected when it runs (Auto-detect languages)
+    ...(plan.detect_languages ? [{ text: t("queue:plan.detectLanguages", { count: plan.detect_languages }) }] : []),
     ...(plan.native_first ? [{ text: t("queue:plan.nativeFirst", { language: trackLanguageName(plan.native_first) }) }] : []),
     // Fix for direct play (v0.10.0): Hi10P's fix is the conversion above.
     ...(plan.direct_play || []).filter(fix => fix !== "video").map(fix => ({

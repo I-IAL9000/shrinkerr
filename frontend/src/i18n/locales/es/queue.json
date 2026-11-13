@@ -297,6 +297,9 @@
       "ffmpeg": "quitar Dolby Vision requiere ffmpeg 7.1 o posterior"
     },
     "noVideo": "El vídeo no se recodifica; solo cambian las pistas",
+    "detectLanguages_one": "Detecta el idioma de la pista de audio marcada como und y la etiqueta",
+    "detectLanguages_many": "Detecta los idiomas de las {{count}} pistas de audio marcadas como und y las etiqueta",
+    "detectLanguages_other": "Detecta los idiomas de las {{count}} pistas de audio marcadas como und y las etiqueta",
     "nativeFirst": "Pone primero el audio del idioma original ({{language}}), para que se reproduzca por defecto",
     "size": "{{before}} → unos {{after}} (ahorra unos {{saved}})",
     "sizeSame": "Se queda en unos {{size}}",

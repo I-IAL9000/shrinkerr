@@ -553,12 +553,17 @@ async def job_plan(job_id: int):
         async with db.execute("SELECT value FROM settings WHERE key = 'image_subs_keep_original'") as cur:
             r = await cur.fetchone()
         keep_image_subs = ((r[0] if r else None) or "true").lower() != "false"
+        # Auto-detect languages (Settings → Audio; converter._auto_detect_enabled)
+        async with db.execute("SELECT value FROM settings WHERE key = 'auto_detect_languages'") as cur:
+            r = await cur.fetchone()
+        auto_detect = ((r[0] if r else None) or "true").lower() == "true"
     finally:
         await db.close()
     if row is None:
         return {"scan_id": None, "job_type": job["job_type"], "audio": [], "subtitles": [], "native_first": None,
                 "file_size": job.get("original_size") or 0, "estimated_savings": 0, "originals": originals,
-                "direct_play": fixes, "image_subs_keep_original": keep_image_subs, "lossless": None, "dolby_vision": None}
+                "direct_play": fixes, "image_subs_keep_original": keep_image_subs, "lossless": None, "dolby_vision": None,
+                "detect_languages": 0}
     audio = json.loads(row["audio_tracks_json"] or "[]")
     subs = json.loads(row["subtitle_tracks_json"] or "[]")
     remove_a = set(json.loads(job["audio_tracks_to_remove"] or "[]"))
@@ -568,6 +573,12 @@ async def job_plan(job_id: int):
         t["remove"] = t.get("stream_index") in remove_a
     for t in subs:
         t["remove"] = t.get("stream_index") in remove_s
+    # Kept audio tracks with no language, detected when the job runs (v0.10.0:
+    # a conversion before converting, a clean-up in its remux); one detected
+    # already (an AVI's, in detected_language) is only written.
+    detect = sum(1 for t in audio if not t["remove"] and (t.get("language") or "und").lower() == "und"
+                 and not t.get("detected_language")) \
+        if auto_detect and job["job_type"] in ("convert", "combined", "audio") else 0
     live = await get_live_encoding_settings()
     dolby_vision = _dolby_vision_plan(job, row, live)
     kept_video = (dolby_vision or {}).get("action") == "skip"  # saves only what the tracks do
@@ -580,6 +591,7 @@ async def job_plan(job_id: int):
         "direct_play": fixes, "image_subs_keep_original": keep_image_subs,
         "lossless": None if kept_video else _lossless_plan(job, audio, live),
         "dolby_vision": dolby_vision,
+        "detect_languages": detect,
     }
 
 

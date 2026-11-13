@@ -198,3 +198,32 @@ async def test_a_jobs_plan_lists_its_direct_play_fixes(routes, test_db):
         await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('image_subs_keep_original', 'false')")
         await db.commit()
     assert (await jobs_route.job_plan(chosen))["image_subs_keep_original"] is False
+
+
+@pytest.mark.asyncio
+async def test_the_plan_says_which_languages_are_detected(routes, test_db):
+    """A kept audio track with no language (und) is detected when the job
+    runs, under Auto-detect languages (Settings → Audio); the plan didn't
+    say so. Not a track the job removes, nor one detected already (an AVI's
+    is kept in detected_language), nor in a health check, nor with the
+    setting off."""
+    jobs_route, _ = routes
+    await _file(test_db, "/m/a.mkv", [tr(1, "und", True), tr(2, "und", True),
+                                      tr(3, "und", True, detected_language="eng"), tr(4, "eng", True)])
+    cleanup = await _job(test_db, "/m/a.mkv", "audio", [2])
+    convert = await _job(test_db, "/m/a.mkv", "convert")
+    check = await _job(test_db, "/m/a.mkv", "health_check")
+    assert [(await jobs_route.job_plan(j))["detect_languages"] for j in (cleanup, convert, check)] == [1, 2, 0]
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO settings (key, value) VALUES ('auto_detect_languages', 'false')")
+        await db.commit()
+    assert (await jobs_route.job_plan(cleanup))["detect_languages"] == 0
+
+
+def test_the_plan_panel_says_so():
+    from backend.tests.test_vmaf_target_ui import PLURALS, _forms, _source
+    src = _source("PendingJobPlan.tsx")
+    assert 't("queue:plan.detectLanguages", { count: plan.detect_languages })' in src
+    assert src.index("queue:plan.detectLanguages") < src.index("queue:plan.nativeFirst")  # it decides the reorder
+    for lang in PLURALS:
+        assert all(_forms(lang, "queue:plan.detectLanguages")), lang

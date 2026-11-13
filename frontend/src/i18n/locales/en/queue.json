@@ -271,6 +271,8 @@
       "ffmpeg": "removing Dolby Vision needs ffmpeg 7.1 or later"
     },
     "noVideo": "The video isn't re-encoded; only the tracks change",
+    "detectLanguages_one": "Detects the language of the audio track marked und, and tags it",
+    "detectLanguages_other": "Detects the languages of the {{count}} audio tracks marked und, and tags them",
     "nativeFirst": "Moves the original-language audio ({{language}}) first, so it plays by default",
     "size": "{{before}} → about {{after}} (saves about {{saved}})",
     "sizeSame": "Stays about {{size}}",

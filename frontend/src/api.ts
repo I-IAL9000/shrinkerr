@@ -952,6 +952,8 @@ export interface JobPlan {
   // it ("drop"), kept, removed by a clean-up, or the video isn't converted
   // ("skip", and why); null: none, or a clean-up copies it
   dolby_vision?: { profile: string; action: "drop" | "remove" | "keep" | "skip"; hdr: string | null; why: string | null } | null;
+  // Kept audio tracks with no language that it detects when it runs (v0.10.0)
+  detect_languages?: number;
 }
 export const getJobPlan = (id: number) => apiFetch<JobPlan>(`/jobs/${id}/plan`);
 export interface PendingSummary {
