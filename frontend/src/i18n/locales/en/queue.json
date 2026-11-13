@@ -239,7 +239,6 @@
   "panel": {
     "selected_one": "{{count}} selected",
     "selected_other": "{{count}} selected",
-    "deselect": "Deselect",
     "editSettings": "Edit settings",
     "moveTop": "Move to top",
     "moveUp": "Move up",

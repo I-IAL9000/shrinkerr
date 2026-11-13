@@ -265,7 +265,6 @@
     "selected_one": "{{count}} seleccionado",
     "selected_many": "{{count}} seleccionados",
     "selected_other": "{{count}} seleccionados",
-    "deselect": "Deseleccionar",
     "editSettings": "Editar configuración",
     "moveTop": "Mover al principio",
     "moveUp": "Subir",

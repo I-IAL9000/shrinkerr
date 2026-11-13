@@ -95,3 +95,23 @@ def test_fix_matchs_fields_are_as_tall_as_its_search_button():
     src = (ROOT / "components/PosterFixModal.tsx").read_text()
     row = src[src.index("{/* Search bar */}"):src.index('t("library:fix.search")')]
     assert re.search(r'<div style=\{\{[^}]*display: "flex"[^}]*alignItems: "stretch"', row)
+
+
+def test_the_queues_selection_bar_looks_like_the_scanners():
+    """The Queue's selection bar had a look of its own: small square buttons,
+    a red Ignore and Remove, underlined links, the arrows in a well. It takes
+    the Scanner bar's: pills, the count in the accent, the same box."""
+    bar = (ROOT / "components/QueueControlPanel.tsx").read_text()
+    scanner = (ROOT / "pages/ScannerPage.tsx").read_text()
+    buttons = [bar[m.start():_tag_end(bar, m.end()) + 1] for m in re.finditer(r"<button\b", bar)]
+    assert len(buttons) == 9  # select all, deselect all, four arrows, edit, ignore, remove
+    for tag in buttons:
+        assert re.search(r'className="btn btn-sm btn-pill btn-(primary|secondary)( btn-icon)?"', tag), tag
+        assert "style=" not in tag, tag
+        if "btn-icon" in tag:  # an arrow: named, as the ⋯ is
+            assert "aria-label=" in tag and "title=" in tag, tag
+    assert 'buttonClassName="btn btn-sm btn-pill btn-secondary"' in bar  # Priority
+    count = '<span style={{ fontSize: 11, color: "var(--accent-text)", fontWeight: 600 }}>'
+    assert count in bar and count in scanner
+    for box in ('gap: 6', 'padding: "8px 12px"', 'background: "var(--bg-card)"'):
+        assert box in bar and box in scanner, box
