@@ -982,6 +982,100 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
     }
 
 
+class PickedSettingsRequest(BaseModel):
+    job_ids: list[int]
+
+
+# Edit settings' settings, as the jobs columns hold them, in the dialog's order.
+_PICKABLE = ("encoder", "vmaf_target", "nvenc_cq", "libx265_crf", "nvenc_preset", "libx265_preset", "nvenc_aq",
+             "audio_codec", "audio_bitrate", "lossless_audio", "target_resolution")
+_PICK_ORDER = (*_PICKABLE, "force_reencode", "cleanup_only", "direct_play", "direct_play_fixes")
+
+
+def _converts(job_type: Optional[str]) -> bool:
+    return job_type in ("convert", "combined")
+
+
+def _fixes(direct_play) -> list[str]:
+    return sorted(f for f in str(direct_play or "").split(",") if f)
+
+
+@router.post("/picked-settings")
+async def picked_settings(payload: PickedSettingsRequest):
+    """Where Edit settings starts (v0.10.0): what pending jobs were given in
+    Add to Queue or an edit that the dialog, left alone, wouldn't give them —
+    in its terms (EncodingOverrides). "picked": the settings every job has,
+    "mixed": the ones they differ in. It started from the rules': a VMAF
+    target picked showed as the rule's Off, and saving put the Off back."""
+    from backend.queue import _direct_play_by_default, _job_values, _target_when_queued
+    db = await connect_db()
+    try:
+        rows: list[dict] = []
+        for i in range(0, len(payload.job_ids), 900):
+            chunk = payload.job_ids[i:i + 900]
+            async with db.execute(
+                f"SELECT file_path, job_type, direct_play, {', '.join(_PICKABLE)} FROM jobs "
+                f"WHERE status = 'pending' AND id IN ({','.join('?' * len(chunk))})", chunk,
+            ) as cur:
+                rows += [dict(r) for r in await cur.fetchall()]
+        target_default = await _target_when_queued(db)
+        direct_play_default = await _direct_play_by_default(db)
+    finally:
+        await db.close()
+    if not rows:
+        return {"picked": {}, "mixed": []}
+
+    async def plan(paths: list[str], **choice) -> dict[str, dict]:
+        """The jobs the dialog gives these files, left alone but for `choice`."""
+        if not paths:
+            return {}
+        jobs, _ = await _jobs_from_scan(paths, BulkQueueFromScanRequest(
+            file_paths=paths, direct_play=direct_play_default, **choice))
+        return {j["file_path"]: _job_values(j, target_default, direct_play_default) for j in jobs}
+
+    # Force re-encode: a conversion the dialog left alone wouldn't make;
+    # Cleanup only: none where it would. Their files are told apart from
+    # the jobs that choice makes.
+    bases = await plan([r["file_path"] for r in rows])
+    modes: dict[str, Optional[str]] = {}
+    for r in rows:
+        base = bases.get(r["file_path"])
+        converts = bool(base) and _converts(base["job_type"])
+        modes[r["file_path"]] = ("force_reencode" if _converts(r["job_type"]) and not converts
+                                 else "cleanup_only" if not _converts(r["job_type"]) and converts else None)
+    for mode in ("force_reencode", "cleanup_only"):
+        chosen = [fp for fp, m in modes.items() if m == mode]
+        replanned = await plan(chosen, **{mode: True})
+        bases.update({fp: replanned.get(fp) for fp in chosen})
+
+    def picks(r: dict) -> dict:
+        out: dict = {modes[r["file_path"]]: True} if modes[r["file_path"]] else {}
+        base = bases.get(r["file_path"])
+        if base is None:  # nothing to tell its settings from
+            return out
+        # None (Settings' when it runs) isn't one the dialog can show
+        out.update({c: r[c] for c in _PICKABLE if r[c] != base[c] and r[c] is not None})
+        # Fix for direct play: Settings' when queued ("1") is the dialog's own
+        if str(r["direct_play"]) != "1" and _fixes(r["direct_play"]) != _fixes(base["direct_play"]):
+            out["direct_play"] = bool(_fixes(r["direct_play"]))
+            if out["direct_play"]:
+                out["direct_play_fixes"] = _fixes(r["direct_play"])
+        return out
+
+    per_job = [picks(r) for r in rows]
+    missing = object()
+    picked, mixed = {}, []
+    for field in _PICK_ORDER:
+        values = [p.get(field, missing) for p in per_job]
+        if all(v is missing for v in values):
+            continue
+        if all(v == values[0] for v in values):
+            picked[field] = values[0]
+        else:
+            mixed.append(field)
+    return {"picked": picked, "mixed": mixed}
+
+
 @router.get("/")
 async def list_jobs(status: Optional[str] = None, limit: int = 0, offset: int = 0, search: str = ""):
     if _queue is None:

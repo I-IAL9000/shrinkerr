@@ -37,6 +37,7 @@
     "priorityAutoHelp": "La prioridad de la regla de cada archivo; si no, Normal (Alta para contenido no visto si “Priorizar contenido no visto” está activado). La prioridad que elijas aquí se aplica a todos los archivos, por encima de las reglas.",
     "priorityUnchanged": "Sin cambios",
     "priorityUnchangedHelp": "Cada trabajo conserva su prioridad. La prioridad que elijas aquí se aplica a todos los trabajos.",
+    "editMixed": "Estos trabajos difieren en {{settings}}: al guardar, todos toman lo que se muestra aquí (en Regla, cada uno la de su regla).",
     "failed": "No se pudo calcular la estimación",
     "unknownError": "Error desconocido",
     "addToQueue": "Añadir {{num}} a la cola",

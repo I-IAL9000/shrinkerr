@@ -3,7 +3,7 @@ import { triedQuality } from "../utils/cameOutLarger";
 import { useDialog } from "../useDialog";
 import { useTranslation, Trans } from "react-i18next";
 import i18n from "../i18n";
-import { estimateJobs, startTestEncode, getEncodingSettings, getEncoderCaps, wsUrl, type EncoderCaps } from "../api";
+import { estimateJobs, startTestEncode, getEncodingSettings, getEncoderCaps, getPickedSettings, wsUrl, type EncoderCaps } from "../api";
 import { useRangeFill } from "../useRangeFill";
 import { fmtNum, fmtBytes } from "../fmt";
 import { vmafColor, vmafTintBg, VMAF_TARGET_DEFAULT } from "../utils/vmaf";
@@ -78,9 +78,9 @@ interface EstimateModalProps {
   // priority: null is Auto (each file's rule's); a number is every file's
   onConfirm: (priority: number | null, overrideRules: boolean, encodingOverrides?: EncodingOverrides, start?: boolean) => void;
   onCancel: () => void;
-  // Edit settings, from the Queue (v0.10.0): this many pending jobs take
+  // Edit settings, from the Queue (v0.10.0): these pending jobs (ids) take
   // the settings where they wait. Saved, not added; priority null keeps theirs.
-  editing?: number;
+  editing?: number[];
 }
 
 export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter, onConfirm, onCancel, editing }: EstimateModalProps) {
@@ -123,6 +123,33 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   const vmafOverride: number | null = vmafMode === "off" ? 0
     : vmafMode === "custom" && vmafScore >= 80 && vmafScore <= 99 ? vmafScore : null;
 
+  // The settings the edited jobs differ in (picked-settings): named, as the
+  // dialog can show only one of each.
+  const [mixed, setMixed] = useState<string[]>([]);
+  // Edit settings starts from what the jobs were given (v0.10.0): it started
+  // from the rules', showing a VMAF target picked as the rule's Off, and
+  // saving put the Off back.
+  const startFrom = ({ picked: p, mixed: differ }: { picked: EncodingOverrides; mixed: string[] }, encoderDefault: string) => {
+    const cpu = (p.encoder ?? encoderDefault) === "libx265";
+    if (p.encoder) setEncoder(p.encoder);
+    const presetPicked = cpu ? p.libx265_preset : p.nvenc_preset;
+    if (presetPicked) setPreset(presetPicked);
+    const quality = cpu ? p.libx265_crf : p.nvenc_cq;
+    if (quality != null) setCq(quality);
+    if (p.audio_codec) setAudioCdc(p.audio_codec);
+    if (p.audio_bitrate != null) setAudioBr(p.audio_bitrate);
+    if (p.target_resolution) setResolution(p.target_resolution);
+    if (p.vmaf_target != null) setVmafChoice(p.vmaf_target > 0 ? String(p.vmaf_target) : "off");
+    if (p.lossless_audio) setLossless(p.lossless_audio);
+    if (p.nvenc_aq) setAq(p.nvenc_aq);
+    if (p.force_reencode) setForceReencode(true);
+    if (p.cleanup_only) setCleanupOnly(true);
+    if (p.direct_play != null) setDirectPlay(p.direct_play);
+    if (p.direct_play_fixes) setDpFixes(p.direct_play_fixes);
+    setMixed(differ);
+    if (Object.keys(p).length || differ.length) setSettingsOpen(true);
+  };
+
   useEffect(() => {
     getEncodingSettings().then(s => {
       if (s?.default_encoder) setDefaultEncoder(s.default_encoder);
@@ -133,7 +160,10 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
         on: s.auto_convert_lossless === true,
         target: `${s.lossless_target_codec || "eac3"}:${s.lossless_target_bitrate || 640}`,
       });
-    }).catch(() => {}).finally(() => setSettingsRead(true));
+      return s?.default_encoder as string | undefined;
+    }).catch(() => undefined)
+      .then(encoderDefault => editing && getPickedSettings(editing).then(p => startFrom(p, encoderDefault || "nvenc")))
+      .catch(() => {}).finally(() => setSettingsRead(true));
     getEncoderCaps().then(setEncoderCaps).catch(() => {});
   }, []);
   const [preset, setPreset] = useState<string | null>(null);
@@ -153,7 +183,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   // correctly on first open.
   const modalRef = useRef<HTMLDivElement>(null);
   useRangeFill(modalRef);
-  const title = editing ? t("scannerModals:estimate.editTitle", { count: editing }) : t("scannerModals:estimate.title");
+  const title = editing ? t("scannerModals:estimate.editTitle", { count: editing.length }) : t("scannerModals:estimate.title");
   const dialog = useDialog(modalRef, onCancel, title);
 
   // Connect WebSocket on mount for test encode progress (must be open before test starts)
@@ -634,6 +664,27 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
 
             {/* Encoding Settings (expandable) */}
             <div style={{ marginBottom: 16 }}>
+              {mixed.length > 0 && (
+                <div style={{ fontSize: 11, color: "var(--caution)", marginBottom: 8 }}>
+                  {t("scannerModals:estimate.editMixed", { settings: [...new Set(mixed.map(field => ({
+                    encoder: t("scannerModals:overrides.encoder"),
+                    vmaf_target: t("scannerModals:overrides.vmafTarget"),
+                    nvenc_cq: t("scannerModals:overrides.quality", { mode: "CQ" }),
+                    libx265_crf: t("scannerModals:overrides.quality", { mode: "CRF" }),
+                    nvenc_preset: t("scannerModals:overrides.preset"),
+                    libx265_preset: t("scannerModals:overrides.preset"),
+                    nvenc_aq: t("scannerModals:overrides.antiBanding.label"),
+                    audio_codec: t("scannerModals:overrides.audio"),
+                    audio_bitrate: t("scannerModals:overrides.audio"),
+                    lossless_audio: t("scannerModals:overrides.lossless"),
+                    target_resolution: t("scannerModals:overrides.resolution"),
+                    force_reencode: t("scannerModals:overrides.reencode"),
+                    cleanup_only: t("scannerModals:overrides.reencode"),
+                    direct_play: t("scannerModals:estimate.directPlay.title"),
+                    direct_play_fixes: t("scannerModals:estimate.directPlay.title"),
+                  } as Record<string, string>)[field] ?? field))].join(", ") })}
+                </div>
+              )}
               <button
                 onClick={() => setSettingsOpen(!settingsOpen)}
                 style={{

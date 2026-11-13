@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { AudioTrack, ScannedFile, SubtitleTrack, WSMessage } from "./types";
+import type { EncodingOverrides } from "./components/EstimateModal";
 import i18n from "./i18n";
 
 const API_BASE = "/api";
@@ -657,6 +658,12 @@ export const plexAuthStatus = () =>
 // Estimation & Export
 export const estimateJobs = (filePaths: string[], overrideRules: boolean = false, overrides?: Record<string, any>) =>
   apiFetch<any>("/jobs/estimate", { method: "POST", body: JSON.stringify({ file_paths: filePaths, override_rules: overrideRules, ...overrides }) });
+// Where Edit settings starts (v0.10.0): what the pending jobs were given in
+// Add to Queue or an edit, as the dialog's choices — the ones they all have,
+// and the settings they differ in.
+export const getPickedSettings = (jobIds: number[]) =>
+  apiFetch<{ picked: EncodingOverrides; mixed: string[] }>("/jobs/picked-settings",
+    { method: "POST", body: JSON.stringify({ job_ids: jobIds }) });
 export const estimateJobsWithPriority = (filePaths: string[], priority: number) =>
   apiFetch<any>("/jobs/estimate", { method: "POST", body: JSON.stringify({ file_paths: filePaths, priority }) });
 /**

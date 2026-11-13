@@ -1025,7 +1025,7 @@ export default function QueuePage() {
       {editing && (
         <EstimateModal
           filePaths={editing.map(j => j.file_path)}
-          editing={editing.length}
+          editing={editing.map(j => j.id)}
           onConfirm={handleConfirmEdit}
           onCancel={() => setEditing(null)}
         />

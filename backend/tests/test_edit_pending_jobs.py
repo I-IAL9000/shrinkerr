@@ -74,6 +74,98 @@ async def test_an_edit_adds_nothing(library):
     assert [(j["file_path"], j["status"], j["job_type"]) for j in jobs] == [(REALITY, "running", "audio")]
 
 
+
+# Where the dialog starts. It started from the rules' settings: a VMAF target
+# of 95 picked for a job showed as the rule's Off, and saving another change
+# put the Off back.
+async def _queue(*paths, **fields):
+    from backend.routes.jobs import BulkQueueFromScanRequest, add_jobs_from_scan
+    await add_jobs_from_scan(BulkQueueFromScanRequest(file_paths=list(paths), **fields))
+
+
+async def _picked(db_path):
+    from backend.routes.jobs import PickedSettingsRequest, picked_settings
+    return await picked_settings(PickedSettingsRequest(job_ids=[j["id"] for j in await _jobs(db_path)]))
+
+
+@pytest.mark.asyncio
+async def test_the_edit_starts_from_the_settings_picked(library):
+    """What Add to Queue (or an edit) gave a job; what its rule gives it stays the rule's."""
+    await _rule("Reality", "/m/Reality", nvenc_preset="p6", nvenc_cq=36)
+    await _queue(REALITY, vmaf_target_override=95)
+    assert await _picked(library) == {"picked": {"vmaf_target": 95}, "mixed": []}
+
+
+@pytest.mark.asyncio
+async def test_a_job_queued_as_it_came_has_nothing_picked(library):
+    await _rule("Reality", "/m/Reality", nvenc_preset="p6", nvenc_cq=36)
+    await _queue(REALITY, FILM, direct_play=False)
+    assert await _picked(library) == {"picked": {}, "mixed": []}
+
+
+@pytest.mark.asyncio
+async def test_each_setting_picked_in_the_dialogs_terms(library):
+    async with aiosqlite.connect(library) as db:  # Off is picked over Settings' 95
+        await db.executemany("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                             [("vmaf_target_enabled", "true"), ("vmaf_target_score", "95")])
+        await db.commit()
+    await _queue(FILM, encoder_override="nvenc", nvenc_preset_override="p7", nvenc_cq_override=30,
+                 audio_codec_override="eac3", audio_bitrate_override=640, target_resolution_override="720p",
+                 vmaf_target_override=0, lossless_audio_override="keep", nvenc_aq_override="strong")
+    assert (await _picked(library))["picked"] == {
+        "encoder": "nvenc", "nvenc_preset": "p7", "nvenc_cq": 30, "audio_codec": "eac3", "audio_bitrate": 640,
+        "target_resolution": "720p", "vmaf_target": 0, "lossless_audio": "keep", "nvenc_aq": "strong"}
+
+
+@pytest.mark.asyncio
+async def test_a_forced_conversion_starts_forced(library):
+    """The x265 clean-up made a conversion by an edit shows Force re-encode,
+    not the rule's quality it took as picked."""
+    await _rule("Reality", "/m/Reality", nvenc_cq=38)
+    await _waiting(library, (REALITY, "audio", 0))
+    await _edit(file_paths=[REALITY], force_reencode=True)
+    assert await _picked(library) == {"picked": {"force_reencode": True}, "mixed": []}
+
+
+@pytest.mark.asyncio
+async def test_a_clean_up_picked_starts_as_one(library):
+    """A file that needs converting, waiting as a clean-up: Cleanup only."""
+    async with aiosqlite.connect(library) as db:
+        await db.execute("INSERT INTO jobs (file_path, job_type, status, priority, queue_order, created_at) "
+                         "VALUES (?, 'audio', 'pending', 0, 1, datetime('now'))", (FILM,))
+        await db.commit()
+    assert await _picked(library) == {"picked": {"cleanup_only": True}, "mixed": []}
+
+
+@pytest.mark.asyncio
+async def test_direct_play_unticked_or_some_fixes(library, monkeypatch):
+    """Ticked as Settings have it is nothing picked; unticked, or fewer fixes, is."""
+    async def problems(db, paths):
+        return {p: ["audio", "subs"] for p in paths}
+    monkeypatch.setattr("backend.direct_play.problems_for", problems)
+    async with aiosqlite.connect(library) as db:
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('direct_play_on_convert', 'true')")
+        await db.commit()
+    await _queue(FILM)  # as the watcher queues: Settings' ("1")
+    assert (await _picked(library))["picked"] == {}
+    await _edit(file_paths=[FILM], direct_play=True)
+    assert (await _picked(library))["picked"] == {}
+    await _edit(file_paths=[FILM], direct_play=True, direct_play_fixes=["audio"])
+    assert (await _picked(library))["picked"] == {"direct_play": True, "direct_play_fixes": ["audio"]}
+    await _edit(file_paths=[FILM], direct_play=False)
+    assert (await _picked(library))["picked"] == {"direct_play": False}
+
+
+@pytest.mark.asyncio
+async def test_jobs_that_differ_are_mixed(library):
+    """A setting the jobs share starts picked; one they differ in, the dialog names."""
+    await _queue(FILM, REALITY, vmaf_target_override=95, nvenc_cq_override=30)
+    await _edit(file_paths=[FILM], vmaf_target_override=90, nvenc_cq_override=30)
+    assert await _picked(library) == {"picked": {"nvenc_cq": 30}, "mixed": ["vmaf_target"]}
+    await _edit(file_paths=[FILM], nvenc_cq_override=30)  # FILM back to its rule's (Settings') target
+    assert await _picked(library) == {"picked": {"nvenc_cq": 30}, "mixed": ["vmaf_target"]}
+
+
 # The Queue's side. The frontend has no test runner: these check the source
 # and its catalogs.
 KEYS = {  # each key's placeholders, in English and Spanish (plurals too)
@@ -84,6 +176,7 @@ KEYS = {  # each key's placeholders, in English and Spanish (plurals too)
     "scannerModals:estimate.editTitle": {"count"},
     "scannerModals:estimate.priorityUnchanged": set(),
     "scannerModals:estimate.priorityUnchangedHelp": set(),
+    "scannerModals:estimate.editMixed": {"settings"},
 }
 
 
@@ -127,3 +220,25 @@ def test_the_selection_bar_edits_settings_in_one_place():
         for key in ("panel.videoPresetPlaceholder", "panel.audioPresetPlaceholder", "panel.vmafTargetPlaceholder",
                     "toasts.videoPresetApplied_other", "toasts.vmafTargetSet"):
             assert _text(lang, f"queue:{key}") is None, (lang, key)  # unused strings went with them
+
+
+def test_the_dialog_starts_from_the_jobs_settings():
+    """Edit settings asks what the jobs were given (picked-settings), starts
+    there and opens the settings that show it, and names the ones the jobs
+    differ in."""
+    src = _source("EstimateModal.tsx")
+    assert "getPickedSettings(editing)" in src
+    assert 't("scannerModals:estimate.editMixed"' in src
+    assert "editing={editing.map(j => j.id)}" in _source("QueuePage.tsx")
+    assert '"/jobs/picked-settings"' in _source("api.ts")
+
+
+def test_a_row_redraws_when_any_of_its_jobs_fields_changes():
+    """The row and its plan compared the fields on a list, without the VMAF
+    target: a target set by Edit settings left the row at P6 / CQ 36, and the
+    plan saying so, until something else redrew them."""
+    row = _source("JobListItem.tsx")
+    compare = row[row.index("function shallowJobEqual"):]
+    compare = compare[:compare.index("\n}\n")]
+    assert "Object.keys(a)" in compare and "a.nvenc_cq !== b.nvenc_cq" not in compare
+    assert "const version = JSON.stringify(job);" in _source("PendingJobPlan.tsx")

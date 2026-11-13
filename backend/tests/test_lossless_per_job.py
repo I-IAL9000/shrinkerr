@@ -152,7 +152,7 @@ def test_the_plan_names_the_tracks():
     from backend.tests.test_vmaf_target_ui import PLURALS, _placeholders, _source
     src = _source("PendingJobPlan.tsx")
     assert '"queue:plan.losslessConvert"' in src and '"queue:plan.losslessKeep"' in src
-    assert "job.lossless_audio" in src  # re-added with another choice: it reloads
+    assert "const version = JSON.stringify(job);" in src  # re-added with another choice: it reloads
     for lang in PLURALS:
         assert _placeholders(lang, "queue:plan.losslessConvert") == [{"tracks", "target"}], lang
         assert _placeholders(lang, "queue:plan.losslessKeep") == [{"tracks"}], lang

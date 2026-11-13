@@ -35,6 +35,7 @@
     "priorityAutoHelp": "Each file's rule priority, else Normal (High for unwatched content when “Prioritize unwatched content” is on). A priority picked here is every file's, over the rules.",
     "priorityUnchanged": "Unchanged",
     "priorityUnchangedHelp": "Each job keeps its priority. A priority picked here is every job's.",
+    "editMixed": "These jobs differ in {{settings}}: saving gives them all what's shown here (on Rule, each its rule's).",
     "failed": "Failed to estimate",
     "unknownError": "Unknown error",
     "addToQueue": "Add {{num}} to Queue",

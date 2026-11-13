@@ -15,6 +15,7 @@ def test_what_the_demo_refuses():
         assert demo.blocked(method, path), (method, path)
     for method, path in (("GET", "/api/jobs/"), ("POST", "/api/jobs/estimate"), ("POST", "/api/rules/test"),
                          ("POST", "/api/auth/ws-ticket"), ("POST", "/api/scan/search"), ("HEAD", "/api/health"),
+                         ("POST", "/api/jobs/picked-settings"),
                          ("POST", "/assets/x")):
         assert not demo.blocked(method, path), (method, path)
 

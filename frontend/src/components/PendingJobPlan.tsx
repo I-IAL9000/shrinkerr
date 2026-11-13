@@ -38,9 +38,9 @@ export default function PendingJobPlan({ job, encodingDefaults, onChanged }: {
   const [saving, setSaving] = useState(false);
 
   // Reloads when the job changes under it too (a language change, an edit
-  // in the Scanner, a quality preset) — the queue polls.
-  const version = [job.job_type, job.encoder, job.nvenc_cq, job.libx265_crf, job.lossless_audio,
-    (job.audio_tracks_to_remove || []).join(), (job.subtitle_tracks_to_remove || []).join()].join("|");
+  // in the Scanner, Edit settings) — the queue polls. Any field: a list of
+  // them left the VMAF target out, and the plan kept the quality it had.
+  const version = JSON.stringify(job);
   useEffect(() => {
     let cancelled = false;
     getJobPlan(job.id)

@@ -23,7 +23,7 @@ ENABLED = os.environ.get("SHRINKERR_DEMO", "").strip().lower() in ("1", "true", 
 
 # POSTs that only compute something (or are needed to browse).
 READ_ONLY_POSTS = frozenset({
-    "/api/auth/ws-ticket", "/api/jobs/estimate", "/api/rules/test", "/api/scan/search",
+    "/api/auth/ws-ticket", "/api/jobs/estimate", "/api/jobs/picked-settings", "/api/rules/test", "/api/scan/search",
     "/api/rename/preview-pattern", "/api/rename/tokens", "/api/policies/plan", "/api/settings/language-preview",
 })
 
