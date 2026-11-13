@@ -80,3 +80,12 @@ def test_a_new_estimate_leaves_the_settings_where_they_are():
     css = (FRONTEND / "theme.css").read_text(encoding="utf-8")
     assert re.search(r"\.estimate-modal-body \{[^}]*overflow-y: auto", css)
     assert ".estimate-stale[aria-busy=\"true\"]" in css
+
+
+def test_the_quality_slider_fills_to_its_value():
+    """Ticking Force re-encode moved the quality to the rule's (27 to 36),
+    and Reset back to the estimate's, but the fill stayed where it was: it
+    was painted on the slider's own input only. The value is the dialog's
+    state, so the fill is repainted after each of its renders."""
+    src = _source("useRangeFill.ts")
+    assert re.search(r"useEffect\(\(\) => \{[^}]*forEach\(paint\);\s*\}\);", src)  # no deps: every render

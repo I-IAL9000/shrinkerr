@@ -3,8 +3,10 @@ import { useEffect, type RefObject } from "react";
 /**
  * Paints a purple-fill gradient on every `<input type="range">` mounted
  * inside the given ref's subtree. Reacts to sliders being added to the
- * DOM, but not to attribute changes (none of our sliders reshape their
- * min/max dynamically).
+ * DOM, and repaints after each render of the component that calls it: a
+ * controlled slider's value can change without an input event (v0.10.0:
+ * Add to Queue's quality moved to a rule's on Force re-encode, and the
+ * fill stayed behind).
  *
  * This replaces a MutationObserver that used to watch document.body's
  * entire subtree — that was a huge CPU hog during encoding because every
@@ -15,19 +17,19 @@ import { useEffect, type RefObject } from "react";
  * a modal), the hook is still safe — it just returns early when the ref
  * is null.
  */
+const paint = (el: HTMLInputElement) => {
+  const min = parseFloat(el.min) || 0;
+  const max = parseFloat(el.max) || 100;
+  const val = parseFloat(el.value) || 0;
+  const pct = ((val - min) / (max - min)) * 100;
+  el.style.background = `linear-gradient(to right, var(--accent) ${pct}%, var(--border) ${pct}%)`;
+  el.style.borderRadius = "3px";
+};
+
 export function useRangeFill(containerRef: RefObject<HTMLElement | null>) {
   useEffect(() => {
     const root = containerRef.current;
     if (!root) return;
-
-    const paint = (el: HTMLInputElement) => {
-      const min = parseFloat(el.min) || 0;
-      const max = parseFloat(el.max) || 100;
-      const val = parseFloat(el.value) || 0;
-      const pct = ((val - min) / (max - min)) * 100;
-      el.style.background = `linear-gradient(to right, var(--accent) ${pct}%, var(--border) ${pct}%)`;
-      el.style.borderRadius = "3px";
-    };
 
     const init = () => {
       root.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach(paint);
@@ -55,4 +57,8 @@ export function useRangeFill(containerRef: RefObject<HTMLElement | null>) {
     obs.observe(root, { childList: true, subtree: true });
     return () => obs.disconnect();
   }, [containerRef]);
+
+  useEffect(() => {
+    containerRef.current?.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach(paint);
+  });
 }
